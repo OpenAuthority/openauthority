@@ -1,0 +1,39 @@
+{
+  "name": "policy-engine",
+  "displayName": "Policy Engine",
+  "version": "1.0.0",
+  "description": "Authorization policy engine for Open Authority — evaluate ABAC/RBAC policies with audit logging",
+  "author": "Firma-AI",
+  "license": "MIT",
+  "main": "dist/index.js",
+  "types": "dist/index.d.ts",
+  "openclaw": {
+    "apiVersion": "1",
+    "type": "plugin",
+    "capabilities": [
+      "policy-evaluation",
+      "audit-logging",
+      "tool-restriction",
+      "prompt-protection",
+      "model-restriction"
+    ],
+    "hooks": [
+      "before_tool_call",
+      "before_prompt_build",
+      "before_model_resolve"
+    ],
+    "installPath": "~/.openclaw/plugins/policy-engine"
+  },
+  "keywords": [
+    "openclaw",
+    "policy",
+    "authorization",
+    "abac",
+    "rbac",
+    "audit"
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/Firma-AI/openauthority"
+  }
+}

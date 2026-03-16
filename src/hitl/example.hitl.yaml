@@ -1,0 +1,60 @@
+version: "1"
+
+policies:
+  # Require approval before sending or deleting emails
+  - name: Email mutations
+    description: All email-writing and deletion actions route to the Slack approval channel.
+    actions:
+      - email.send
+      - email.delete
+      - email.forward
+    approval:
+      channel: slack
+      timeout: 300   # 5 minutes
+      fallback: deny
+    tags:
+      - email
+      - destructive
+
+  # Any file-system write operation requires sign-off
+  - name: File writes
+    description: Write, edit, move, and delete file operations require human review.
+    actions:
+      - file.write
+      - file.delete
+      - file.move
+      - file.rename
+    approval:
+      channel: slack
+      timeout: 120   # 2 minutes
+      fallback: deny
+    tags:
+      - filesystem
+      - destructive
+
+  # Auto-approve low-risk database reads after a brief window
+  - name: Database reads (auto-approve)
+    description: Read-only database queries are auto-approved after a short hold.
+    actions:
+      - db.select
+      - db.count
+    approval:
+      channel: console
+      timeout: 10
+      fallback: auto-approve
+    tags:
+      - database
+      - readonly
+
+  # Catch-all: anything under the "payment" namespace always requires approval
+  - name: Payment namespace
+    description: Any action in the payment namespace requires explicit approval.
+    actions:
+      - payment.*
+    approval:
+      channel: email
+      timeout: 600   # 10 minutes
+      fallback: deny
+    tags:
+      - payment
+      - high-risk
