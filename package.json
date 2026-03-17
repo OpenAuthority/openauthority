@@ -1,5 +1,5 @@
 {
-  "name": "@openauthority/policy-engine",
+  "name": "@openauthority/openauthority",
   "version": "1.0.0",
   "description": "Authorization policy engine plugin for Open Authority",
   "type": "module",
