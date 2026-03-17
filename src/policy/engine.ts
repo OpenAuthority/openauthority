@@ -183,8 +183,8 @@ export class PolicyEngine {
       }
     }
 
-    // Implicit deny
-    return { effect: 'deny', reason: 'No matching rule; implicit deny' };
+    // Implicit permit — allow unless explicitly forbidden
+    return { effect: 'permit', reason: 'No matching rule; implicit permit' };
   }
 
   private checkAndRecordRateLimit(
