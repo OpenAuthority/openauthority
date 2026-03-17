@@ -23,33 +23,33 @@
       "before_prompt_build",
       "before_model_resolve"
     ],
-    "installPath": "~/.openclaw/plugins/openauthority",
-    "configSchema": {
-      "type": "object",
-      "properties": {
-        "rulesFile": {
-          "type": "string",
-          "description": "Path to the JSON rules file",
-          "default": "data/rules.json"
-        },
-        "auditLogFile": {
-          "type": "string",
-          "description": "Path to the JSONL audit log file",
-          "default": "data/audit.jsonl"
-        },
-        "uiPort": {
-          "type": "number",
-          "description": "Port for the policy engine UI server",
-          "default": 7331
-        },
-        "enabled": {
-          "type": "boolean",
-          "description": "Enable or disable the policy engine",
-          "default": true
-        }
+    "installPath": "~/.openclaw/plugins/openauthority"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "rulesFile": {
+        "type": "string",
+        "description": "Path to the JSON rules file",
+        "default": "data/rules.json"
       },
-      "additionalProperties": false
-    }
+      "auditLogFile": {
+        "type": "string",
+        "description": "Path to the JSONL audit log file",
+        "default": "data/audit.jsonl"
+      },
+      "uiPort": {
+        "type": "number",
+        "description": "Port for the policy engine UI server",
+        "default": 7331
+      },
+      "enabled": {
+        "type": "boolean",
+        "description": "Enable or disable the policy engine",
+        "default": true
+      }
+    },
+    "additionalProperties": false
   },
   "keywords": [
     "openclaw",
