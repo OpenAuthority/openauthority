@@ -213,7 +213,8 @@ cedarEngineRef.current.addRules(defaultRules);
  * Returns { block: true, blockReason } when the engine returns forbid or deny.
  * Fails closed on unexpected errors.
  */
-const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName }, ctx) => {
+const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params }, ctx) => {
+  console.log(`[openauthority] ▶ before_tool_call ENTER tool=${toolName} agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"}`);
   const ruleContext: RuleContext = {
     agentId: ctx.agentId ?? "unknown",
     channel: ctx.channelId ?? "default",
@@ -222,17 +223,16 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName }, ctx) => {
     const decision = cedarEngineRef.current.evaluate("tool", toolName, ruleContext);
     if (decision.effect === "forbid" || decision.effect === "deny") {
       const blockReason = decision.reason ?? "Tool call denied by policy";
-      console.log(
-        `[hook:before_tool_call] BLOCK tool=${toolName} agentId=${ruleContext.agentId} reason="${blockReason}"`
-      );
+      console.log(`[openauthority] ✕ before_tool_call BLOCK tool=${toolName} effect=${decision.effect} reason="${blockReason}"`);
+      console.log(`[openauthority] ◀ before_tool_call EXIT  tool=${toolName} → blocked`);
       return { block: true, blockReason };
     }
-    console.log(
-      `[hook:before_tool_call] ALLOW tool=${toolName} agentId=${ruleContext.agentId}`
-    );
+    console.log(`[openauthority] ✓ before_tool_call ALLOW tool=${toolName} effect=${decision.effect}`);
+    console.log(`[openauthority] ◀ before_tool_call EXIT  tool=${toolName} → allowed`);
     return;
   } catch (err) {
-    console.error(`[hook:before_tool_call] ERROR evaluating tool=${toolName}`, err);
+    console.error(`[openauthority] ✕ before_tool_call ERROR tool=${toolName}`, err);
+    console.log(`[openauthority] ◀ before_tool_call EXIT  tool=${toolName} → blocked (error)`);
     return { block: true, blockReason: "Policy evaluation error — fail closed" };
   }
 };
@@ -247,6 +247,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName }, ctx) => {
  * 2. Evaluates prompt rules and can prepend policy context.
  */
 const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }, ctx) => {
+  console.log(`[openauthority] ▶ before_prompt_build ENTER prompt="${prompt}" agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"} messageCount=${messages?.length ?? 0}`);
   const ruleContext: RuleContext = {
     agentId: ctx.agentId ?? "unknown",
     channel: ctx.channelId ?? "default",
@@ -254,9 +255,8 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }
   try {
     // Check for prompt injection in messages
     if (detectPromptInjection(messages)) {
-      console.log(
-        `[hook:before_prompt_build] INJECTION DETECTED agentId=${ruleContext.agentId}`
-      );
+      console.log(`[openauthority] ⚠ before_prompt_build INJECTION DETECTED agentId=${ruleContext.agentId}`);
+      console.log(`[openauthority] ◀ before_prompt_build EXIT  → prependContext (injection warning)`);
       return {
         prependContext:
           "[SECURITY WARNING] Prompt injection pattern detected in the conversation. " +
@@ -269,20 +269,19 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }
     const decision = cedarEngineRef.current.evaluate("prompt", prompt, ruleContext);
     if (decision.effect === "forbid" || decision.effect === "deny") {
       const reason = decision.reason ?? "Prompt restricted by policy";
-      console.log(
-        `[hook:before_prompt_build] RESTRICT prompt="${prompt}" agentId=${ruleContext.agentId} reason="${reason}"`
-      );
+      console.log(`[openauthority] ⚠ before_prompt_build RESTRICT prompt="${prompt}" effect=${decision.effect} reason="${reason}"`);
+      console.log(`[openauthority] ◀ before_prompt_build EXIT  → prependContext (policy warning)`);
       return {
         prependContext: `[POLICY] ${reason}`,
       };
     }
 
+    console.log(`[openauthority] ✓ before_prompt_build OK prompt="${prompt}" effect=${decision.effect}`);
+    console.log(`[openauthority] ◀ before_prompt_build EXIT  → no modification`);
     return;
   } catch (err) {
-    console.error(
-      `[hook:before_prompt_build] ERROR evaluating prompt="${prompt}"`,
-      err
-    );
+    console.error(`[openauthority] ✕ before_prompt_build ERROR prompt="${prompt}"`, err);
+    console.log(`[openauthority] ◀ before_prompt_build EXIT  → no modification (error)`);
     return;
   }
 };
@@ -295,6 +294,7 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }
  * model is forbidden by policy.
  */
 const beforeModelResolveHandler: BeforeModelResolveHandler = ({ prompt }, ctx) => {
+  console.log(`[openauthority] ▶ before_model_resolve ENTER prompt="${prompt}" agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"}`);
   const ruleContext: RuleContext = {
     agentId: ctx.agentId ?? "unknown",
     channel: ctx.channelId ?? "default",
@@ -305,19 +305,17 @@ const beforeModelResolveHandler: BeforeModelResolveHandler = ({ prompt }, ctx) =
     const decision = cedarEngineRef.current.evaluate("model", prompt, ruleContext);
     if (decision.effect === "forbid" || decision.effect === "deny") {
       const reason = decision.reason ?? "Model access denied by policy";
-      console.log(
-        `[hook:before_model_resolve] OVERRIDE agentId=${ruleContext.agentId} reason="${reason}"`
-      );
-      // Override to a safe default model when the requested one is forbidden
+      console.log(`[openauthority] ⚠ before_model_resolve OVERRIDE effect=${decision.effect} reason="${reason}" → modelOverride=claude-sonnet-4-20250514`);
+      console.log(`[openauthority] ◀ before_model_resolve EXIT  → modelOverride`);
       return { modelOverride: "claude-sonnet-4-20250514" };
     }
 
+    console.log(`[openauthority] ✓ before_model_resolve OK effect=${decision.effect}`);
+    console.log(`[openauthority] ◀ before_model_resolve EXIT  → no override`);
     return;
   } catch (err) {
-    console.error(
-      `[hook:before_model_resolve] ERROR`,
-      err
-    );
+    console.error(`[openauthority] ✕ before_model_resolve ERROR`, err);
+    console.log(`[openauthority] ◀ before_model_resolve EXIT  → no override (error)`);
     return;
   }
 };
