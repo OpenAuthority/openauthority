@@ -35,6 +35,9 @@
   "engines": {
     "node": ">=18"
   },
+  "openclaw": {
+    "extensions": ["./dist/index.js"]
+  },
   "license": "MIT",
   "repository": {
     "type": "git",
