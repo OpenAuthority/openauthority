@@ -305,9 +305,9 @@ const plugin: OpenclawPlugin = {
       ctx.onPolicyLoad((policy) => abacEngine.addPolicy(policy));
     }
 
-    ctx.registerHook("before_tool_call", beforeToolCallHandler);
-    ctx.registerHook("before_prompt_build", beforePromptBuildHandler);
-    ctx.registerHook("before_model_resolve", beforeModelResolveHandler);
+    ctx.registerHook("before_tool_call", { name: "openauthority:before_tool_call", handler: beforeToolCallHandler });
+    ctx.registerHook("before_prompt_build", { name: "openauthority:before_prompt_build", handler: beforePromptBuildHandler });
+    ctx.registerHook("before_model_resolve", { name: "openauthority:before_model_resolve", handler: beforeModelResolveHandler });
 
     rulesWatcher = startRulesWatcher(cedarEngineRef);
 
