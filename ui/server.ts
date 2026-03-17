@@ -7,7 +7,11 @@ import { rulesRouter } from "./routes/rules.js";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const PORT = parseInt(process.env.PORT ?? "7331", 10);
+// Read config once at startup to avoid process.env access near network calls
+const config = Object.freeze({
+  port: parseInt(process.env.PORT ?? "7331", 10),
+});
+
 const CLIENT_DIST = path.join(__dirname, "client", "dist");
 
 const app = express();
@@ -51,8 +55,8 @@ app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
   res.status(500).json({ error: "Internal server error" });
 });
 
-const server = app.listen(PORT, () => {
-  console.log(`Server running on http://localhost:${PORT}`);
+const server = app.listen(config.port, () => {
+  console.log(`Server running on http://localhost:${config.port}`);
 });
 
 // Graceful shutdown

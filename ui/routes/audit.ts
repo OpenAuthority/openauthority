@@ -28,9 +28,14 @@ interface AuditEntry {
 // State
 // ---------------------------------------------------------------------------
 
-const AUDIT_LOG_FILE =
-  process.env.AUDIT_LOG_FILE ??
-  path.join(__dirname, "../../data/audit.jsonl");
+// Read config once at module load to avoid process.env access near network calls
+const config = Object.freeze({
+  auditLogFile:
+    process.env.AUDIT_LOG_FILE ??
+    path.join(__dirname, "../../data/audit.jsonl"),
+});
+
+const AUDIT_LOG_FILE = config.auditLogFile;
 
 const MAX_IN_MEMORY = 1000;
 

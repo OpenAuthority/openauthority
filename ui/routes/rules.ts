@@ -6,8 +6,13 @@ import crypto from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const RULES_FILE =
-  process.env.RULES_FILE ?? path.resolve(__dirname, "../../data/rules.json");
+// Read config once at module load to avoid process.env access near network calls
+const config = Object.freeze({
+  rulesFile:
+    process.env.RULES_FILE ?? path.resolve(__dirname, "../../data/rules.json"),
+});
+
+const RULES_FILE = config.rulesFile;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
