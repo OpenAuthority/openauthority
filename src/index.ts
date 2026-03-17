@@ -292,12 +292,18 @@ const beforeModelResolveHandler: BeforeModelResolveHandler = ({
 let rulesWatcher: WatcherHandle | null = null;
 
 const plugin: OpenclawPlugin = {
-  name: "policy-engine",
+  name: "openauthority",
   version: "1.0.0",
 
   activate(ctx: OpenclawPluginContext) {
-    ctx.registerPolicyEngine(abacEngine);
-    ctx.onPolicyLoad((policy) => abacEngine.addPolicy(policy));
+    // registerPolicyEngine / onPolicyLoad are optional — only available when
+    // the host exposes a policy-evaluation extension point.
+    if (typeof ctx.registerPolicyEngine === "function") {
+      ctx.registerPolicyEngine(abacEngine);
+    }
+    if (typeof ctx.onPolicyLoad === "function") {
+      ctx.onPolicyLoad((policy) => abacEngine.addPolicy(policy));
+    }
 
     ctx.registerHook("before_tool_call", beforeToolCallHandler);
     ctx.registerHook("before_prompt_build", beforePromptBuildHandler);
@@ -305,7 +311,7 @@ const plugin: OpenclawPlugin = {
 
     rulesWatcher = startRulesWatcher(cedarEngineRef);
 
-    console.log("[plugin:policy-engine] activated – lifecycle hooks registered");
+    console.log("[plugin:openauthority] activated – lifecycle hooks registered");
   },
 
   async deactivate() {
@@ -313,7 +319,7 @@ const plugin: OpenclawPlugin = {
       await rulesWatcher.stop();
       rulesWatcher = null;
     }
-    console.log("[plugin:policy-engine] deactivated");
+    console.log("[plugin:openauthority] deactivated");
   },
 };
 
