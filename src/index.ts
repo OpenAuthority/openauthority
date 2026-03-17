@@ -123,11 +123,11 @@ export interface OpenclawPluginContext {
   /** Subscribe to policy-load events so new policies are added to the engine. */
   onPolicyLoad(callback: (policy: TPolicy) => void): void;
   /** Register a handler for the before_tool_call lifecycle hook. */
-  registerHook(hookName: "before_tool_call", handler: BeforeToolCallHandler): void;
+  registerHook(hookName: "before_tool_call", handler: BeforeToolCallHandler | { name: string; handler: BeforeToolCallHandler }): void;
   /** Register a handler for the before_prompt_build lifecycle hook. */
-  registerHook(hookName: "before_prompt_build", handler: BeforePromptBuildHandler): void;
+  registerHook(hookName: "before_prompt_build", handler: BeforePromptBuildHandler | { name: string; handler: BeforePromptBuildHandler }): void;
   /** Register a handler for the before_model_resolve lifecycle hook. */
-  registerHook(hookName: "before_model_resolve", handler: BeforeModelResolveHandler): void;
+  registerHook(hookName: "before_model_resolve", handler: BeforeModelResolveHandler | { name: string; handler: BeforeModelResolveHandler }): void;
 }
 
 // ─── Prompt injection detection ───────────────────────────────────────────────
