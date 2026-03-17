@@ -252,14 +252,10 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params }, ctx)
  */
 const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }, ctx) => {
   console.log(`[openauthority] ▶ before_prompt_build ENTER agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"} messageCount=${messages?.length ?? 0} promptLen=${prompt?.length ?? 0}`);
-  const ruleContext: RuleContext = {
-    agentId: ctx.agentId ?? "unknown",
-    channel: ctx.channelId ?? "default",
-  };
   try {
     // Check for prompt injection in messages
     if (detectPromptInjection(messages)) {
-      console.log(`[openauthority] ⚠ before_prompt_build INJECTION DETECTED agentId=${ruleContext.agentId}`);
+      console.log(`[openauthority] ⚠ before_prompt_build INJECTION DETECTED agentId=${ctx.agentId ?? "unknown"}`);
       console.log(`[openauthority] ◀ before_prompt_build EXIT  → prependContext (injection warning)`);
       return {
         prependContext:
@@ -269,22 +265,17 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }
       };
     }
 
-    // Evaluate prompt rules — since we cannot block, we prepend a warning
-    const decision = cedarEngineRef.current.evaluate("prompt", prompt, ruleContext);
-    if (decision.effect === "forbid" || decision.effect === "deny") {
-      const reason = decision.reason ?? "Prompt restricted by policy";
-      console.log(`[openauthority] ⚠ before_prompt_build RESTRICT prompt="${prompt}" effect=${decision.effect} reason="${reason}"`);
-      console.log(`[openauthority] ◀ before_prompt_build EXIT  → prependContext (policy warning)`);
-      return {
-        prependContext: `[POLICY] ${reason}`,
-      };
-    }
+    // NOTE: We do NOT evaluate the raw prompt text as a "prompt" resource here.
+    // The prompt text is the full conversation/system prompt — not a resource
+    // identifier. Evaluating it against prompt rules (which match short identifiers
+    // like "system-prompt-v2") would always result in implicit deny, causing
+    // unnecessary policy warnings on every single API call.
 
-    console.log(`[openauthority] ✓ before_prompt_build OK prompt="${prompt}" effect=${decision.effect}`);
+    console.log(`[openauthority] ✓ before_prompt_build OK — no injection detected`);
     console.log(`[openauthority] ◀ before_prompt_build EXIT  → no modification`);
     return;
   } catch (err) {
-    console.error(`[openauthority] ✕ before_prompt_build ERROR prompt="${prompt}"`, err);
+    console.error(`[openauthority] ✕ before_prompt_build ERROR`, err);
     console.log(`[openauthority] ◀ before_prompt_build EXIT  → no modification (error)`);
     return;
   }
@@ -299,29 +290,19 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }
  */
 const beforeModelResolveHandler: BeforeModelResolveHandler = ({ prompt }, ctx) => {
   console.log(`[openauthority] ▶ before_model_resolve ENTER agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"} promptLen=${prompt?.length ?? 0}`);
-  const ruleContext: RuleContext = {
-    agentId: ctx.agentId ?? "unknown",
-    channel: ctx.channelId ?? "default",
-  };
-  try {
-    // We don't have the model name directly here — the event only has `prompt`.
-    // Evaluate against model rules using the prompt as resource identifier.
-    const decision = cedarEngineRef.current.evaluate("model", prompt, ruleContext);
-    if (decision.effect === "forbid" || decision.effect === "deny") {
-      const reason = decision.reason ?? "Model access denied by policy";
-      console.log(`[openauthority] ⚠ before_model_resolve OVERRIDE effect=${decision.effect} reason="${reason}" → modelOverride=claude-sonnet-4-20250514`);
-      console.log(`[openauthority] ◀ before_model_resolve EXIT  → modelOverride`);
-      return { modelOverride: "claude-sonnet-4-20250514" };
-    }
 
-    console.log(`[openauthority] ✓ before_model_resolve OK effect=${decision.effect}`);
-    console.log(`[openauthority] ◀ before_model_resolve EXIT  → no override`);
-    return;
-  } catch (err) {
-    console.error(`[openauthority] ✕ before_model_resolve ERROR`, err);
-    console.log(`[openauthority] ◀ before_model_resolve EXIT  → no override (error)`);
-    return;
-  }
+  // NOTE: The before_model_resolve event only provides `prompt` (the full prompt
+  // text), NOT the model name. Evaluating the prompt text against model rules
+  // (which match patterns like /^claude-/) would always produce implicit deny,
+  // causing a modelOverride on every call — potentially triggering a re-resolve
+  // loop and API rate limits.
+  //
+  // This hook will be useful once openclaw passes the model name in the event.
+  // For now, pass through without interference.
+
+  console.log(`[openauthority] ✓ before_model_resolve OK — passthrough (no model name in event)`);
+  console.log(`[openauthority] ◀ before_model_resolve EXIT  → no override`);
+  return;
 };
 
 // ─── Plugin definition ────────────────────────────────────────────────────────
