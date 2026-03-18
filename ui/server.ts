@@ -12,7 +12,10 @@ const config = Object.freeze({
   port: parseInt(process.env.PORT ?? "7331", 10),
 });
 
-const CLIENT_DIST = path.join(__dirname, "client", "dist");
+// When compiled to dist/server.js, __dirname is "dist/", so resolve one level
+// up to reach the project root, then into client/dist.
+const PROJECT_ROOT = path.resolve(__dirname, "..");
+const CLIENT_DIST = path.join(PROJECT_ROOT, "client", "dist");
 
 const app = express();
 
