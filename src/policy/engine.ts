@@ -36,7 +36,7 @@ export interface PolicyEngineOptions {
 function matchesPattern(pattern: string | RegExp, value: string): boolean {
   if (pattern === '*') return true;
   if (pattern instanceof RegExp) return pattern.test(value);
-  return pattern === value;
+  return pattern.toLowerCase() === value.toLowerCase();
 }
 
 type TimerHandle = { unref?: () => void };
