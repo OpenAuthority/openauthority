@@ -1,6 +1,7 @@
 {
-  "name": "policy-engine",
-  "displayName": "Policy Engine",
+  "id": "openauthority",
+  "name": "openauthority",
+  "displayName": "Open Authority",
   "version": "1.0.0",
   "description": "Authorization policy engine for Open Authority — evaluate ABAC/RBAC policies with audit logging",
   "author": "Firma-AI",
@@ -22,7 +23,33 @@
       "before_prompt_build",
       "before_model_resolve"
     ],
-    "installPath": "~/.openclaw/plugins/policy-engine"
+    "installPath": "~/.openclaw/plugins/openauthority"
+  },
+  "configSchema": {
+    "type": "object",
+    "properties": {
+      "rulesFile": {
+        "type": "string",
+        "description": "Path to the JSON rules file",
+        "default": "data/rules.json"
+      },
+      "auditLogFile": {
+        "type": "string",
+        "description": "Path to the JSONL audit log file",
+        "default": "data/audit.jsonl"
+      },
+      "uiPort": {
+        "type": "number",
+        "description": "Port for the policy engine UI server",
+        "default": 7331
+      },
+      "enabled": {
+        "type": "boolean",
+        "description": "Enable or disable the policy engine",
+        "default": true
+      }
+    },
+    "additionalProperties": false
   },
   "keywords": [
     "openclaw",

@@ -6,8 +6,18 @@ import crypto from "crypto";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
 
-const RULES_FILE =
-  process.env.RULES_FILE ?? path.resolve(__dirname, "../../data/rules.json");
+// Resolve data path relative to the plugin root (one level above ui/).
+// process.cwd() is expected to be the ui/ directory at startup, so go up one
+// level to reach the plugin root where data/rules.json lives.
+const PLUGIN_ROOT = path.resolve(process.cwd(), "..");
+
+// Read config once at module load to avoid process.env access near network calls
+const config = Object.freeze({
+  rulesFile:
+    process.env.RULES_FILE ?? path.join(PLUGIN_ROOT, "data", "rules.json"),
+});
+
+const RULES_FILE = config.rulesFile;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -139,6 +149,18 @@ function validateRuleBody(body: unknown): { errors: FieldError[]; data?: Omit<Ru
 // ─── Router ───────────────────────────────────────────────────────────────────
 
 export const rulesRouter = Router();
+
+/** GET /api/rules/builtin — list compiled built-in rules (read-only) */
+rulesRouter.get("/builtin", (_req: Request, res: Response) => {
+  const builtinPath = path.join(PLUGIN_ROOT, "data", "builtin-rules.json");
+  try {
+    const raw = fs.readFileSync(builtinPath, "utf-8");
+    const parsed: unknown = JSON.parse(raw);
+    res.json(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    res.json([]);
+  }
+});
 
 /** GET /api/rules — list all rules with optional query filtering */
 rulesRouter.get("/", (req: Request, res: Response) => {

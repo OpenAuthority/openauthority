@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { rulesApi, ApiError } from "../api";
+import type { BuiltinRule } from "../api";
 import "./RulesTable.css";
 
 // Client-side mirrored types (do not import from root src/policy/types.ts)
@@ -69,6 +70,7 @@ function SortIcon({ field, sortField, sortDir }: { field: SortField; sortField: 
 
 export function RulesTable({ onEdit, refreshKey }: RulesTableProps) {
   const [rules, setRules] = useState<Rule[]>([]);
+  const [builtinRules, setBuiltinRules] = useState<BuiltinRule[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [sortField, setSortField] = useState<SortField>("effect");
@@ -80,10 +82,10 @@ export function RulesTable({ onEdit, refreshKey }: RulesTableProps) {
   useEffect(() => {
     setLoading(true);
     setError(null);
-    rulesApi
-      .list()
-      .then((data) => {
-        setRules(data as Rule[]);
+    Promise.all([rulesApi.list(), rulesApi.listBuiltin()])
+      .then(([customData, builtinData]) => {
+        setRules(customData as Rule[]);
+        setBuiltinRules(builtinData);
         setLoading(false);
       })
       .catch((err: unknown) => {
@@ -147,6 +149,68 @@ export function RulesTable({ onEdit, refreshKey }: RulesTableProps) {
 
   return (
     <div className="rules-table-container">
+      {/* Built-in Rules */}
+      {builtinRules.length > 0 && (
+        <div className="builtin-rules-section">
+          <h3 className="builtin-rules-heading">
+            Built-in Rules
+            <span className="builtin-rules-count">{builtinRules.length}</span>
+          </h3>
+          <div className="rules-table-wrapper">
+            <table className="rules-table">
+              <thead>
+                <tr>
+                  <th className="col-effect">Effect</th>
+                  <th className="col-resource">Resource</th>
+                  <th className="col-match">Match</th>
+                  <th className="col-reason">Reason</th>
+                  <th className="col-tags">Tags</th>
+                  <th className="col-source">Source</th>
+                </tr>
+              </thead>
+              <tbody>
+                {builtinRules.map((rule) => (
+                  <tr key={rule.id} className={`rule-row rule-row--${rule.effect}`}>
+                    <td>
+                      <span className={`effect-badge effect-badge--${rule.effect}`}>
+                        {rule.effect}
+                      </span>
+                    </td>
+                    <td>{rule.resource}</td>
+                    <td>
+                      <code className="match-value">
+                        {rule.isRegex ? `/${rule.match}/` : rule.match}
+                      </code>
+                    </td>
+                    <td>{rule.reason ?? <span className="empty-cell">—</span>}</td>
+                    <td>
+                      {rule.tags && rule.tags.length > 0 ? (
+                        <div className="tag-list">
+                          {rule.tags.map((tag) => (
+                            <span key={tag} className="tag-chip">{tag}</span>
+                          ))}
+                        </div>
+                      ) : (
+                        <span className="empty-cell">—</span>
+                      )}
+                    </td>
+                    <td>
+                      <span className="source-badge source-badge--builtin">Built-in</span>
+                    </td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        </div>
+      )}
+
+      {/* Custom Rules */}
+      <h3 className="custom-rules-heading">
+        Custom Rules
+        <span className="custom-rules-count">{rules.length}</span>
+      </h3>
+
       {/* Filters */}
       <div className="rules-filters">
         <select
