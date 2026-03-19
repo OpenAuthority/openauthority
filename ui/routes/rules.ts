@@ -150,6 +150,18 @@ function validateRuleBody(body: unknown): { errors: FieldError[]; data?: Omit<Ru
 
 export const rulesRouter = Router();
 
+/** GET /api/rules/builtin — list compiled built-in rules (read-only) */
+rulesRouter.get("/builtin", (_req: Request, res: Response) => {
+  const builtinPath = path.join(PLUGIN_ROOT, "data", "builtin-rules.json");
+  try {
+    const raw = fs.readFileSync(builtinPath, "utf-8");
+    const parsed: unknown = JSON.parse(raw);
+    res.json(Array.isArray(parsed) ? parsed : []);
+  } catch {
+    res.json([]);
+  }
+});
+
 /** GET /api/rules — list all rules with optional query filtering */
 rulesRouter.get("/", (req: Request, res: Response) => {
   let rules = loadRules();

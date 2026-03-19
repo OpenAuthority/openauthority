@@ -65,7 +65,22 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 
 // ─── Rules API ────────────────────────────────────────────────────────────────
 
+export interface BuiltinRule {
+  id: string;
+  effect: Effect;
+  resource: Resource;
+  match: string;
+  isRegex?: boolean;
+  condition?: string;
+  reason?: string;
+  tags?: string[];
+}
+
 export const rulesApi = {
+  listBuiltin(): Promise<BuiltinRule[]> {
+    return request<BuiltinRule[]>("/rules/builtin");
+  },
+
   list(filters?: { effect?: string; resource?: string; tags?: string }): Promise<Rule[]> {
     const params = new URLSearchParams();
     if (filters?.effect) params.set("effect", filters.effect);

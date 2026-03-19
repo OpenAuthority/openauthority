@@ -158,6 +158,7 @@ function logRules(rules: Rule[], source: string): void {
 export function startRulesWatcher(
   engineRef: { current: PolicyEngine },
   debounceMs = 300,
+  onReload?: (compiledRules: Rule[]) => void,
 ): WatcherHandle {
   const rulesDirUrl = new URL('./policy/rules/', import.meta.url);
   const watchPath = rulesDirUrl.pathname;
@@ -183,6 +184,7 @@ export function startRulesWatcher(
       rebuildEngine(allRules);
       logRules(rules, 'compiled');
       logRules(jsonRules, 'UI (data/rules.json)');
+      onReload?.(rules);
       console.log(
         `[hot-reload] reloaded agent rules: ${reloadedAgents.join(', ')} - ${allRules.length} rule${allRules.length !== 1 ? 's' : ''} total`,
       );

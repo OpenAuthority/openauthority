@@ -55,7 +55,7 @@ import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules from "./policy/rules.js";
 import { startRulesWatcher, type WatcherHandle } from "./watcher.js";
-import { readFile } from "node:fs/promises";
+import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 
@@ -214,6 +214,41 @@ for (const r of defaultRules) {
   const reason = r.reason ? ` — ${r.reason}` : '';
   console.log(`[openauthority]   ${r.effect.toUpperCase().padEnd(6)} ${r.resource}:${matchStr}${reason}`);
 }
+
+/**
+ * Serializes the compiled Cedar rules to data/builtin-rules.json so the UI
+ * server can expose them as read-only built-in rules. RegExp matches and
+ * condition functions are serialized to strings.
+ */
+async function writeBuiltinRulesSnapshot(rules: Rule[]): Promise<void> {
+  try {
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const pluginRoot = resolve(moduleDir, "..");
+    const dataDir = resolve(pluginRoot, "data");
+    const snapshotPath = resolve(dataDir, "builtin-rules.json");
+
+    await mkdir(dataDir, { recursive: true });
+
+    const serialized = rules.map((r, i) => ({
+      id: `builtin-${i}`,
+      effect: r.effect,
+      resource: r.resource,
+      match: r.match instanceof RegExp ? r.match.source : r.match,
+      isRegex: r.match instanceof RegExp,
+      condition: r.condition ? r.condition.toString() : undefined,
+      reason: r.reason,
+      tags: r.tags,
+    }));
+
+    await writeFile(snapshotPath, JSON.stringify(serialized, null, 2), "utf-8");
+    console.log(`[openauthority] wrote ${serialized.length} built-in rules to ${snapshotPath}`);
+  } catch (err) {
+    console.error("[openauthority] failed to write builtin-rules.json:", err);
+  }
+}
+
+// Write initial snapshot
+writeBuiltinRulesSnapshot(defaultRules);
 
 /**
  * Separate Cedar engine for rules loaded from data/rules.json.
@@ -492,7 +527,9 @@ const plugin: OpenclawPlugin = {
     // ctx.registerHook("before_prompt_build", beforePromptBuildHandler, { name: "openauthority:before_prompt_build" });
     // ctx.registerHook("before_model_resolve", beforeModelResolveHandler, { name: "openauthority:before_model_resolve" });
 
-    rulesWatcher = startRulesWatcher(cedarEngineRef);
+    rulesWatcher = startRulesWatcher(cedarEngineRef, 300, (compiledRules) => {
+      writeBuiltinRulesSnapshot(compiledRules);
+    });
 
     // Load user-defined JSON rules from data/rules.json into the dedicated
     // JSON Cedar engine. Async but errors are swallowed so activation is

@@ -281,6 +281,55 @@
   font-size: 0.875rem;
 }
 
+/* ── Built-in rules section ────────────────────────────────────────── */
+
+.builtin-rules-section {
+  margin-bottom: 1.5rem;
+}
+
+.builtin-rules-heading,
+.custom-rules-heading {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  font-size: 1rem;
+  font-weight: 600;
+  color: #374151;
+  margin: 0 0 0.75rem 0;
+}
+
+.builtin-rules-count,
+.custom-rules-count {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 1.5rem;
+  height: 1.5rem;
+  padding: 0 0.4rem;
+  border-radius: 9999px;
+  font-size: 0.75rem;
+  font-weight: 600;
+  background: #e5e7eb;
+  color: #374151;
+}
+
+.source-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 9999px;
+  font-size: 0.7rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  white-space: nowrap;
+}
+
+.source-badge--builtin {
+  background-color: rgba(99, 102, 241, 0.1);
+  color: #4338ca;
+  border: 1px solid rgba(99, 102, 241, 0.3);
+}
+
 /* ── Loading / error / empty states ─────────────────────────────────── */
 
 .rules-state {
