@@ -358,8 +358,18 @@ let activated = false;
  * Returns { block: true, blockReason } when the engine returns forbid or deny.
  * Fails closed on unexpected errors.
  */
+/** Format a matched rule for log output. */
+function formatMatchedRule(rule: { effect: string; resource: string; match: string | RegExp; condition?: unknown; reason?: string } | undefined): string {
+  if (!rule) return "no matching rule (implicit permit)";
+  const match = rule.match instanceof RegExp ? rule.match.source : String(rule.match ?? "*");
+  const truncMatch = match.length > 40 ? match.slice(0, 37) + "..." : match;
+  const cond = rule.condition ? " [conditional]" : "";
+  return `${rule.effect} ${rule.resource}:${truncMatch}${cond}`;
+}
+
 const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }, ctx) => {
-  console.log(`[openauthority] ▶ before_tool_call ENTER tool=${toolName} agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"}`);
+  console.log(`[openauthority] ┌─ before_tool_call ──────────────────────────────────`);
+  console.log(`[openauthority] │ tool=${toolName}  agent=${ctx.agentId ?? "unknown"}  channel=${ctx.channelId ?? "unknown"}`);
   const ruleContext: RuleContext = {
     agentId: ctx.agentId ?? "unknown",
     // Preserve the real channel name. Only fall back to "default" when the
@@ -371,14 +381,19 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }
   // ── 1. Cedar engine (TypeScript rules, hot-reloaded) ──────────────────────
   try {
     const decision = cedarEngineRef.current.evaluate("tool", toolName, ruleContext);
+    console.log(`[openauthority] │ [cedar] matched: ${formatMatchedRule(decision.matchedRule)}`);
+    if (decision.matchedRule?.reason) console.log(`[openauthority] │ [cedar] reason: ${decision.matchedRule.reason}`);
+    if (decision.rateLimit) console.log(`[openauthority] │ [cedar] rate-limit: ${decision.rateLimit.currentCount}/${decision.rateLimit.maxCalls} per ${decision.rateLimit.windowSeconds}s${decision.rateLimit.limited ? " [EXCEEDED]" : ""}`);
     if (decision.effect === "forbid" || decision.effect === "deny") {
       const blockReason = decision.reason ?? "Tool call denied by Cedar policy";
-      console.log(`[openauthority] ✕ before_tool_call BLOCK (cedar) tool=${toolName} effect=${decision.effect} reason="${blockReason}"`);
+      console.log(`[openauthority] │ DECISION: ✕ BLOCKED (cedar/${decision.effect}) — ${blockReason}`);
+      console.log(`[openauthority] └──────────────────────────────────────────────────────`);
       return { block: true, blockReason };
     }
-    console.log(`[openauthority] ✓ before_tool_call cedar ALLOW tool=${toolName} effect=${decision.effect}`);
+    console.log(`[openauthority] │ [cedar] ✓ passed`);
   } catch (err) {
-    console.error(`[openauthority] ✕ before_tool_call ERROR (cedar) tool=${toolName}`, err);
+    console.error(`[openauthority] │ [cedar] ✕ ERROR — fail closed`, err);
+    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
     return { block: true, blockReason: "Cedar policy evaluation error — fail closed" };
   }
 
@@ -386,14 +401,18 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }
   if (jsonRulesEngineRef.current !== null) {
     try {
       const jsonDecision = jsonRulesEngineRef.current.evaluate("tool", toolName, ruleContext);
+      console.log(`[openauthority] │ [json-rules] matched: ${formatMatchedRule(jsonDecision.matchedRule)}`);
+      if (jsonDecision.matchedRule?.reason) console.log(`[openauthority] │ [json-rules] reason: ${jsonDecision.matchedRule.reason}`);
       if (jsonDecision.effect === "forbid" || jsonDecision.effect === "deny") {
         const blockReason = jsonDecision.reason ?? "Tool call denied by JSON rule";
-        console.log(`[openauthority] ✕ before_tool_call BLOCK (json-rules) tool=${toolName} reason="${blockReason}"`);
+        console.log(`[openauthority] │ DECISION: ✕ BLOCKED (json-rules/${jsonDecision.effect}) — ${blockReason}`);
+        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
         return { block: true, blockReason };
       }
-      console.log(`[openauthority] ✓ before_tool_call json-rules ALLOW tool=${toolName}`);
+      console.log(`[openauthority] │ [json-rules] ✓ passed`);
     } catch (err) {
-      console.error(`[openauthority] ✕ before_tool_call ERROR (json-rules) tool=${toolName}`, err);
+      console.error(`[openauthority] │ [json-rules] ✕ ERROR — fail closed`, err);
+      console.log(`[openauthority] └──────────────────────────────────────────────────────`);
       return { block: true, blockReason: "JSON rule evaluation error — fail closed" };
     }
   }
@@ -415,17 +434,21 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }
       const result = await abacEngine.evaluate(policy.id, abacCtx);
       if (!result.allowed || result.effect === "deny") {
         const blockReason = result.reason ?? `Tool call denied by ABAC policy '${policy.id}'`;
-        console.log(`[openauthority] ✕ before_tool_call BLOCK (abac) tool=${toolName} policyId=${policy.id} reason="${blockReason}"`);
+        console.log(`[openauthority] │ [abac] ✕ BLOCKED by policy '${policy.id}' — ${blockReason}`);
+        console.log(`[openauthority] │ DECISION: ✕ BLOCKED (abac)`);
+        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
         return { block: true, blockReason };
       }
     }
+    if (abacPolicies.length > 0) console.log(`[openauthority] │ [abac] ✓ passed (${abacPolicies.length} policies)`);
   } catch (err) {
-    console.error(`[openauthority] ✕ before_tool_call ERROR (abac) tool=${toolName}`, err);
+    console.error(`[openauthority] │ [abac] ✕ ERROR — fail closed`, err);
+    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
     return { block: true, blockReason: "ABAC policy evaluation error — fail closed" };
   }
 
-  console.log(`[openauthority] ✓ before_tool_call ALLOW tool=${toolName} (all engines passed)`);
-  console.log(`[openauthority] ◀ before_tool_call EXIT  tool=${toolName} → allowed`);
+  console.log(`[openauthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
+  console.log(`[openauthority] └──────────────────────────────────────────────────────`);
   return;
 };
 
@@ -542,6 +565,43 @@ const plugin: OpenclawPlugin = {
       console.error("[plugin:openauthority] unexpected error in loadJsonRules:", err)
     );
 
+    // ── Diagnostic: log registered hooks and loaded rules ────────────────────
+    const registeredHooks = ["before_tool_call"];
+    const disabledHooks = ["before_prompt_build", "before_model_resolve"];
+    const rules = cedarEngineRef.current.rules;
+    const rulesByResource: Record<string, Rule[]> = {};
+    for (const r of rules) {
+      const key = r.resource ?? "unknown";
+      if (!rulesByResource[key]) rulesByResource[key] = [];
+      rulesByResource[key].push(r);
+    }
+    console.log("┌──────────────────────────────────────────────────────────────┐");
+    console.log("│  [plugin:openauthority] ACTIVATION SUMMARY                  │");
+    console.log("├──────────────────────────────────────────────────────────────┤");
+    console.log("│  HOOKS REGISTERED (via ctx.on):                              │");
+    for (const h of registeredHooks) {
+      console.log(`│    ✓ ${h.padEnd(54)}│`);
+    }
+    for (const h of disabledHooks) {
+      console.log(`│    ✗ ${h} (disabled)`.padEnd(63) + "│");
+    }
+    console.log("├──────────────────────────────────────────────────────────────┤");
+    console.log(`│  POLICY RULES LOADED: ${String(rules.length).padEnd(38)}│`);
+    for (const [resource, resourceRules] of Object.entries(rulesByResource)) {
+      const permits = resourceRules.filter((r) => r.effect === "permit").length;
+      const forbids = resourceRules.filter((r) => r.effect === "forbid").length;
+      console.log(`│    ${resource}: ${resourceRules.length} rules (${permits} permit, ${forbids} forbid)`.padEnd(63) + "│");
+    }
+    console.log("├──────────────────────────────────────────────────────────────┤");
+    console.log("│  RULE DETAILS:                                               │");
+    for (const r of rules) {
+      const effect = r.effect === "permit" ? "✓ PERMIT" : "✕ FORBID";
+      const match = r.match instanceof RegExp ? r.match.source : String(r.match ?? "*");
+      const truncMatch = match.length > 40 ? match.slice(0, 37) + "..." : match;
+      const cond = r.condition ? " [conditional]" : "";
+      console.log(`│  ${effect} ${r.resource}:${truncMatch}${cond}`.padEnd(63) + "│");
+    }
+    console.log("└──────────────────────────────────────────────────────────────┘");
     console.log("[plugin:openauthority] activated – lifecycle hooks registered");
   },
 
