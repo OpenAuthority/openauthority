@@ -142,10 +142,14 @@ export interface OpenclawPluginContext {
   registerPolicyEngine(engine: TypeboxPolicyEngine): void;
   /** Subscribe to policy-load events so new policies are added to the engine. */
   onPolicyLoad(callback: (policy: TPolicy) => void): void;
-  /** Register a handler for a lifecycle hook. */
+  /** Register a handler for a lifecycle hook (legacy — pushes to registry.hooks only). */
   registerHook(hookName: "before_tool_call", handler: BeforeToolCallHandler, options?: { name?: string; description?: string }): void;
   registerHook(hookName: "before_prompt_build", handler: BeforePromptBuildHandler, options?: { name?: string; description?: string }): void;
   registerHook(hookName: "before_model_resolve", handler: BeforeModelResolveHandler, options?: { name?: string; description?: string }): void;
+  /** Register a typed hook handler (pushes to registry.typedHooks — required for hook runner dispatch). */
+  on(hookName: "before_tool_call", handler: BeforeToolCallHandler, options?: { name?: string; description?: string }): void;
+  on(hookName: "before_prompt_build", handler: BeforePromptBuildHandler, options?: { name?: string; description?: string }): void;
+  on(hookName: "before_model_resolve", handler: BeforeModelResolveHandler, options?: { name?: string; description?: string }): void;
 }
 
 // ─── Prompt injection detection ───────────────────────────────────────────────
@@ -518,14 +522,14 @@ const plugin: OpenclawPlugin = {
       ctx.onPolicyLoad((policy) => abacEngine.addPolicy(policy));
     }
 
-    ctx.registerHook("before_tool_call", beforeToolCallHandler, { name: "openauthority:before_tool_call" });
+    ctx.on("before_tool_call", beforeToolCallHandler, { name: "openauthority:before_tool_call" });
 
     // ── DIAGNOSTIC: before_prompt_build and before_model_resolve temporarily
     // disabled to isolate rate-limit cause. If rate limit disappears with only
     // before_tool_call registered, these hooks are triggering extra API calls
     // inside openclaw's hook runner.
-    // ctx.registerHook("before_prompt_build", beforePromptBuildHandler, { name: "openauthority:before_prompt_build" });
-    // ctx.registerHook("before_model_resolve", beforeModelResolveHandler, { name: "openauthority:before_model_resolve" });
+    // ctx.on("before_prompt_build", beforePromptBuildHandler, { name: "openauthority:before_prompt_build" });
+    // ctx.on("before_model_resolve", beforeModelResolveHandler, { name: "openauthority:before_model_resolve" });
 
     rulesWatcher = startRulesWatcher(cedarEngineRef, 300, (compiledRules) => {
       writeBuiltinRulesSnapshot(compiledRules);
