@@ -1,10 +1,10 @@
 # Installation Guide
 
-This guide walks through installing and registering the Open Authority policy engine plugin for openclaw, and setting up the UI dashboard for rule management.
+This guide walks through installing and registering the OpenAuthority plugin for OpenClaw, configuring the HITL approval flow, and setting up the UI dashboard.
 
 ## Prerequisites
 
-- [openclaw](https://github.com/Firma-AI/openauthority) installed and configured
+- [OpenClaw](https://github.com/openclaw/openclaw) installed and configured
 - Node.js 18 or later
 - npm 9 or later
 
@@ -13,8 +13,8 @@ This guide walks through installing and registering the Open Authority policy en
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/Firma-AI/openauthority ~/.openclaw/plugins/policy-engine
-cd ~/.openclaw/plugins/policy-engine
+git clone https://github.com/Firma-AI/openauthority ~/.openclaw/plugins/openauthority
+cd ~/.openclaw/plugins/openauthority
 ```
 
 ### 2. Install dependencies
@@ -31,25 +31,74 @@ npm run build
 
 The compiled plugin is output to `dist/`.
 
-### 4. Register with openclaw
+### 4. Register with OpenClaw
 
-Add the plugin to your openclaw configuration file at `~/.openclaw/config.json`:
+Add the plugin to your OpenClaw configuration file at `~/.openclaw/config.json`:
 
 ```json
 {
-  "plugins": ["policy-engine"]
+  "plugins": ["openauthority"]
 }
 ```
 
-openclaw will load `dist/index.js` as the plugin entry point on next start.
+OpenClaw will load `dist/index.js` as the plugin entry point on next start.
 
 ### 5. Verify installation
 
-Restart openclaw and check the logs for a line like:
+Restart OpenClaw and check the logs for a line like:
 
 ```
-[policy-engine] Plugin activated. Watching src/policy/rules.ts for changes.
+[openauthority] Plugin activated. Watching rules for changes.
 ```
+
+---
+
+## HITL Policy Setup
+
+To enable Human-in-the-Loop approval flows, create a HITL policy file.
+
+### 1. Create the policy file
+
+Create `hitl-policy.yaml` in the plugin directory:
+
+```yaml
+version: "1"
+policies:
+  - name: destructive-actions
+    description: Require human approval for irreversible operations
+    actions:
+      - "email.delete"
+      - "file.delete"
+      - "*.deploy"
+    approval:
+      channel: telegram
+      timeout: 120
+      fallback: deny
+    tags: [production, safety]
+```
+
+### 2. Configure the approval channel
+
+The `channel` field determines where approval requests are sent. Supported channels:
+
+| Channel | Status | Description |
+|---|---|---|
+| `telegram` | Primary | Approval via Telegram bot messages |
+| `slack` | Planned | Approval via Slack message buttons |
+| `console` | Available | Interactive terminal prompt (dev/testing) |
+| `webhook` | Planned | POST to any HTTP endpoint |
+
+### 3. Verify HITL is active
+
+When the plugin starts, it will log the loaded HITL policies:
+
+```
+[openauthority] HITL policies loaded: 1 policy, 3 action patterns
+```
+
+The policy file is hot-reloaded --- edit it while the plugin is running and changes take effect immediately.
+
+For the full HITL reference, see [Human-in-the-Loop](human-in-the-loop.md).
 
 ---
 
@@ -61,18 +110,18 @@ The dashboard is an optional Express + React application for managing rules and 
 
 ```bash
 # Server dependencies
-cd ~/.openclaw/plugins/policy-engine/ui
+cd ~/.openclaw/plugins/openauthority/ui
 npm install
 
 # Client dependencies
-cd ~/.openclaw/plugins/policy-engine/ui/client
+cd ~/.openclaw/plugins/openauthority/ui/client
 npm install
 ```
 
 ### 2. Build the client
 
 ```bash
-cd ~/.openclaw/plugins/policy-engine/ui/client
+cd ~/.openclaw/plugins/openauthority/ui/client
 npm run build
 ```
 
@@ -81,7 +130,7 @@ This compiles the React app to `ui/client/dist/`, which the server serves as sta
 ### 3. Start the dashboard server
 
 ```bash
-cd ~/.openclaw/plugins/policy-engine/ui
+cd ~/.openclaw/plugins/openauthority/ui
 npm start
 ```
 
@@ -114,7 +163,7 @@ Use this setup when working on the plugin or dashboard locally.
 ### Plugin (watch mode)
 
 ```bash
-cd ~/.openclaw/plugins/policy-engine
+cd ~/.openclaw/plugins/openauthority
 npm run dev
 ```
 
@@ -123,7 +172,7 @@ TypeScript source is compiled and re-compiled automatically on change.
 ### UI server (watch mode)
 
 ```bash
-cd ~/.openclaw/plugins/policy-engine/ui
+cd ~/.openclaw/plugins/openauthority/ui
 npm run dev
 ```
 
@@ -132,7 +181,7 @@ Uses `tsx watch` for instant TypeScript reload on save.
 ### UI client (Vite dev server)
 
 ```bash
-cd ~/.openclaw/plugins/policy-engine/ui/client
+cd ~/.openclaw/plugins/openauthority/ui/client
 npm run dev
 ```
 
@@ -142,15 +191,15 @@ Starts a Vite dev server on **port 5173** with HMR. The server allows CORS from 
 
 ```bash
 # Plugin tests
-cd ~/.openclaw/plugins/policy-engine
+cd ~/.openclaw/plugins/openauthority
 npm test
 
 # Client tests
-cd ~/.openclaw/plugins/policy-engine/ui/client
+cd ~/.openclaw/plugins/openauthority/ui/client
 npm test
 
 # Client tests with coverage
-cd ~/.openclaw/plugins/policy-engine/ui/client
+cd ~/.openclaw/plugins/openauthority/ui/client
 npm run test:coverage
 ```
 
@@ -159,7 +208,7 @@ npm run test:coverage
 ## Upgrading
 
 ```bash
-cd ~/.openclaw/plugins/policy-engine
+cd ~/.openclaw/plugins/openauthority
 git pull
 npm install
 npm run build
@@ -174,7 +223,7 @@ Restart openclaw after upgrading. The hot-reload watcher does not require a full
 Remove the plugin directory and the entry from `~/.openclaw/config.json`:
 
 ```bash
-rm -rf ~/.openclaw/plugins/policy-engine
+rm -rf ~/.openclaw/plugins/openauthority
 ```
 
-Edit `~/.openclaw/config.json` and remove `"policy-engine"` from the `plugins` array.
+Edit `~/.openclaw/config.json` and remove `"openauthority"` from the `plugins` array.
