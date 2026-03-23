@@ -14,32 +14,61 @@ describe('PolicyEngine', () => {
     engine = new PolicyEngine();
   });
 
-  describe('implicit deny', () => {
-    it('returns deny when no rules are loaded', () => {
+  describe('default effect (implicit permit)', () => {
+    it('returns permit when no rules are loaded', () => {
       const result = engine.evaluate('tool', 'read_file', ctx);
-      expect(result.effect).toBe('deny');
+      expect(result.effect).toBe('permit');
     });
 
-    it('returns deny when no rules match the resource type', () => {
+    it('returns permit when no rules match the resource type', () => {
       engine.addRule({ effect: 'permit', resource: 'command', match: '*' });
       const result = engine.evaluate('tool', 'read_file', ctx);
-      expect(result.effect).toBe('deny');
+      expect(result.effect).toBe('permit');
     });
 
-    it('returns deny when no rules match the resource name', () => {
+    it('returns permit when no rules match the resource name', () => {
       engine.addRule({ effect: 'permit', resource: 'tool', match: 'write_file' });
       const result = engine.evaluate('tool', 'read_file', ctx);
-      expect(result.effect).toBe('deny');
+      expect(result.effect).toBe('permit');
+    });
+
+    it('includes implicit permit reason', () => {
+      const result = engine.evaluate('tool', 'read_file', ctx);
+      expect(result.reason).toMatch(/implicit permit/i);
+    });
+
+    it('does not include a matchedRule on implicit permit', () => {
+      const result = engine.evaluate('tool', 'read_file', ctx);
+      expect(result.matchedRule).toBeUndefined();
+    });
+  });
+
+  describe('explicit deny mode (defaultEffect: forbid)', () => {
+    let strictEngine: PolicyEngine;
+
+    beforeEach(() => {
+      strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+    });
+
+    it('returns forbid when no rules are loaded', () => {
+      const result = strictEngine.evaluate('tool', 'read_file', ctx);
+      expect(result.effect).toBe('forbid');
+    });
+
+    it('returns forbid when no rules match', () => {
+      strictEngine.addRule({ effect: 'permit', resource: 'command', match: '*' });
+      const result = strictEngine.evaluate('tool', 'read_file', ctx);
+      expect(result.effect).toBe('forbid');
     });
 
     it('includes implicit deny reason', () => {
-      const result = engine.evaluate('tool', 'read_file', ctx);
+      const result = strictEngine.evaluate('tool', 'read_file', ctx);
       expect(result.reason).toMatch(/implicit deny/i);
     });
 
-    it('does not include a matchedRule on implicit deny', () => {
-      const result = engine.evaluate('tool', 'read_file', ctx);
-      expect(result.matchedRule).toBeUndefined();
+    it('still permits when a rule matches', () => {
+      strictEngine.addRule({ effect: 'permit', resource: 'tool', match: 'read_file' });
+      expect(strictEngine.evaluate('tool', 'read_file', ctx).effect).toBe('permit');
     });
   });
 
@@ -47,7 +76,8 @@ describe('PolicyEngine', () => {
     it('matches exact string', () => {
       engine.addRule({ effect: 'permit', resource: 'tool', match: 'read_file' });
       expect(engine.evaluate('tool', 'read_file', ctx).effect).toBe('permit');
-      expect(engine.evaluate('tool', 'write_file', ctx).effect).toBe('deny');
+      // write_file has no rule, but default is permit so it's also allowed
+      expect(engine.evaluate('tool', 'write_file', ctx).effect).toBe('permit');
     });
 
     it('wildcard * matches any resource name', () => {
@@ -60,12 +90,14 @@ describe('PolicyEngine', () => {
       engine.addRule({ effect: 'permit', resource: 'tool', match: /^read_/ });
       expect(engine.evaluate('tool', 'read_file', ctx).effect).toBe('permit');
       expect(engine.evaluate('tool', 'read_dir', ctx).effect).toBe('permit');
-      expect(engine.evaluate('tool', 'write_file', ctx).effect).toBe('deny');
+      // write_file has no matching rule, but default is permit
+      expect(engine.evaluate('tool', 'write_file', ctx).effect).toBe('permit');
     });
 
     it('wildcard does not cross resource types', () => {
       engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
-      expect(engine.evaluate('command', 'ls', ctx).effect).toBe('deny');
+      // no command rules, but default is permit
+      expect(engine.evaluate('command', 'ls', ctx).effect).toBe('permit');
     });
 
     it('matches all resource types', () => {
@@ -107,7 +139,8 @@ describe('PolicyEngine', () => {
         match: 'read_file',
         condition: () => false,
       });
-      expect(engine.evaluate('tool', 'read_file', ctx).effect).toBe('deny');
+      // condition fails, falls through to default (permit)
+      expect(engine.evaluate('tool', 'read_file', ctx).effect).toBe('permit');
     });
 
     it('applies rule when condition returns true', () => {
@@ -142,7 +175,8 @@ describe('PolicyEngine', () => {
         condition: (c) => c.agentId === 'admin',
       });
       expect(engine.evaluate('tool', 'admin_tool', adminCtx).effect).toBe('permit');
-      expect(engine.evaluate('tool', 'admin_tool', ctx).effect).toBe('deny');
+      // condition fails for non-admin, falls through to default (permit)
+      expect(engine.evaluate('tool', 'admin_tool', ctx).effect).toBe('permit');
     });
 
     it('forbid condition takes priority over permit with no condition', () => {
@@ -158,6 +192,17 @@ describe('PolicyEngine', () => {
       expect(engine.evaluate('tool', 'risky_tool', adminCtx).effect).toBe('permit');
       // non-admin hits the forbid
       expect(engine.evaluate('tool', 'risky_tool', ctx).effect).toBe('forbid');
+    });
+
+    it('condition-gated permit with strict engine denies on failure', () => {
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({
+        effect: 'permit',
+        resource: 'tool',
+        match: 'admin_tool',
+        condition: (c) => c.agentId === 'admin',
+      });
+      expect(strictEngine.evaluate('tool', 'admin_tool', ctx).effect).toBe('forbid');
     });
   });
 
@@ -209,10 +254,18 @@ describe('PolicyEngine', () => {
   });
 
   describe('clearRules', () => {
-    it('removes all rules, reverting to implicit deny', () => {
+    it('removes all rules, reverting to default effect', () => {
       engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
       engine.clearRules();
-      expect(engine.evaluate('tool', 'anything', ctx).effect).toBe('deny');
+      // default is permit, so still permit after clearing
+      expect(engine.evaluate('tool', 'anything', ctx).effect).toBe('permit');
+    });
+
+    it('removes all rules, reverting to forbid in strict mode', () => {
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+      strictEngine.clearRules();
+      expect(strictEngine.evaluate('tool', 'anything', ctx).effect).toBe('forbid');
     });
   });
 

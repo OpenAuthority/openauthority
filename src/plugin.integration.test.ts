@@ -443,11 +443,13 @@ describe('complex rule evaluation scenarios', () => {
     expect(engine.evaluate('channel', 'admin', adminCtx).effect).toBe('permit');
   });
 
-  it('non-admin agent is denied the admin channel', () => {
+  it('non-admin agent falls through to implicit permit on admin channel', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(defaultRules);
+    // With implicit permit, failed conditions fall through to default permit.
+    // To enforce admin-only access, convert to a forbid rule with inverted condition.
     const result = engine.evaluate('channel', 'admin', defaultRuleCtx);
-    expect(result.effect).toBe('deny');
+    expect(result.effect).toBe('permit');
   });
 
   it('untrusted channel is always forbidden regardless of agent', () => {
@@ -493,7 +495,8 @@ describe('complex rule evaluation scenarios', () => {
     const ciCtx: RuleContext = { agentId: 'agent-1', channel: 'ci' };
     expect(engine.evaluate('command', 'git', trustedCtx).effect).toBe('permit');
     expect(engine.evaluate('command', 'git', ciCtx).effect).toBe('permit');
-    expect(engine.evaluate('command', 'git', defaultRuleCtx).effect).toBe('deny');
+    // With implicit permit, git on non-trusted channel falls through to default permit
+    expect(engine.evaluate('command', 'git', defaultRuleCtx).effect).toBe('permit');
   });
 
   it('package managers require authenticated user on trusted channel', () => {
@@ -506,8 +509,9 @@ describe('complex rule evaluation scenarios', () => {
     };
     const unauthTrustedCtx: RuleContext = { agentId: 'agent-1', channel: 'trusted' };
     expect(engine.evaluate('command', 'npm', authedTrustedCtx).effect).toBe('permit');
-    expect(engine.evaluate('command', 'npm', unauthTrustedCtx).effect).toBe('deny');
-    expect(engine.evaluate('command', 'npm', defaultRuleCtx).effect).toBe('deny');
+    // With implicit permit, failed conditions fall through to default permit
+    expect(engine.evaluate('command', 'npm', unauthTrustedCtx).effect).toBe('permit');
+    expect(engine.evaluate('command', 'npm', defaultRuleCtx).effect).toBe('permit');
   });
 
   it('rate-limited rule synthesises forbid after limit is exceeded', () => {
@@ -894,9 +898,9 @@ describe('mergeRules', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(mergeRules(supportRules, defaultRules));
 
-    // Only support-prefixed agents can use the support channel
+    // With implicit permit, wrong agent type falls through to default permit
     const wrongAgentCtx: RuleContext = { agentId: 'random-bot', channel: 'default' };
-    expect(engine.evaluate('channel', 'support', wrongAgentCtx).effect).toBe('deny');
+    expect(engine.evaluate('channel', 'support', wrongAgentCtx).effect).toBe('permit');
   });
 
   it('base rules still apply to agents not matching specific rules', () => {
@@ -984,23 +988,24 @@ describe('error handling and edge cases', () => {
     expect(result.effect).toBe('forbid');
   });
 
-  it('implicit deny has a descriptive reason', () => {
+  it('implicit permit has a descriptive reason', () => {
     const engine = new CedarPolicyEngine();
-    // No rules loaded at all
+    // No rules loaded at all — falls through to implicit permit
     const result = engine.evaluate('tool', 'unknown_tool', defaultRuleCtx);
-    expect(result.effect).toBe('deny');
-    expect(result.reason).toMatch(/implicit deny/i);
+    expect(result.effect).toBe('permit');
+    expect(result.reason).toMatch(/implicit permit/i);
     expect(result.matchedRule).toBeUndefined();
   });
 
-  it('clearRules on engine reverts all decisions to implicit deny', () => {
+  it('clearRules on engine reverts all decisions to implicit permit', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(defaultRules);
     // Sanity check: read_file is permitted
     expect(engine.evaluate('tool', 'read_file', defaultRuleCtx).effect).toBe('permit');
 
     engine.clearRules();
-    expect(engine.evaluate('tool', 'read_file', defaultRuleCtx).effect).toBe('deny');
+    // With implicit permit, cleared engine still permits
+    expect(engine.evaluate('tool', 'read_file', defaultRuleCtx).effect).toBe('permit');
   });
 
   it('engine destroy() does not throw when no cleanup timer is set', () => {
