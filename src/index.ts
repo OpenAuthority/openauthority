@@ -355,7 +355,7 @@ let activated = false;
  * before_tool_call
  *
  * Evaluates whether a tool may be called by consulting the Cedar policy engine.
- * Returns { block: true, blockReason } when the engine returns forbid or deny.
+ * Returns { block: true, blockReason } when the engine returns forbid.
  * Fails closed on unexpected errors.
  */
 /** Format a matched rule for log output. */
@@ -384,7 +384,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }
     console.log(`[openauthority] │ [cedar] matched: ${formatMatchedRule(decision.matchedRule)}`);
     if (decision.matchedRule?.reason) console.log(`[openauthority] │ [cedar] reason: ${decision.matchedRule.reason}`);
     if (decision.rateLimit) console.log(`[openauthority] │ [cedar] rate-limit: ${decision.rateLimit.currentCount}/${decision.rateLimit.maxCalls} per ${decision.rateLimit.windowSeconds}s${decision.rateLimit.limited ? " [EXCEEDED]" : ""}`);
-    if (decision.effect === "forbid" || decision.effect === "deny") {
+    if (decision.effect === "forbid") {
       const blockReason = decision.reason ?? "Tool call denied by Cedar policy";
       console.log(`[openauthority] │ DECISION: ✕ BLOCKED (cedar/${decision.effect}) — ${blockReason}`);
       console.log(`[openauthority] └──────────────────────────────────────────────────────`);
@@ -403,7 +403,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }
       const jsonDecision = jsonRulesEngineRef.current.evaluate("tool", toolName, ruleContext);
       console.log(`[openauthority] │ [json-rules] matched: ${formatMatchedRule(jsonDecision.matchedRule)}`);
       if (jsonDecision.matchedRule?.reason) console.log(`[openauthority] │ [json-rules] reason: ${jsonDecision.matchedRule.reason}`);
-      if (jsonDecision.effect === "forbid" || jsonDecision.effect === "deny") {
+      if (jsonDecision.effect === "forbid") {
         const blockReason = jsonDecision.reason ?? "Tool call denied by JSON rule";
         console.log(`[openauthority] │ DECISION: ✕ BLOCKED (json-rules/${jsonDecision.effect}) — ${blockReason}`);
         console.log(`[openauthority] └──────────────────────────────────────────────────────`);
@@ -479,8 +479,8 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }
     // NOTE: We do NOT evaluate the raw prompt text as a "prompt" resource here.
     // The prompt text is the full conversation/system prompt — not a resource
     // identifier. Evaluating it against prompt rules (which match short identifiers
-    // like "system-prompt-v2") would always result in implicit deny, causing
-    // unnecessary policy warnings on every single API call.
+    // like "system-prompt-v2") would always result in implicit permit, causing
+    // unnecessary noise on every single API call.
 
     console.log(`[openauthority] ✓ before_prompt_build OK — no injection detected`);
     console.log(`[openauthority] ◀ before_prompt_build EXIT  → no modification`);
@@ -504,9 +504,8 @@ const beforeModelResolveHandler: BeforeModelResolveHandler = ({ prompt }, ctx) =
 
   // NOTE: The before_model_resolve event only provides `prompt` (the full prompt
   // text), NOT the model name. Evaluating the prompt text against model rules
-  // (which match patterns like /^claude-/) would always produce implicit deny,
-  // causing a modelOverride on every call — potentially triggering a re-resolve
-  // loop and API rate limits.
+  // (which match patterns like /^claude-/) would produce misleading results,
+  // potentially triggering a modelOverride on every call and API rate limits.
   //
   // This hook will be useful once openclaw passes the model name in the event.
   // For now, pass through without interference.

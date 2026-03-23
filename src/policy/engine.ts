@@ -1,6 +1,6 @@
 import type { Rule, RuleContext, Resource } from './types.js';
 
-export type EvaluationEffect = 'permit' | 'forbid' | 'deny';
+export type EvaluationEffect = 'permit' | 'forbid';
 
 /** Rate limit status included in evaluation decisions when a rule carries rateLimit config. */
 export interface RateLimitStatus {
@@ -31,6 +31,13 @@ export interface PolicyEngineOptions {
    * Defaults to 0.
    */
   cleanupIntervalMs?: number;
+
+  /**
+   * Default effect when no rule matches a request.
+   * - `'permit'` (default) — implicit permit. No matching rule = allowed. Safe for plugin environments like OpenClaw where blocking unknown tools would break the agent.
+   * - `'forbid'` — implicit deny, Cedar-standard. No matching rule = denied. Use for locked-down production deployments.
+   */
+  defaultEffect?: 'permit' | 'forbid';
 }
 
 function matchesPattern(pattern: string | RegExp, value: string): boolean {
@@ -48,6 +55,7 @@ const timerApi = globalThis as unknown as {
 
 export class PolicyEngine {
   private _rules: Rule[] = [];
+  private readonly _defaultEffect: 'permit' | 'forbid';
 
   /** Read-only view of loaded rules (for diagnostics / logging). */
   get rules(): readonly Rule[] {
@@ -58,6 +66,7 @@ export class PolicyEngine {
   private cleanupTimer?: TimerHandle;
 
   constructor(options: PolicyEngineOptions = {}) {
+    this._defaultEffect = options.defaultEffect ?? 'permit';
     const intervalMs = options.cleanupIntervalMs ?? 0;
     if (intervalMs > 0) {
       this.cleanupTimer = timerApi.setInterval(() => this.cleanup(), intervalMs);
@@ -116,7 +125,7 @@ export class PolicyEngine {
    * Evaluate access for a resource using Cedar-style semantics:
    * - explicit forbid wins over permit
    * - rate-limited permits synthesize a forbid decision
-   * - implicit deny when no rules match
+   * - configurable default effect when no rules match (default: permit / implicit allow)
    */
   evaluate(
     resource: Resource,
@@ -188,8 +197,13 @@ export class PolicyEngine {
       }
     }
 
-    // Implicit permit — allow unless explicitly forbidden
-    return { effect: 'permit', reason: 'No matching rule; implicit permit' };
+    // No matching rule — apply configured default effect
+    return {
+      effect: this._defaultEffect,
+      reason: this._defaultEffect === 'forbid'
+        ? 'No matching rule; implicit deny'
+        : 'No matching rule; implicit permit',
+    };
   }
 
   private checkAndRecordRateLimit(

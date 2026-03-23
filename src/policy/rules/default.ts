@@ -3,8 +3,9 @@ import type { Rule } from '../types.js';
 /**
  * Baseline policy rules for the Open Authority openclaw plugin.
  *
- * Rules are evaluated with Cedar semantics: forbid always wins over permit,
- * and an implicit deny applies when no rule matches.
+ * Rules are evaluated with Cedar semantics: forbid always wins over permit.
+ * When no rule matches, the engine's configured default effect applies
+ * (implicit permit by default to avoid blocking OpenClaw tool calls).
  *
  * These rules apply to all agents. Per-agent overrides and extensions live in
  * sibling rule files (e.g. support.ts) and are merged over these defaults
