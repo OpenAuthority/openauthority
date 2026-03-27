@@ -41,15 +41,26 @@ export const HitlPolicySchema = Type.Object({
   tags: Type.Optional(Type.Array(Type.String())),
 });
 
+/** Telegram bot configuration for HITL approval requests. */
+export const TelegramConfigSchema = Type.Object({
+  /** Telegram Bot API token. Overridden by TELEGRAM_BOT_TOKEN env var. */
+  botToken: Type.Optional(Type.String()),
+  /** Telegram chat ID to send approval requests to. Overridden by TELEGRAM_CHAT_ID env var. */
+  chatId: Type.Optional(Type.String()),
+});
+
 /** Top-level HITL policy configuration file schema. */
 export const HitlPolicyConfigSchema = Type.Object({
   /** Schema version. Must be "1". */
   version: Type.String({ minLength: 1 }),
   /** Ordered list of HITL policies. First match wins. */
   policies: Type.Array(HitlPolicySchema, { minItems: 1 }),
+  /** Optional Telegram configuration for policies that use channel: "telegram". */
+  telegram: Type.Optional(TelegramConfigSchema),
 });
 
 export type HitlFallback = Static<typeof HitlFallbackSchema>;
 export type HitlApprovalConfig = Static<typeof HitlApprovalConfigSchema>;
 export type HitlPolicy = Static<typeof HitlPolicySchema>;
 export type HitlPolicyConfig = Static<typeof HitlPolicyConfigSchema>;
+export type TelegramConfig = Static<typeof TelegramConfigSchema>;
