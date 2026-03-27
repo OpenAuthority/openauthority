@@ -15,6 +15,7 @@ export type {
   AuditEntry,
   AuditHandler,
   PolicyDecisionEntry,
+  HitlDecisionEntry,
   JsonlAuditLoggerOptions,
 } from "./audit.js";
 
@@ -30,6 +31,7 @@ export {
   HitlApprovalConfigSchema,
   HitlPolicySchema,
   HitlPolicyConfigSchema,
+  TelegramConfigSchema,
   matchesActionPattern,
   checkAction,
   parseHitlPolicyFile,
@@ -37,24 +39,44 @@ export {
   HitlPolicyParseError,
   HitlPolicyValidationError,
   startHitlPolicyWatcher,
+  ApprovalManager,
+  generateToken,
+  TelegramListener,
+  sendApprovalRequest,
+  sendConfirmation,
+  resolveTelegramConfig,
 } from "./hitl/index.js";
 export type {
   HitlFallback,
   HitlApprovalConfig,
   HitlPolicy,
   HitlPolicyConfig,
+  TelegramConfig,
   HitlCheckResult,
   HitlWatcherHandle,
+  HitlDecision,
+  CreateApprovalOpts,
+  ApprovalRequestHandle,
+  ResolvedTelegramConfig,
+  SendApprovalOpts,
+  TelegramCommand,
 } from "./hitl/index.js";
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
 import { PolicyEngine as TypeboxPolicyEngine } from "./engine.js";
-import { AuditLogger, consoleAuditHandler } from "./audit.js";
+import { AuditLogger, consoleAuditHandler, JsonlAuditLogger } from "./audit.js";
+import type { HitlDecisionEntry } from "./audit.js";
 import type { TPolicy } from "./types.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules from "./policy/rules.js";
 import { startRulesWatcher, type WatcherHandle } from "./watcher.js";
+import { checkAction } from "./hitl/matcher.js";
+import { parseHitlPolicyFile } from "./hitl/parser.js";
+import { startHitlPolicyWatcher, type HitlWatcherHandle } from "./hitl/watcher.js";
+import type { HitlPolicyConfig } from "./hitl/types.js";
+import { ApprovalManager } from "./hitl/approval-manager.js";
+import { TelegramListener, sendApprovalRequest, sendConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -345,6 +367,17 @@ async function loadJsonRules(): Promise<void> {
   }
 }
 
+// ─── HITL state ──────────────────────────────────────────────────────────────
+
+/** Mutable ref for the loaded HITL policy config. null until loaded. */
+const hitlConfigRef: { current: HitlPolicyConfig | null } = { current: null };
+let hitlWatcher: HitlWatcherHandle | null = null;
+let telegramListener: TelegramListener | null = null;
+const approvalManager = new ApprovalManager();
+
+/** JSONL audit logger for HITL decisions — initialised in activate(). */
+let hitlAuditLogger: JsonlAuditLogger | null = null;
+
 /** Activation guard — prevents duplicate hook registration when openclaw
  *  loads the plugin from multiple subsystems (gateway, CLI, etc.). */
 let activated = false;
@@ -365,6 +398,30 @@ function formatMatchedRule(rule: { effect: string; resource: string; match: stri
   const truncMatch = match.length > 40 ? match.slice(0, 37) + "..." : match;
   const cond = rule.condition ? " [conditional]" : "";
   return `${rule.effect} ${rule.resource}:${truncMatch}${cond}`;
+}
+
+/** Log a HITL decision to the JSONL audit file. */
+async function logHitlDecision(
+  decision: HitlDecisionEntry['decision'],
+  token: string,
+  toolName: string,
+  agentId: string,
+  channel: string,
+  policyName: string,
+  timeoutSeconds: number,
+): Promise<void> {
+  if (!hitlAuditLogger) return;
+  await hitlAuditLogger.log({
+    ts: new Date().toISOString(),
+    type: 'hitl',
+    decision,
+    token,
+    toolName,
+    agentId,
+    channel,
+    policyName,
+    timeoutSeconds,
+  });
 }
 
 const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }, ctx) => {
@@ -447,6 +504,95 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }
     return { block: true, blockReason: "ABAC policy evaluation error — fail closed" };
   }
 
+  // ── 4. HITL policy check ──────────────────────────────────────────────────
+  if (hitlConfigRef.current !== null) {
+    try {
+      const hitlResult = checkAction(hitlConfigRef.current, toolName);
+
+      if (hitlResult.requiresApproval && hitlResult.matchedPolicy) {
+        const policy = hitlResult.matchedPolicy;
+        console.log(`[openauthority] │ [hitl] matched policy "${policy.name}" — requesting approval via ${policy.approval.channel}`);
+
+        if (policy.approval.channel === 'telegram') {
+          const telegramConfig = resolveTelegramConfig(hitlConfigRef.current.telegram);
+
+          if (!telegramConfig) {
+            console.log(`[openauthority] │ [hitl] telegram not configured — applying fallback: ${policy.approval.fallback}`);
+            await logHitlDecision(policy.approval.fallback === 'deny' ? 'fallback-deny' : 'fallback-auto-approve', '', toolName, ruleContext.agentId, ruleContext.channel, policy.name, policy.approval.timeout);
+            if (policy.approval.fallback === 'deny') {
+              console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/telegram-not-configured)`);
+              console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+              return { block: true, blockReason: 'HITL approval required but Telegram not configured' };
+            }
+            // auto-approve fallback — fall through
+          } else {
+            const { token, promise } = approvalManager.createApprovalRequest({
+              toolName,
+              agentId: ruleContext.agentId,
+              channelId: ruleContext.channel,
+              policy,
+            });
+
+            const sent = await sendApprovalRequest(telegramConfig, {
+              token,
+              toolName,
+              agentId: ruleContext.agentId,
+              policyName: policy.name,
+              timeoutSeconds: policy.approval.timeout,
+            });
+
+            if (!sent) {
+              approvalManager.cancel(token);
+              console.log(`[openauthority] │ [hitl] telegram unreachable — applying fallback: ${policy.approval.fallback}`);
+              await logHitlDecision('telegram-unreachable', token, toolName, ruleContext.agentId, ruleContext.channel, policy.name, policy.approval.timeout);
+              if (policy.approval.fallback === 'deny') {
+                console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/telegram-unreachable)`);
+                console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+                return { block: true, blockReason: 'HITL: Telegram unreachable — fail closed' };
+              }
+              // auto-approve fallback — fall through
+            } else {
+              console.log(`[openauthority] │ [hitl] awaiting operator response for token=${token} (timeout=${policy.approval.timeout}s)`);
+              const decision = await promise;
+
+              if (decision === 'approved') {
+                console.log(`[openauthority] │ [hitl] ✓ APPROVED (token=${token})`);
+                await logHitlDecision('approved', token, toolName, ruleContext.agentId, ruleContext.channel, policy.name, policy.approval.timeout);
+                void sendConfirmation(telegramConfig, { token, decision: 'approved', toolName });
+              } else if (decision === 'denied') {
+                console.log(`[openauthority] │ [hitl] ✕ DENIED (token=${token})`);
+                await logHitlDecision('denied', token, toolName, ruleContext.agentId, ruleContext.channel, policy.name, policy.approval.timeout);
+                void sendConfirmation(telegramConfig, { token, decision: 'denied', toolName });
+                console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/denied)`);
+                console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+                return { block: true, blockReason: 'HITL: Operator denied the tool call' };
+              } else {
+                // expired
+                console.log(`[openauthority] │ [hitl] ⏱ EXPIRED (token=${token}) — fallback: ${policy.approval.fallback}`);
+                const auditDecision = policy.approval.fallback === 'deny' ? 'fallback-deny' as const : 'fallback-auto-approve' as const;
+                await logHitlDecision(auditDecision, token, toolName, ruleContext.agentId, ruleContext.channel, policy.name, policy.approval.timeout);
+                if (policy.approval.fallback === 'deny') {
+                  void sendConfirmation(telegramConfig, { token, decision: 'expired (denied)', toolName });
+                  console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/expired-deny)`);
+                  console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+                  return { block: true, blockReason: 'HITL: Approval timed out — denied by policy fallback' };
+                }
+                void sendConfirmation(telegramConfig, { token, decision: 'expired (auto-approved)', toolName });
+                // auto-approve fallback — fall through
+              }
+            }
+          }
+        }
+      } else {
+        console.log(`[openauthority] │ [hitl] ✓ no matching HITL policy`);
+      }
+    } catch (err) {
+      console.error(`[openauthority] │ [hitl] ✕ ERROR — fail closed`, err);
+      console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+      return { block: true, blockReason: 'HITL evaluation error — fail closed' };
+    }
+  }
+
   console.log(`[openauthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
   console.log(`[openauthority] └──────────────────────────────────────────────────────`);
   return;
@@ -523,7 +669,7 @@ const plugin: OpenclawPlugin = {
   name: "openauthority",
   version: "1.0.0",
 
-  activate(ctx: OpenclawPluginContext) {
+  async activate(ctx: OpenclawPluginContext) {
     // ── Typed hooks: register into EVERY registry ───────────────────────────
     // OpenClaw loads plugins from multiple subsystems, each with its own
     // registry. ctx.on() targets the calling registry's typedHooks array.
@@ -598,10 +744,69 @@ const plugin: OpenclawPlugin = {
       console.log(`│  ${effect} ${r.resource}:${truncMatch}${cond}`.padEnd(63) + "│");
     }
     console.log("└──────────────────────────────────────────────────────────────┘");
+
+    // ── HITL policy loading + Telegram listener ─────────────────────────────
+    try {
+      const moduleDir = dirname(fileURLToPath(import.meta.url));
+      const pluginRoot = resolve(moduleDir, "..");
+      const hitlPolicyPath = resolve(pluginRoot, "hitl-policy.yaml");
+
+      const hitlConfig = await parseHitlPolicyFile(hitlPolicyPath);
+      hitlConfigRef.current = hitlConfig;
+
+      // Initialise HITL audit logger (same data/ directory as other audit logs)
+      const auditLogPath = resolve(pluginRoot, "data", "audit.jsonl");
+      hitlAuditLogger = new JsonlAuditLogger({ logFile: auditLogPath });
+
+      // Start hot-reload watcher
+      hitlWatcher = startHitlPolicyWatcher(hitlPolicyPath, hitlConfigRef as { current: HitlPolicyConfig });
+
+      // Start Telegram listener if configured
+      const telegramConfig = resolveTelegramConfig(hitlConfig.telegram);
+      if (telegramConfig) {
+        telegramListener = new TelegramListener(
+          telegramConfig.botToken,
+          (command, token) => {
+            const decision = command === 'approve' ? 'approved' as const : 'denied' as const;
+            const resolved = approvalManager.resolveApproval(token, decision);
+            if (!resolved) {
+              console.log(`[hitl-telegram] unknown or expired token: ${token}`);
+            }
+          },
+        );
+        telegramListener.start();
+        console.log(`[plugin:openauthority] HITL loaded: ${hitlConfig.policies.length} polic${hitlConfig.policies.length !== 1 ? 'ies' : 'y'}, Telegram listener active`);
+      } else {
+        console.log(`[plugin:openauthority] HITL loaded: ${hitlConfig.policies.length} polic${hitlConfig.policies.length !== 1 ? 'ies' : 'y'} (no Telegram config — will apply fallbacks for telegram-channel policies)`);
+      }
+    } catch (err) {
+      // HITL is optional — failing to load doesn't prevent activation
+      const code = (err as NodeJS.ErrnoException)?.code;
+      if (code === 'ENOENT') {
+        console.log("[plugin:openauthority] no hitl-policy.yaml found — HITL disabled");
+      } else {
+        console.warn("[plugin:openauthority] HITL policy not loaded (invalid config):", err);
+      }
+    }
+
     console.log("[plugin:openauthority] activated – lifecycle hooks registered");
   },
 
   async deactivate() {
+    // ── HITL cleanup ──────────────────────────────────────────────────────
+    if (telegramListener !== null) {
+      telegramListener.stop();
+      telegramListener = null;
+    }
+    approvalManager.shutdown();
+    if (hitlWatcher !== null) {
+      await hitlWatcher.stop();
+      hitlWatcher = null;
+    }
+    hitlConfigRef.current = null;
+    hitlAuditLogger = null;
+
+    // ── Rules watcher cleanup ─────────────────────────────────────────────
     if (rulesWatcher !== null) {
       await rulesWatcher.stop();
       rulesWatcher = null;

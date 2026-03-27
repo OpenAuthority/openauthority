@@ -1,15 +1,21 @@
 version: "1"
 
+# Telegram credentials are resolved from env vars TELEGRAM_BOT_TOKEN and
+# TELEGRAM_CHAT_ID. They can also be set here, but env vars take precedence.
+# telegram:
+#   botToken: ""
+#   chatId: ""
+
 policies:
   # Require approval before sending or deleting emails
   - name: Email mutations
-    description: All email-writing and deletion actions route to the Slack approval channel.
+    description: All email-writing and deletion actions route to Telegram for operator approval.
     actions:
       - email.send
       - email.delete
       - email.forward
     approval:
-      channel: slack
+      channel: telegram
       timeout: 300   # 5 minutes
       fallback: deny
     tags:
@@ -25,7 +31,7 @@ policies:
       - file.move
       - file.rename
     approval:
-      channel: slack
+      channel: telegram
       timeout: 120   # 2 minutes
       fallback: deny
     tags:
@@ -39,7 +45,7 @@ policies:
       - db.select
       - db.count
     approval:
-      channel: console
+      channel: telegram
       timeout: 10
       fallback: auto-approve
     tags:
@@ -52,7 +58,7 @@ policies:
     actions:
       - payment.*
     approval:
-      channel: email
+      channel: telegram
       timeout: 600   # 10 minutes
       fallback: deny
     tags:
