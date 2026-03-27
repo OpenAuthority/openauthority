@@ -6,8 +6,16 @@ version: "1"
 #   botToken: ""
 #   chatId: ""
 
+# Slack credentials are resolved from env vars SLACK_BOT_TOKEN, SLACK_CHANNEL_ID,
+# and SLACK_SIGNING_SECRET. The interaction webhook port defaults to 3201.
+# slack:
+#   botToken: ""
+#   channelId: ""
+#   signingSecret: ""
+#   interactionPort: 3201
+
 policies:
-  # Require approval before sending or deleting emails
+  # Require approval before sending or deleting emails (via Telegram)
   - name: Email mutations
     description: All email-writing and deletion actions route to Telegram for operator approval.
     actions:
@@ -22,16 +30,16 @@ policies:
       - email
       - destructive
 
-  # Any file-system write operation requires sign-off
+  # Any file-system write operation requires sign-off (via Slack)
   - name: File writes
-    description: Write, edit, move, and delete file operations require human review.
+    description: Write, edit, move, and delete file operations require human review via Slack.
     actions:
       - file.write
       - file.delete
       - file.move
       - file.rename
     approval:
-      channel: telegram
+      channel: slack
       timeout: 120   # 2 minutes
       fallback: deny
     tags:
@@ -58,7 +66,7 @@ policies:
     actions:
       - payment.*
     approval:
-      channel: telegram
+      channel: slack
       timeout: 600   # 10 minutes
       fallback: deny
     tags:

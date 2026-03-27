@@ -49,6 +49,18 @@ export const TelegramConfigSchema = Type.Object({
   chatId: Type.Optional(Type.String()),
 });
 
+/** Slack bot configuration for HITL approval requests with interactive buttons. */
+export const SlackConfigSchema = Type.Object({
+  /** Slack Bot User OAuth Token (xoxb-...). Overridden by SLACK_BOT_TOKEN env var. */
+  botToken: Type.Optional(Type.String()),
+  /** Slack channel ID to post approval messages to. Overridden by SLACK_CHANNEL_ID env var. */
+  channelId: Type.Optional(Type.String()),
+  /** Slack Signing Secret for verifying interaction webhooks. Overridden by SLACK_SIGNING_SECRET env var. */
+  signingSecret: Type.Optional(Type.String()),
+  /** Port for the interaction webhook server. Overridden by SLACK_INTERACTION_PORT env var. Default: 3201. */
+  interactionPort: Type.Optional(Type.Number({ minimum: 1 })),
+});
+
 /** Top-level HITL policy configuration file schema. */
 export const HitlPolicyConfigSchema = Type.Object({
   /** Schema version. Must be "1". */
@@ -57,6 +69,8 @@ export const HitlPolicyConfigSchema = Type.Object({
   policies: Type.Array(HitlPolicySchema, { minItems: 1 }),
   /** Optional Telegram configuration for policies that use channel: "telegram". */
   telegram: Type.Optional(TelegramConfigSchema),
+  /** Optional Slack configuration for policies that use channel: "slack". */
+  slack: Type.Optional(SlackConfigSchema),
 });
 
 export type HitlFallback = Static<typeof HitlFallbackSchema>;
@@ -64,3 +78,4 @@ export type HitlApprovalConfig = Static<typeof HitlApprovalConfigSchema>;
 export type HitlPolicy = Static<typeof HitlPolicySchema>;
 export type HitlPolicyConfig = Static<typeof HitlPolicyConfigSchema>;
 export type TelegramConfig = Static<typeof TelegramConfigSchema>;
+export type SlackConfig = Static<typeof SlackConfigSchema>;

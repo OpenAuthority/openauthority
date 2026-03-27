@@ -79,7 +79,8 @@ export interface HitlDecisionEntry {
     | 'expired'
     | 'fallback-deny'
     | 'fallback-auto-approve'
-    | 'telegram-unreachable';
+    | 'telegram-unreachable'
+    | 'slack-unreachable';
   token: string;
   toolName: string;
   agentId: string;

@@ -5,6 +5,7 @@ export {
   HitlPolicySchema,
   HitlPolicyConfigSchema,
   TelegramConfigSchema,
+  SlackConfigSchema,
 } from './types.js';
 export type {
   HitlFallback,
@@ -12,6 +13,7 @@ export type {
   HitlPolicy,
   HitlPolicyConfig,
   TelegramConfig,
+  SlackConfig,
 } from './types.js';
 
 // ─── Pattern matching ─────────────────────────────────────────────────────────
@@ -37,3 +39,7 @@ export type { HitlDecision, CreateApprovalOpts, ApprovalRequestHandle } from './
 // ─── Telegram adapter ────────────────────────────────────────────────────────
 export { TelegramListener, sendApprovalRequest, sendConfirmation, resolveTelegramConfig } from './telegram.js';
 export type { ResolvedTelegramConfig, SendApprovalOpts, TelegramCommand } from './telegram.js';
+
+// ─── Slack adapter ──────────────────────────────────────────────────────────
+export { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig, verifySlackSignature } from './slack.js';
+export type { ResolvedSlackConfig, SlackSendApprovalOpts, SlackSendApprovalResult, SlackActionCommand } from './slack.js';
