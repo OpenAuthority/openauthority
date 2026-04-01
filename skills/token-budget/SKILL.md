@@ -1,6 +1,6 @@
 ---
 name: token-budget
-version: 1.0.1
+version: 1.0.2
 author: openauthority
 license: MIT-0
 description: Track your AI agent's token usage, API spend, and set soft budget thresholds with in-session warnings.

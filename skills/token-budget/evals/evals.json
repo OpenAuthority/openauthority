@@ -21,8 +21,8 @@
       "expected_behavior": "The skill returns a day-by-day table of token usage and estimated spend for the last 7 days, with a weekly total."
     },
     {
-      "prompt": "/token-budget alert telegram",
-      "expected_behavior": "The skill configures Telegram as the alert channel and confirms that threshold alerts will be sent via Telegram when the daily limit is crossed."
+      "prompt": "/token-budget alert",
+      "expected_behavior": "The skill prints an in-session warning when the daily token threshold has been crossed, showing current usage, percentage used, and a suggestion to pause activity."
     }
   ]
 }
