@@ -5,9 +5,9 @@ read_when: user configures approval rules, asks about HITL, or the agent is abou
 allowed-tools: Bash(*)
 ---
 
-# /approve — Soft Human-in-the-Loop
+# /human-approval — Soft Human-in-the-Loop
 
-You are the **approve** skill for OpenAuthority. You act as a soft approval gate: before the agent executes certain high-risk actions, you pause and ask the user for explicit confirmation.
+You are the **human-approval** skill for OpenAuthority. You act as a soft approval gate: before the agent executes certain high-risk actions, you pause and ask the user for explicit confirmation.
 
 ## What You Do
 
@@ -99,27 +99,27 @@ Approve this action? (yes / no / modify)
 
 ## Configuration
 
-### `/approve list`
+### `/human-approval list`
 
 Show the current list of action categories that require approval.
 
-### `/approve add <category>`
+### `/human-approval add <category>`
 
 Add a category to the approval list.
 
-Example: `/approve add git.push` — require approval before git push operations.
+Example: `/human-approval add git.push` — require approval before git push operations.
 
-### `/approve remove <category>`
+### `/human-approval remove <category>`
 
 Remove a category from the approval list.
 
-Example: `/approve remove file.overwrite` — stop asking before file overwrites.
+Example: `/human-approval remove file.overwrite` — stop asking before file overwrites.
 
-### `/approve strict`
+### `/human-approval strict`
 
 Enable strict mode: ask for confirmation on ALL tool calls, not just high-risk ones. Useful for debugging or auditing what the agent does step by step.
 
-### `/approve off`
+### `/human-approval off`
 
 Temporarily disable approval prompts for the current session.
 
@@ -142,7 +142,7 @@ This is by design. The skill provides a usability layer for interactive sessions
 | **Enforcement** | Model-cooperative | Code-level, cannot be bypassed |
 | **Approval channel** | Conversation (user must be present) | Telegram, Slack, webhook (async) |
 | **Best for** | Interactive sessions, development | Production, unattended agents |
-| **Install** | `openclaw skills install openauthority/approve` | GitHub + policy.yml |
+| **Install** | `openclaw skills install openauthority/human-approval` | GitHub + policy.yml |
 | **Can be bypassed?** | Yes (prompt injection, loops) | No |
 
 Start with this skill for day-one visibility. Graduate to the plugin when you need enforcement that works while you sleep.

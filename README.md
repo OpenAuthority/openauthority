@@ -218,7 +218,7 @@ src/
 skills/
   budget/           — /budget skill for ClawHub (token tracking, spend alerts)
   whatdidyoudo/     — /whatdidyoudo skill for ClawHub (action replay log)
-  approve/          — /approve skill for ClawHub (soft HITL approval gate)
+  human-approval/   — /human-approval skill for ClawHub (soft HITL approval gate)
 ui/
   server.ts         — Express dashboard server
   routes/
