@@ -1,11 +1,10 @@
 ---
 name: whatdidyoudo
-version: 1.0.0
+version: 1.0.1
 author: openauthority
 license: MIT-0
 description: Reconstruct and display a plain-language log of recent agent tool calls, actions taken, and decisions made.
 read_when: user asks what the agent did, wants to review recent actions, asks for a log, or invokes /whatdidyoudo
-allowed-tools: Bash(*)
 ---
 
 # /whatdidyoudo — Agent Action Replay
@@ -92,6 +91,18 @@ Tests run:      3 times (all passing)
 Errors:         1 (npm install — resolved)
 ─────────────────────────────────────────────
 ```
+
+## Redaction Policy
+
+To protect sensitive data, this skill **never** includes the following in its output:
+
+- API keys, tokens, or secrets (any value matching patterns like `sk-`, `Bearer `, `ghp_`, `xoxb-`, or similar)
+- Passwords or credentials passed as arguments
+- Full content of files — only file names and operation types are shown
+- Raw HTTP request/response bodies
+- Environment variable values
+
+If a tool call argument appears to contain a secret, the skill replaces it with `[REDACTED]`.
 
 ## How It Works
 
