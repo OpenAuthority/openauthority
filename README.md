@@ -216,7 +216,7 @@ src/
     parser.ts       — YAML/JSON policy file parsing and validation
     watcher.ts      — HITL policy hot-reload watcher
 skills/
-  budget/           — /budget skill for ClawHub (token tracking, spend alerts)
+  token-budget/     — /token-budget skill for ClawHub (token tracking, spend alerts)
   whatdidyoudo/     — /whatdidyoudo skill for ClawHub (action replay log)
   human-approval/   — /human-approval skill for ClawHub (soft HITL approval gate)
 ui/

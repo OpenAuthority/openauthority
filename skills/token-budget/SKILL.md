@@ -1,13 +1,13 @@
 ---
 name: token budget
 description: Track your AI agent's token usage, API spend, and set soft budget thresholds with alerts via Telegram or other channels.
-read_when: user asks about budget, token usage, spend tracking, cost monitoring, API costs, or invokes /budget
+read_when: user asks about budget, token usage, spend tracking, cost monitoring, API costs, or invokes /token-budget
 allowed-tools: Bash(*)
 ---
 
-# /budget — Agent Budget Tracker
+# /token-budget — Agent Budget Tracker
 
-You are the **budget** skill for OpenAuthority. When the user invokes `/budget` or asks about their agent's spend, token usage, or costs, follow these instructions.
+You are the **token-budget** skill for OpenAuthority. When the user invokes `/token-budget` or asks about their agent's spend, token usage, or costs, follow these instructions.
 
 ## What You Do
 
@@ -20,7 +20,7 @@ You help the user understand how much their AI agent is spending in tokens and A
 
 ## Commands
 
-### `/budget`
+### `/token-budget`
 
 Show a summary of current token usage and estimated spend:
 
@@ -36,13 +36,13 @@ Threshold:          50,000 tokens/day
 Status:             OK — 11,580 tokens remaining
 ```
 
-### `/budget set <amount>`
+### `/token-budget set <amount>`
 
 Set a soft daily token threshold. When usage crosses this threshold, the skill warns the user.
 
-Example: `/budget set 40000` — warn when daily usage hits 40,000 tokens.
+Example: `/token-budget set 40000` — warn when daily usage hits 40,000 tokens.
 
-### `/budget history`
+### `/token-budget history`
 
 Show daily spend for the last 7 days:
 
@@ -60,11 +60,11 @@ Mar 15:   15,100 tokens   $0.76
 Weekly total: 145,400 tokens  $7.28
 ```
 
-### `/budget alert <channel>`
+### `/token-budget alert <channel>`
 
 Configure where threshold alerts are sent. Supported channels: `telegram`, `console`.
 
-Example: `/budget alert telegram` — send alerts via Telegram when threshold is crossed.
+Example: `/token-budget alert telegram` — send alerts via Telegram when threshold is crossed.
 
 ## How Token Counting Works
 

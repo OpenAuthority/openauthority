@@ -61,7 +61,7 @@ These features are built, tested, and working in the current codebase.
 - Policy coverage map visualization
 
 ### ClawHub Skills
-- `/budget` — token usage tracking, spend estimation, threshold alerts
+- `/token-budget` — token usage tracking, spend estimation, threshold alerts
 - `/whatdidyoudo` — action replay, plain-language tool call log
 - `/human-approval` — soft human-in-the-loop approval gate for interactive sessions
 
@@ -126,7 +126,7 @@ The `control-plane-api/` scaffold exists. Full implementation includes:
 - Centralised audit log aggregation across agents
 
 ### ClawHub Skill Publishing
-Publish the three skills (`budget`, `whatdidyoudo`, `human-approval`) to ClawHub as the official OpenAuthority skill pack. Each skill is a soft-enforcement layer that drives adoption of the plugin.
+Publish the three skills (`token-budget`, `whatdidyoudo`, `human-approval`) to ClawHub as the official OpenAuthority skill pack. Each skill is a soft-enforcement layer that drives adoption of the plugin.
 
 ### Policy Language Evolution
 - Cedar policy file format (`.cedar` files) alongside TypeScript rules
