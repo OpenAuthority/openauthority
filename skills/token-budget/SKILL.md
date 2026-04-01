@@ -1,5 +1,6 @@
 ---
 name: token budget
+version: 1.0.0
 description: Track your AI agent's token usage, API spend, and set soft budget thresholds with alerts via Telegram or other channels.
 read_when: user asks about budget, token usage, spend tracking, cost monitoring, API costs, or invokes /token-budget
 allowed-tools: Bash(*)
