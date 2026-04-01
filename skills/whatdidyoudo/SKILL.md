@@ -1,6 +1,8 @@
 ---
 name: whatdidyoudo
 version: 1.0.0
+author: openauthority
+license: MIT-0
 description: Reconstruct and display a plain-language log of recent agent tool calls, actions taken, and decisions made.
 read_when: user asks what the agent did, wants to review recent actions, asks for a log, or invokes /whatdidyoudo
 allowed-tools: Bash(*)
