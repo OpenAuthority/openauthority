@@ -248,4 +248,4 @@ npm run clean     # Remove dist/
 
 ## License
 
-MIT
+Apache-2.0
