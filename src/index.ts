@@ -29,6 +29,12 @@ export { default as defaultRules, mergeRules } from "./policy/rules.js";
 export { CoverageMap } from "./policy/coverage.js";
 export type { CoverageCell, CoverageEntry, CoverageState } from "./policy/coverage.js";
 
+// ─── Phase 3: Structured decision + envelope utilities ───────────────────────
+export { fromCeeDecision, askUser, forbidDecision } from "./enforcement/decision.js";
+export type { StructuredDecision, CapabilityInfo } from "./enforcement/decision.js";
+export { createStage2, createEnforcementEngine } from "./enforcement/stage2-policy.js";
+export { buildEnvelope, uuidv7, computePayloadHash, computeContextHash, sortedJsonStringify } from "./envelope.js";
+
 // ─── Human-in-the-loop policy configuration ──────────────────────────────────
 export {
   HitlFallbackSchema,
@@ -99,7 +105,7 @@ import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalize_action, sortedJsonStringify } from "./enforcement/normalize.js";
-import { buildEnvelope } from "./enforcement/pipeline.js";
+import { buildEnvelope } from "./envelope.js";
 
 // ─── Hook types (matching OpenClaw's actual API) ─────────────────────────────
 

@@ -2,7 +2,8 @@ import { readFile } from 'node:fs/promises';
 import { basename } from 'node:path';
 import chokidar from 'chokidar';
 import { Value } from '@sinclair/typebox/value';
-import { uuidv7, computeBinding } from '../hitl/approval-manager.js';
+import { uuidv7 } from '../envelope.js';
+import { computeBinding } from '../hitl/approval-manager.js';
 import {
   PolicyBundleSchema,
   type PolicyBundle,
