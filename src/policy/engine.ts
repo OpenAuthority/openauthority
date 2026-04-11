@@ -136,6 +136,7 @@ export class PolicyEngine {
 
     for (const rule of this._rules) {
       if (rule.resource !== resource) continue;
+      if (rule.match === undefined) continue;
       if (!matchesPattern(rule.match, resourceName)) continue;
       if (rule.condition !== undefined && !rule.condition(context)) continue;
       matchingRules.push(rule);

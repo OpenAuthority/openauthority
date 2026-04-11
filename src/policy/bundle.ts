@@ -69,7 +69,7 @@ export function validateBundle(bundle: unknown, currentVersion: number): BundleV
 
   // ── 2. Per-rule semantic check ────────────────────────────────────────────
   for (let i = 0; i < bundle.rules.length; i++) {
-    const rule = bundle.rules[i];
+    const rule = bundle.rules[i]!;
     if (rule.action_class === undefined && rule.resource === undefined) {
       return {
         valid: false,

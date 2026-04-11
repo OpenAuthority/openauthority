@@ -437,12 +437,13 @@ let activated = false;
  * Fails closed on unexpected errors.
  */
 /** Format a matched rule for log output. */
-function formatMatchedRule(rule: { effect: string; resource: string; match: string | RegExp; condition?: unknown; reason?: string } | undefined): string {
+function formatMatchedRule(rule: { effect: string; resource?: string; action_class?: string; match?: string | RegExp; condition?: unknown; reason?: string } | undefined): string {
   if (!rule) return "no matching rule (implicit permit)";
   const match = rule.match instanceof RegExp ? rule.match.source : String(rule.match ?? "*");
   const truncMatch = match.length > 40 ? match.slice(0, 37) + "..." : match;
   const cond = rule.condition ? " [conditional]" : "";
-  return `${rule.effect} ${rule.resource}:${truncMatch}${cond}`;
+  const scope = rule.resource ?? rule.action_class ?? "(action_class)";
+  return `${rule.effect} ${scope}:${truncMatch}${cond}`;
 }
 
 /**

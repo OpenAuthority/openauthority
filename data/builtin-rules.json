@@ -69,280 +69,88 @@
   {
     "id": "builtin-5",
     "effect": "permit",
-    "resource": "tool",
-    "match": "^(read_file|list_dir|search_files|get_file_info|glob)$",
-    "isRegex": true,
-    "reason": "Read-only file-system tools are permitted for all agents",
+    "isRegex": false,
+    "reason": "Filesystem read operations are permitted for all agents",
     "tags": [
-      "file",
+      "filesystem",
       "read-only"
     ]
   },
   {
     "id": "builtin-6",
-    "effect": "forbid",
-    "resource": "tool",
-    "match": "exec",
+    "effect": "permit",
     "isRegex": false,
-    "reason": "exec is forbidden; add command rules for shell access",
+    "reason": "Browser navigation is permitted for all agents",
     "tags": [
-      "security",
-      "exec"
+      "browser"
     ]
   },
   {
     "id": "builtin-7",
     "effect": "forbid",
-    "resource": "tool",
-    "match": "^(bash|shell|terminal|run_command|spawn)$",
-    "isRegex": true,
-    "reason": "Shell-spawning tools are forbidden by default",
+    "isRegex": false,
+    "reason": "Payment transfers require human-in-the-loop approval",
     "tags": [
-      "security",
-      "shell"
+      "payment",
+      "hitl"
     ]
   },
   {
     "id": "builtin-8",
-    "effect": "permit",
-    "resource": "tool",
-    "match": "^(write_file|edit_file|create_file|patch_file)$",
-    "isRegex": true,
-    "condition": "(ctx) => [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
-    "reason": "Write tools are restricted to trusted and CI channels",
+    "effect": "forbid",
+    "isRegex": false,
+    "reason": "Payment initiation requires human-in-the-loop approval",
     "tags": [
-      "file",
-      "write"
+      "payment",
+      "hitl"
     ]
   },
   {
     "id": "builtin-9",
     "effect": "forbid",
-    "resource": "tool",
-    "match": "delete_file",
     "isRegex": false,
-    "condition": "(ctx) => !ctx.agentId.startsWith(\"admin-\")",
-    "reason": "File deletion is restricted to admin agents",
+    "reason": "Credential access requires human-in-the-loop approval",
     "tags": [
-      "file",
-      "destructive"
+      "credential",
+      "hitl"
     ]
   },
   {
     "id": "builtin-10",
     "effect": "forbid",
-    "resource": "tool",
-    "match": "^(web_fetch|web_search)$",
-    "isRegex": true,
-    "reason": "Outbound web tools are forbidden by default; add a permit rule to enable them",
+    "isRegex": false,
+    "reason": "Credential write operations require human-in-the-loop approval",
     "tags": [
-      "security",
-      "network"
+      "credential",
+      "hitl"
     ]
   },
   {
     "id": "builtin-11",
-    "effect": "permit",
-    "resource": "tool",
-    "match": "*",
+    "effect": "forbid",
     "isRegex": false,
-    "condition": "(ctx) => ctx.channel === \"default\" || ctx.channel === \"webchat\"",
-    "reason": "Agents on the default/webchat channel have general tool access",
+    "reason": "System execution is unconditionally forbidden",
     "tags": [
-      "default"
+      "system",
+      "security"
     ]
   },
   {
     "id": "builtin-12",
-    "effect": "permit",
-    "resource": "command",
-    "match": "^(ls|cat|pwd|echo|date|whoami|uname|env|ps|df|du|wc|head|tail|grep|find|sort|uniq)$",
-    "isRegex": true,
-    "reason": "Safe read-only shell commands are permitted",
+    "effect": "forbid",
+    "isRegex": false,
+    "reason": "Account permission changes are unconditionally forbidden",
     "tags": [
-      "command",
-      "read-only"
+      "account",
+      "security"
     ]
   },
   {
     "id": "builtin-13",
     "effect": "forbid",
-    "resource": "command",
-    "match": "^(rm|rmdir|dd|shred|mkfs|fdisk|wipefs|truncate)$",
-    "isRegex": true,
-    "reason": "Destructive file-system commands are forbidden",
-    "tags": [
-      "command",
-      "destructive"
-    ]
-  },
-  {
-    "id": "builtin-14",
-    "effect": "forbid",
-    "resource": "command",
-    "match": "^(sudo|su|chmod|chown|chattr|setuid|setgid|newgrp)$",
-    "isRegex": true,
-    "reason": "Privilege-escalation commands are forbidden",
-    "tags": [
-      "command",
-      "privilege"
-    ]
-  },
-  {
-    "id": "builtin-15",
-    "effect": "permit",
-    "resource": "command",
-    "match": "git",
     "isRegex": false,
-    "condition": "(ctx) => [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
-    "reason": "git is permitted on trusted and CI channels",
+    "reason": "Unknown sensitive actions are unconditionally forbidden",
     "tags": [
-      "command",
-      "git"
-    ]
-  },
-  {
-    "id": "builtin-16",
-    "effect": "permit",
-    "resource": "command",
-    "match": "^(npm|yarn|pnpm|bun|pip|cargo|go)$",
-    "isRegex": true,
-    "condition": "(ctx) => Boolean(ctx.userId) && [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
-    "reason": "Package managers require an authenticated user on a trusted channel",
-    "tags": [
-      "command",
-      "package-manager"
-    ]
-  },
-  {
-    "id": "builtin-17",
-    "effect": "permit",
-    "resource": "channel",
-    "match": "default",
-    "isRegex": false,
-    "reason": "Default channel is accessible to all agents",
-    "tags": [
-      "channel"
-    ]
-  },
-  {
-    "id": "builtin-18",
-    "effect": "forbid",
-    "resource": "channel",
-    "match": "untrusted",
-    "isRegex": false,
-    "reason": "Untrusted channel is blocked by policy",
-    "tags": [
-      "channel",
-      "security"
-    ]
-  },
-  {
-    "id": "builtin-19",
-    "effect": "permit",
-    "resource": "channel",
-    "match": "admin",
-    "isRegex": false,
-    "condition": "(ctx) => ctx.agentId.startsWith(\"admin-\")",
-    "reason": "Admin channel is restricted to agents with the admin- id prefix",
-    "tags": [
-      "channel",
-      "admin"
-    ]
-  },
-  {
-    "id": "builtin-20",
-    "effect": "permit",
-    "resource": "channel",
-    "match": "^(trusted|ci|readonly)$",
-    "isRegex": true,
-    "reason": "Pre-approved named channels are permitted",
-    "tags": [
-      "channel"
-    ]
-  },
-  {
-    "id": "builtin-21",
-    "effect": "permit",
-    "resource": "prompt",
-    "match": "^user:",
-    "isRegex": true,
-    "reason": "User-scoped prompts are permitted",
-    "tags": [
-      "prompt"
-    ]
-  },
-  {
-    "id": "builtin-22",
-    "effect": "forbid",
-    "resource": "prompt",
-    "match": "^system:",
-    "isRegex": true,
-    "reason": "System prompt overrides are forbidden",
-    "tags": [
-      "prompt",
-      "security"
-    ]
-  },
-  {
-    "id": "builtin-23",
-    "effect": "forbid",
-    "resource": "prompt",
-    "match": "^(jailbreak:|override:|ignore-policy:|DAN:)",
-    "isRegex": true,
-    "reason": "Known jailbreak prompt prefixes are forbidden",
-    "tags": [
-      "prompt",
-      "security"
-    ]
-  },
-  {
-    "id": "builtin-24",
-    "effect": "permit",
-    "resource": "prompt",
-    "match": "^custom:",
-    "isRegex": true,
-    "condition": "(ctx) => Boolean(ctx.userId)",
-    "reason": "Custom prompts require an authenticated user",
-    "tags": [
-      "prompt",
-      "custom"
-    ]
-  },
-  {
-    "id": "builtin-25",
-    "effect": "permit",
-    "resource": "model",
-    "match": "^(anthropic\\/)?claude-",
-    "isRegex": true,
-    "reason": "Anthropic Claude models are permitted",
-    "tags": [
-      "model",
-      "anthropic"
-    ]
-  },
-  {
-    "id": "builtin-26",
-    "effect": "forbid",
-    "resource": "model",
-    "match": "-(preview|experimental|alpha|beta)(\\b|-|$)",
-    "isRegex": true,
-    "condition": "(ctx) => !ctx.agentId.startsWith(\"admin-\")",
-    "reason": "Preview and experimental model variants are restricted to admin agents",
-    "tags": [
-      "model",
-      "security"
-    ]
-  },
-  {
-    "id": "builtin-27",
-    "effect": "forbid",
-    "resource": "model",
-    "match": "^(?!anthropic\\/).+\\/.+",
-    "isRegex": true,
-    "reason": "Non-Anthropic model providers are forbidden by default",
-    "tags": [
-      "model",
       "security"
     ]
   }

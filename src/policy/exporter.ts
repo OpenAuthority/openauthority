@@ -16,14 +16,15 @@ import allRules from './rules.js';
  */
 export interface ExportedRule {
   effect: 'permit' | 'forbid';
-  resource: string;
-  match: string;
+  resource?: string;
+  match?: string;
   matchIsRegExp: boolean;
   hasCondition: boolean;
   reason?: string;
   tags?: string[];
   rateLimit?: { maxCalls: number; windowSeconds: number };
   action_class?: string;
+  priority?: number;
 }
 
 /**
@@ -48,8 +49,8 @@ function serializeRule(rule: Rule): ExportedRule {
   const isRegExp = rule.match instanceof RegExp;
   const exported: ExportedRule = {
     effect: rule.effect,
-    resource: rule.resource,
-    match: isRegExp ? (rule.match as RegExp).source : (rule.match as string),
+    ...(rule.resource !== undefined ? { resource: rule.resource } : {}),
+    ...(rule.match !== undefined ? { match: isRegExp ? (rule.match as RegExp).source : (rule.match as string) } : {}),
     matchIsRegExp: isRegExp,
     hasCondition: typeof rule.condition === 'function',
   };
@@ -58,6 +59,7 @@ function serializeRule(rule: Rule): ExportedRule {
   if (rule.tags !== undefined) exported.tags = rule.tags;
   if (rule.rateLimit !== undefined) exported.rateLimit = rule.rateLimit;
   if (rule.action_class !== undefined) exported.action_class = rule.action_class;
+  if (rule.priority !== undefined) exported.priority = rule.priority;
 
   return exported;
 }
