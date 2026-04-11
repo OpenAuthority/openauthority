@@ -6,6 +6,7 @@ import { PolicyEngine } from './policy/engine.js';
 import type { PolicyEngineOptions } from './policy/engine.js';
 import { mergeRules } from './policy/rules/index.js';
 import type { Rule, Effect, Resource } from './policy/types.js';
+import { CoverageMap } from './policy/coverage.js';
 
 /**
  * In-memory cache of last-successfully-loaded Rule arrays, keyed by file stem
@@ -162,6 +163,7 @@ export function startRulesWatcher(
   onReload?: (compiledRules: Rule[]) => void,
   engineOptions?: PolicyEngineOptions,
   initialRules?: Rule[],
+  coverageMap?: CoverageMap,
 ): WatcherHandle {
   const rulesDirUrl = new URL('./policy/rules/', import.meta.url);
   const watchPath = rulesDirUrl.pathname;
@@ -185,6 +187,7 @@ export function startRulesWatcher(
       const allRules = [...jsonRules, ...rules];
 
       rebuildEngine(allRules);
+      coverageMap?.reset();
       logRules(rules, 'compiled');
       logRules(jsonRules, 'UI (data/rules.json)');
       onReload?.(rules);
@@ -206,6 +209,7 @@ export function startRulesWatcher(
       ruleCache.set('json', jsonRules);
       const allRules = buildMergedFromCache();
       rebuildEngine(allRules);
+      coverageMap?.reset();
       logRules(jsonRules, 'UI (data/rules.json)');
       console.log(
         `[hot-reload] reloaded UI rules - ${allRules.length} rule${allRules.length !== 1 ? 's' : ''} total`,

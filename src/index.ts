@@ -25,6 +25,10 @@ export type { EvaluationDecision, EvaluationEffect } from "./policy/engine.js";
 export type { Rule, RuleContext, Resource, Effect, RateLimit } from "./policy/types.js";
 export { default as defaultRules, mergeRules } from "./policy/rules.js";
 
+// ─── Phase 2: Coverage tracking re-exports ───────────────────────────────────
+export { CoverageMap } from "./policy/coverage.js";
+export type { CoverageCell, CoverageEntry, CoverageState } from "./policy/coverage.js";
+
 // ─── Human-in-the-loop policy configuration ──────────────────────────────────
 export {
   HitlFallbackSchema,
@@ -82,6 +86,7 @@ import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules from "./policy/rules.js";
 import { startRulesWatcher, type WatcherHandle } from "./watcher.js";
+import { CoverageMap } from "./policy/coverage.js";
 import { checkAction } from "./hitl/matcher.js";
 import { parseHitlPolicyFile } from "./hitl/parser.js";
 import { startHitlPolicyWatcher, type HitlWatcherHandle } from "./hitl/watcher.js";
@@ -246,6 +251,13 @@ const cedarEngineRef: { current: CedarPolicyEngine } = {
   current: new CedarPolicyEngine({ defaultEffect: 'forbid' }),
 };
 cedarEngineRef.current.addRules(defaultRules);
+
+/**
+ * Phase 2: CoverageMap tracks every (resource, name) pair evaluated by the
+ * Cedar engine so the dashboard can render the coverage grid. Reset on each
+ * hot-reload cycle so stale entries don't linger after rule changes.
+ */
+export const coverageMap = new CoverageMap();
 
 // Log compiled rules at startup
 console.log(`[openauthority] compiled rules (${defaultRules.length}):`);
@@ -593,6 +605,9 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName }, ctx) => {
     console.log(`[openauthority] │ [cedar] matched: ${formatMatchedRule(decision.matchedRule)}`);
     if (decision.matchedRule?.reason) console.log(`[openauthority] │ [cedar] reason: ${decision.matchedRule.reason}`);
     if (decision.rateLimit) console.log(`[openauthority] │ [cedar] rate-limit: ${decision.rateLimit.currentCount}/${decision.rateLimit.maxCalls} per ${decision.rateLimit.windowSeconds}s${decision.rateLimit.limited ? " [EXCEEDED]" : ""}`);
+    // Phase 2: record in coverage map (rate-limited is a specialised forbid)
+    const covState = decision.rateLimit?.limited ? 'rate-limited' : decision.effect === 'permit' ? 'permit' : 'forbid';
+    coverageMap.record('tool', toolName, covState, decision.matchedRule);
     if (decision.effect === "forbid") {
       const blockReason = decision.reason ?? "Tool call denied by Cedar policy";
       console.log(`[openauthority] │ DECISION: ✕ BLOCKED (cedar/${decision.effect}) — ${blockReason}`);
@@ -804,7 +819,7 @@ const plugin: OpenclawPlugin = {
 
     rulesWatcher = startRulesWatcher(cedarEngineRef, 300, (compiledRules) => {
       writeBuiltinRulesSnapshot(compiledRules);
-    }, { defaultEffect: 'forbid' }, defaultRules);
+    }, { defaultEffect: 'forbid' }, defaultRules, coverageMap);
 
     // Load user-defined JSON rules from data/rules.json into the dedicated
     // JSON Cedar engine. Async but errors are swallowed so activation is
