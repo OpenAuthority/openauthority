@@ -1,8 +1,5 @@
-// ─── TypeBox-based engine re-exports (backwards-compatible) ──────────────────
-export { PolicyEngine } from "./engine.js";
-export type { PolicyEngineOptions } from "./engine.js";
+// ─── Audit re-exports ─────────────────────────────────────────────────────────
 export { AuditLogger, consoleAuditHandler, JsonlAuditLogger } from "./audit.js";
-export { evaluateRule, sortRulesByPriority } from "./rules.js";
 export type {
   TPolicyEffect,
   TPolicyCondition,
@@ -84,10 +81,8 @@ export type {
 } from "./hitl/index.js";
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
-import { PolicyEngine as TypeboxPolicyEngine } from "./engine.js";
 import { AuditLogger, consoleAuditHandler, JsonlAuditLogger } from "./audit.js";
 import type { HitlDecisionEntry } from "./audit.js";
-import type { TPolicy } from "./types.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules from "./policy/rules.js";
@@ -193,10 +188,6 @@ export interface OpenclawPlugin {
 }
 
 export interface OpenclawPluginContext {
-  /** Register the ABAC policy engine for the policy-evaluation capability. */
-  registerPolicyEngine(engine: TypeboxPolicyEngine): void;
-  /** Subscribe to policy-load events so new policies are added to the engine. */
-  onPolicyLoad(callback: (policy: TPolicy) => void): void;
   /** Register a handler for a lifecycle hook (legacy — pushes to registry.hooks only). */
   registerHook(hookName: "before_tool_call", handler: BeforeToolCallHandler, options?: { name?: string; description?: string }): void;
   registerHook(hookName: "before_prompt_build", handler: BeforePromptBuildHandler, options?: { name?: string; description?: string }): void;
@@ -255,9 +246,6 @@ function detectPromptInjection(messages?: unknown[]): boolean {
 
 const auditLogger = new AuditLogger();
 auditLogger.addHandler(consoleAuditHandler);
-
-/** ABAC engine for the policy-evaluation capability. */
-const abacEngine = new TypeboxPolicyEngine({ auditLogger });
 
 /** Mutable container for the Cedar-style engine used by lifecycle hooks.
  *  Hot reload swaps `.current` in-place so all hook handlers pick up new rules
@@ -711,46 +699,16 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source
     }
   }
 
-  // ── Fast path: no ABAC policies and no HITL — return synchronously ─────────
-  const abacPolicies = abacEngine.listPolicies();
-  if (abacPolicies.length === 0 && hitlConfigRef.current === null) {
+  // ── Fast path: no HITL — return synchronously ─────────────────────────────
+  if (hitlConfigRef.current === null) {
     console.log(`[openauthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
     console.log(`[openauthority] └──────────────────────────────────────────────────────`);
     return;
   }
 
-  // ── Async path: ABAC + HITL evaluation ────────────────────────────────────
+  // ── Async path: HITL evaluation ───────────────────────────────────────────
   return (async () => {
-    // ── 3. TypeBox/ABAC engine (policies loaded via onPolicyLoad) ─────────────
-    try {
-      for (const policy of abacPolicies) {
-        const abacCtx = {
-          subject: {
-            agentId: ruleContext.agentId,
-            channel: ruleContext.channel,
-            ...(ruleContext.userId !== undefined ? { userId: ruleContext.userId } : {}),
-            ...(ruleContext.sessionId !== undefined ? { sessionId: ruleContext.sessionId } : {}),
-          },
-          resource: { type: "tool", name: toolName },
-          action: toolName,
-        };
-        const result = await abacEngine.evaluate(policy.id, abacCtx);
-        if (!result.allowed || result.effect === "deny") {
-          const blockReason = result.reason ?? `Tool call denied by ABAC policy '${policy.id}'`;
-          console.log(`[openauthority] │ [abac] ✕ BLOCKED by policy '${policy.id}' — ${blockReason}`);
-          console.log(`[openauthority] │ DECISION: ✕ BLOCKED (abac)`);
-          console.log(`[openauthority] └──────────────────────────────────────────────────────`);
-          return { block: true, blockReason };
-        }
-      }
-      if (abacPolicies.length > 0) console.log(`[openauthority] │ [abac] ✓ passed (${abacPolicies.length} policies)`);
-    } catch (err) {
-      console.error(`[openauthority] │ [abac] ✕ ERROR — fail closed`, err);
-      console.log(`[openauthority] └──────────────────────────────────────────────────────`);
-      return { block: true, blockReason: "ABAC policy evaluation error — fail closed" };
-    }
-
-    // ── 4. HITL policy check ──────────────────────────────────────────────────
+    // ── HITL policy check ────────────────────────────────────────────────────
     if (hitlConfigRef.current !== null) {
       try {
         const hitlResult = checkAction(hitlConfigRef.current, normalizedAction.action_class);
@@ -873,15 +831,6 @@ const plugin: OpenclawPlugin = {
       return;
     }
     activated = true;
-
-    // registerPolicyEngine / onPolicyLoad are optional — only available when
-    // the host exposes a policy-evaluation extension point.
-    if (typeof ctx.registerPolicyEngine === "function") {
-      ctx.registerPolicyEngine(abacEngine);
-    }
-    if (typeof ctx.onPolicyLoad === "function") {
-      ctx.onPolicyLoad((policy) => abacEngine.addPolicy(policy));
-    }
 
     rulesWatcher = startRulesWatcher(cedarEngineRef, 300, (compiledRules) => {
       writeBuiltinRulesSnapshot(compiledRules);
@@ -1022,11 +971,6 @@ const plugin: OpenclawPlugin = {
     hitlAuditLogger = null;
 
     // Phase 2 modification point: await dashboardServer.stop() here
-
-    // ── ABAC engine cleanup (remove all dynamically-loaded policies) ─────────
-    for (const policy of abacEngine.listPolicies()) {
-      abacEngine.removePolicy(policy.id);
-    }
 
     // ── Rules watcher cleanup ─────────────────────────────────────────────
     if (rulesWatcher !== null) {

@@ -21,7 +21,6 @@ const ruleCache = new Map<string, Rule[]>();
  */
 const KNOWN_RULE_FILES: Record<string, string> = {
   default: './policy/rules/default.js',
-  support: './policy/rules/support.js',
 };
 
 /** Resolve path to data/rules.json relative to the plugin root. */
