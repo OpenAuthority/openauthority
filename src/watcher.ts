@@ -3,6 +3,7 @@ import { readFileSync, existsSync } from 'node:fs';
 import { basename, extname, resolve, dirname } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { PolicyEngine } from './policy/engine.js';
+import type { PolicyEngineOptions } from './policy/engine.js';
 import { mergeRules } from './policy/rules/index.js';
 import type { Rule, Effect, Resource } from './policy/types.js';
 
@@ -159,6 +160,8 @@ export function startRulesWatcher(
   engineRef: { current: PolicyEngine },
   debounceMs = 300,
   onReload?: (compiledRules: Rule[]) => void,
+  engineOptions?: PolicyEngineOptions,
+  initialRules?: Rule[],
 ): WatcherHandle {
   const rulesDirUrl = new URL('./policy/rules/', import.meta.url);
   const watchPath = rulesDirUrl.pathname;
@@ -166,7 +169,7 @@ export function startRulesWatcher(
   let debounceTimer: ReturnType<typeof setTimeout> | null = null;
 
   const rebuildEngine = (rules: Rule[]): void => {
-    const newEngine = new PolicyEngine();
+    const newEngine = new PolicyEngine(engineOptions);
     newEngine.addRules(rules);
     engineRef.current = newEngine;
   };
@@ -242,11 +245,15 @@ export function startRulesWatcher(
     jsonDebounceTimer = setTimeout(reloadJsonRules, debounceMs);
   });
 
-  // Initial load of JSON rules
+  // Initial load of JSON rules — rebuild the engine so the ref is replaced with
+  // a new instance that includes both JSON rules and any pre-compiled TypeScript
+  // rules passed via `initialRules`.
   const jsonRules = loadJsonRules();
   if (jsonRules.length > 0) {
     ruleCache.set('json', jsonRules);
-    const allRules = buildMergedFromCache();
+    const allRules = initialRules !== undefined
+      ? [...jsonRules, ...initialRules]
+      : buildMergedFromCache();
     rebuildEngine(allRules);
     logRules(jsonRules, 'UI (data/rules.json)');
   }

@@ -239,9 +239,11 @@ const abacEngine = new TypeboxPolicyEngine({ auditLogger });
 
 /** Mutable container for the Cedar-style engine used by lifecycle hooks.
  *  Hot reload swaps `.current` in-place so all hook handlers pick up new rules
- *  without requiring a Gateway restart. */
+ *  without requiring a Gateway restart.
+ *  Uses defaultEffect:'forbid' (fail-closed) so unrecognised tools/channels are
+ *  blocked unless an explicit permit rule covers them. */
 const cedarEngineRef: { current: CedarPolicyEngine } = {
-  current: new CedarPolicyEngine(),
+  current: new CedarPolicyEngine({ defaultEffect: 'forbid' }),
 };
 cedarEngineRef.current.addRules(defaultRules);
 
@@ -574,7 +576,7 @@ async function logHitlDecision(
   });
 }
 
-const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }, ctx) => {
+const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName }, ctx) => {
   console.log(`[openauthority] ┌─ before_tool_call ──────────────────────────────────`);
   console.log(`[openauthority] │ tool=${toolName}  agent=${ctx.agentId ?? "unknown"}  channel=${ctx.channelId ?? "unknown"}`);
   const ruleContext: RuleContext = {
@@ -624,61 +626,71 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }
     }
   }
 
-  // ── 3. TypeBox/ABAC engine (policies loaded via onPolicyLoad) ─────────────
-  try {
-    const abacPolicies = abacEngine.listPolicies();
-    for (const policy of abacPolicies) {
-      const abacCtx = {
-        subject: {
-          agentId: ruleContext.agentId,
-          channel: ruleContext.channel,
-          ...(ruleContext.userId !== undefined ? { userId: ruleContext.userId } : {}),
-          ...(ruleContext.sessionId !== undefined ? { sessionId: ruleContext.sessionId } : {}),
-        },
-        resource: { type: "tool", name: toolName },
-        action: toolName,
-      };
-      const result = await abacEngine.evaluate(policy.id, abacCtx);
-      if (!result.allowed || result.effect === "deny") {
-        const blockReason = result.reason ?? `Tool call denied by ABAC policy '${policy.id}'`;
-        console.log(`[openauthority] │ [abac] ✕ BLOCKED by policy '${policy.id}' — ${blockReason}`);
-        console.log(`[openauthority] │ DECISION: ✕ BLOCKED (abac)`);
-        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
-        return { block: true, blockReason };
-      }
-    }
-    if (abacPolicies.length > 0) console.log(`[openauthority] │ [abac] ✓ passed (${abacPolicies.length} policies)`);
-  } catch (err) {
-    console.error(`[openauthority] │ [abac] ✕ ERROR — fail closed`, err);
+  // ── Fast path: no ABAC policies and no HITL — return synchronously ─────────
+  const abacPolicies = abacEngine.listPolicies();
+  if (abacPolicies.length === 0 && hitlConfigRef.current === null) {
+    console.log(`[openauthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
     console.log(`[openauthority] └──────────────────────────────────────────────────────`);
-    return { block: true, blockReason: "ABAC policy evaluation error — fail closed" };
+    return;
   }
 
-  // ── 4. HITL policy check ──────────────────────────────────────────────────
-  if (hitlConfigRef.current !== null) {
+  // ── Async path: ABAC + HITL evaluation ────────────────────────────────────
+  return (async () => {
+    // ── 3. TypeBox/ABAC engine (policies loaded via onPolicyLoad) ─────────────
     try {
-      const hitlResult = checkAction(hitlConfigRef.current, toolName);
-
-      if (hitlResult.requiresApproval && hitlResult.matchedPolicy) {
-        const policy = hitlResult.matchedPolicy;
-        console.log(`[openauthority] │ [hitl] matched policy "${policy.name}" — requesting approval via ${policy.approval.channel}`);
-
-        // ── Dispatch to channel-specific adapter ──────────────────────────
-        const hitlChannelResult = await dispatchHitlChannel(policy, toolName, ruleContext);
-        if (hitlChannelResult) return hitlChannelResult;
-      } else {
-        console.log(`[openauthority] │ [hitl] ✓ no matching HITL policy`);
+      for (const policy of abacPolicies) {
+        const abacCtx = {
+          subject: {
+            agentId: ruleContext.agentId,
+            channel: ruleContext.channel,
+            ...(ruleContext.userId !== undefined ? { userId: ruleContext.userId } : {}),
+            ...(ruleContext.sessionId !== undefined ? { sessionId: ruleContext.sessionId } : {}),
+          },
+          resource: { type: "tool", name: toolName },
+          action: toolName,
+        };
+        const result = await abacEngine.evaluate(policy.id, abacCtx);
+        if (!result.allowed || result.effect === "deny") {
+          const blockReason = result.reason ?? `Tool call denied by ABAC policy '${policy.id}'`;
+          console.log(`[openauthority] │ [abac] ✕ BLOCKED by policy '${policy.id}' — ${blockReason}`);
+          console.log(`[openauthority] │ DECISION: ✕ BLOCKED (abac)`);
+          console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+          return { block: true, blockReason };
+        }
       }
+      if (abacPolicies.length > 0) console.log(`[openauthority] │ [abac] ✓ passed (${abacPolicies.length} policies)`);
     } catch (err) {
-      console.error(`[openauthority] │ [hitl] ✕ ERROR — fail closed`, err);
+      console.error(`[openauthority] │ [abac] ✕ ERROR — fail closed`, err);
       console.log(`[openauthority] └──────────────────────────────────────────────────────`);
-      return { block: true, blockReason: 'HITL evaluation error — fail closed' };
+      return { block: true, blockReason: "ABAC policy evaluation error — fail closed" };
     }
-  }
 
-  console.log(`[openauthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
-  console.log(`[openauthority] └──────────────────────────────────────────────────────`);
-  return;
+    // ── 4. HITL policy check ──────────────────────────────────────────────────
+    if (hitlConfigRef.current !== null) {
+      try {
+        const hitlResult = checkAction(hitlConfigRef.current, toolName);
+
+        if (hitlResult.requiresApproval && hitlResult.matchedPolicy) {
+          const policy = hitlResult.matchedPolicy;
+          console.log(`[openauthority] │ [hitl] matched policy "${policy.name}" — requesting approval via ${policy.approval.channel}`);
+
+          // ── Dispatch to channel-specific adapter ──────────────────────────
+          const hitlChannelResult = await dispatchHitlChannel(policy, toolName, ruleContext);
+          if (hitlChannelResult) return hitlChannelResult;
+        } else {
+          console.log(`[openauthority] │ [hitl] ✓ no matching HITL policy`);
+        }
+      } catch (err) {
+        console.error(`[openauthority] │ [hitl] ✕ ERROR — fail closed`, err);
+        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+        return { block: true, blockReason: 'HITL evaluation error — fail closed' };
+      }
+    }
+
+    console.log(`[openauthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
+    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+    return;
+  })();
 };
 
 /**
@@ -705,11 +717,22 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages }
       };
     }
 
-    // NOTE: We do NOT evaluate the raw prompt text as a "prompt" resource here.
-    // The prompt text is the full conversation/system prompt — not a resource
-    // identifier. Evaluating it against prompt rules (which match short identifiers
-    // like "system-prompt-v2") would always result in implicit permit, causing
-    // unnecessary noise on every single API call.
+    // Evaluate the prompt identifier against Cedar prompt rules.
+    // before_prompt_build cannot block, so a FORBID match results in a
+    // prependContext warning rather than a hard block.
+    const ruleContext: RuleContext = {
+      agentId: ctx.agentId ?? "unknown",
+      channel: ctx.channelId || "default",
+    };
+    const decision = cedarEngineRef.current.evaluate("prompt", prompt, ruleContext);
+    if (decision.effect === "forbid") {
+      const reason = decision.reason ?? "This prompt type is restricted by policy";
+      console.log(`[openauthority] ⚠ before_prompt_build POLICY VIOLATION: ${reason}`);
+      console.log(`[openauthority] ◀ before_prompt_build EXIT  → prependContext (policy warning)`);
+      return {
+        prependContext: `[POLICY WARNING] ${reason}.`,
+      };
+    }
 
     console.log(`[openauthority] ✓ before_prompt_build OK — no injection detected`);
     console.log(`[openauthority] ◀ before_prompt_build EXIT  → no modification`);
@@ -760,8 +783,8 @@ const plugin: OpenclawPlugin = {
     // so we must register into every registry to ensure the hook is present
     // in whichever registry ends up as the active one.
     ctx.on("before_tool_call", beforeToolCallHandler, { name: "openauthority:before_tool_call" });
-    // ctx.on("before_prompt_build", beforePromptBuildHandler, { name: "openauthority:before_prompt_build" });
-    // ctx.on("before_model_resolve", beforeModelResolveHandler, { name: "openauthority:before_model_resolve" });
+    ctx.on("before_prompt_build", beforePromptBuildHandler, { name: "openauthority:before_prompt_build" });
+    ctx.on("before_model_resolve", beforeModelResolveHandler, { name: "openauthority:before_model_resolve" });
 
     // ── Guard: side effects (watchers, engines) only once ────────────────────
     if (activated) {
@@ -781,7 +804,7 @@ const plugin: OpenclawPlugin = {
 
     rulesWatcher = startRulesWatcher(cedarEngineRef, 300, (compiledRules) => {
       writeBuiltinRulesSnapshot(compiledRules);
-    });
+    }, { defaultEffect: 'forbid' }, defaultRules);
 
     // Load user-defined JSON rules from data/rules.json into the dedicated
     // JSON Cedar engine. Async but errors are swallowed so activation is
@@ -791,8 +814,8 @@ const plugin: OpenclawPlugin = {
     );
 
     // ── Diagnostic: log registered hooks and loaded rules ────────────────────
-    const registeredHooks = ["before_tool_call"];
-    const disabledHooks = ["before_prompt_build", "before_model_resolve"];
+    const registeredHooks = ["before_tool_call", "before_prompt_build", "before_model_resolve"];
+    const disabledHooks: string[] = [];
     const rules = cedarEngineRef.current.rules;
     const rulesByResource: Record<string, Rule[]> = {};
     for (const r of rules) {
@@ -915,6 +938,11 @@ const plugin: OpenclawPlugin = {
     }
     hitlConfigRef.current = null;
     hitlAuditLogger = null;
+
+    // ── ABAC engine cleanup (remove all dynamically-loaded policies) ─────────
+    for (const policy of abacEngine.listPolicies()) {
+      abacEngine.removePolicy(policy.id);
+    }
 
     // ── Rules watcher cleanup ─────────────────────────────────────────────
     if (rulesWatcher !== null) {
