@@ -259,6 +259,10 @@ cedarEngineRef.current.addRules(defaultRules);
  */
 export const coverageMap = new CoverageMap();
 
+// Phase 2 modification point: DashboardServer singleton — instantiate
+// createDashboardServer({ coverageMap, auditLogFile, rulesDataFile }) here
+// and export the handle so activate() / deactivate() can start / stop it.
+
 // Log compiled rules at startup
 console.log(`[openauthority] compiled rules (${defaultRules.length}):`);
 for (const r of defaultRules) {
@@ -820,6 +824,7 @@ const plugin: OpenclawPlugin = {
     rulesWatcher = startRulesWatcher(cedarEngineRef, 300, (compiledRules) => {
       writeBuiltinRulesSnapshot(compiledRules);
     }, { defaultEffect: 'forbid' }, defaultRules, coverageMap);
+    // Phase 2 modification point: await dashboardServer.start() here
 
     // Load user-defined JSON rules from data/rules.json into the dedicated
     // JSON Cedar engine. Async but errors are swallowed so activation is
@@ -953,6 +958,8 @@ const plugin: OpenclawPlugin = {
     }
     hitlConfigRef.current = null;
     hitlAuditLogger = null;
+
+    // Phase 2 modification point: await dashboardServer.stop() here
 
     // ── ABAC engine cleanup (remove all dynamically-loaded policies) ─────────
     for (const policy of abacEngine.listPolicies()) {

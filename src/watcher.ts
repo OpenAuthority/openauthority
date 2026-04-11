@@ -157,6 +157,9 @@ function logRules(rules: Rule[], source: string): void {
  * On each detected change (debounced by `debounceMs`), rules are reloaded and
  * a fresh PolicyEngine instance is swapped into `engineRef.current`.
  */
+// Phase 2 modification point: add an optional `onCoverageReset?: () => void`
+// parameter to startRulesWatcher so the dashboard server can refresh its
+// cached coverage snapshot whenever rules are hot-reloaded and the map is reset.
 export function startRulesWatcher(
   engineRef: { current: PolicyEngine },
   debounceMs = 300,
