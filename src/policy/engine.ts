@@ -206,6 +206,44 @@ export class PolicyEngine {
     };
   }
 
+  /**
+   * Maps an action class string to a resource type and delegates to evaluate.
+   *
+   * Action class prefix → Resource:
+   *   filesystem.*              → 'file'
+   *   communication.*           → 'external'
+   *   payment.*                 → 'payment'
+   *   system.*                  → 'system'
+   *   credential.*              → 'credential'
+   *   browser.*                 → 'web'
+   *   memory.*                  → 'memory'
+   *   unknown_sensitive_action  → 'unknown'
+   *   (anything else)           → 'unknown'
+   */
+  evaluateByActionClass(
+    actionClass: string,
+    resourceName: string,
+    context: RuleContext
+  ): EvaluationDecision {
+    const resource = PolicyEngine.mapActionClassToResource(actionClass);
+    return this.evaluate(resource, resourceName, context);
+  }
+
+  private static mapActionClassToResource(actionClass: string): Resource {
+    if (actionClass === 'unknown_sensitive_action') return 'unknown';
+    const prefix = actionClass.split('.')[0];
+    switch (prefix) {
+      case 'filesystem':    return 'file';
+      case 'communication': return 'external';
+      case 'payment':       return 'payment';
+      case 'system':        return 'system';
+      case 'credential':    return 'credential';
+      case 'browser':       return 'web';
+      case 'memory':        return 'memory';
+      default:              return 'unknown';
+    }
+  }
+
   private checkAndRecordRateLimit(
     rule: Rule,
     resourceName: string,

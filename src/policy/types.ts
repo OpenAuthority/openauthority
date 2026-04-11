@@ -2,7 +2,9 @@
 export type Effect = 'permit' | 'forbid';
 
 /** The resource type a rule applies to */
-export type Resource = 'tool' | 'command' | 'channel' | 'prompt' | 'model';
+export type Resource =
+  | 'tool' | 'command' | 'channel' | 'prompt' | 'model'
+  | 'file' | 'external' | 'payment' | 'system' | 'credential' | 'web' | 'memory' | 'unknown';
 
 /** Context passed to rule condition functions */
 export interface RuleContext {
