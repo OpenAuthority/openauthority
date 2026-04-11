@@ -1,27 +1,28 @@
 [
   {
     "id": "builtin-0",
-    "effect": "permit",
+    "effect": "forbid",
     "resource": "channel",
     "match": "support",
     "isRegex": false,
-    "condition": "(ctx) => ctx.agentId.startsWith(\"support-\")",
-    "reason": "Support channel is accessible to support agents",
+    "condition": "(ctx) => !ctx.verified",
+    "reason": "Support channel requires a verified agent identity",
     "tags": [
       "channel",
-      "support"
+      "support",
+      "identity"
     ]
   },
   {
     "id": "builtin-1",
     "effect": "permit",
-    "resource": "tool",
-    "match": "^(read_file|search_files|get_file_info)$",
-    "isRegex": true,
-    "condition": "(ctx) => ctx.agentId.startsWith(\"support-\")",
-    "reason": "Support agents may use read-only file tools on any channel",
+    "resource": "channel",
+    "match": "support",
+    "isRegex": false,
+    "condition": "(ctx) => ctx.verified && ctx.agentId.startsWith(\"support-\")",
+    "reason": "Support channel is accessible to verified support agents",
     "tags": [
-      "tool",
+      "channel",
       "support"
     ]
   },
@@ -29,10 +30,23 @@
     "id": "builtin-2",
     "effect": "permit",
     "resource": "tool",
+    "match": "^(read_file|search_files|get_file_info)$",
+    "isRegex": true,
+    "condition": "(ctx) => ctx.verified && ctx.agentId.startsWith(\"support-\")",
+    "reason": "Verified support agents may use read-only file tools on any channel",
+    "tags": [
+      "tool",
+      "support"
+    ]
+  },
+  {
+    "id": "builtin-3",
+    "effect": "permit",
+    "resource": "tool",
     "match": "^(write_file|edit_file|create_file|patch_file)$",
     "isRegex": true,
-    "condition": "(ctx) => ctx.agentId.startsWith(\"support-\") && ctx.channel === \"support\"",
-    "reason": "Support agents may use write tools on the support channel",
+    "condition": "(ctx) => ctx.verified && ctx.agentId.startsWith(\"support-\") && ctx.channel === \"support\"",
+    "reason": "Verified support agents may use write tools on the support channel",
     "tags": [
       "file",
       "write",
@@ -40,13 +54,13 @@
     ]
   },
   {
-    "id": "builtin-3",
+    "id": "builtin-4",
     "effect": "forbid",
     "resource": "model",
     "match": "-(preview|experimental|alpha|beta)(\\b|-|$)",
     "isRegex": true,
-    "condition": "(ctx) => ctx.agentId.startsWith(\"support-\")",
-    "reason": "Support agents are restricted to stable model variants",
+    "condition": "(ctx) => ctx.verified && ctx.agentId.startsWith(\"support-\")",
+    "reason": "Verified support agents are restricted to stable model variants",
     "tags": [
       "model",
       "support",
@@ -54,20 +68,20 @@
     ]
   },
   {
-    "id": "builtin-4",
+    "id": "builtin-5",
     "effect": "permit",
     "resource": "prompt",
     "match": "^support:",
     "isRegex": true,
-    "condition": "(ctx) => ctx.agentId.startsWith(\"support-\")",
-    "reason": "Support-scoped prompts are permitted for support agents",
+    "condition": "(ctx) => ctx.verified && ctx.agentId.startsWith(\"support-\")",
+    "reason": "Support-scoped prompts are permitted for verified support agents",
     "tags": [
       "prompt",
       "support"
     ]
   },
   {
-    "id": "builtin-5",
+    "id": "builtin-6",
     "effect": "permit",
     "resource": "tool",
     "match": "^(read_file|list_dir|search_files|get_file_info|glob)$",
@@ -79,7 +93,7 @@
     ]
   },
   {
-    "id": "builtin-6",
+    "id": "builtin-7",
     "effect": "forbid",
     "resource": "tool",
     "match": "exec",
@@ -91,7 +105,7 @@
     ]
   },
   {
-    "id": "builtin-7",
+    "id": "builtin-8",
     "effect": "forbid",
     "resource": "tool",
     "match": "^(bash|shell|terminal|run_command|spawn)$",
@@ -103,33 +117,74 @@
     ]
   },
   {
-    "id": "builtin-8",
+    "id": "builtin-9",
+    "effect": "forbid",
+    "resource": "channel",
+    "match": "admin",
+    "isRegex": false,
+    "condition": "(ctx) => !ctx.verified",
+    "reason": "Admin channel requires a verified agent identity",
+    "tags": [
+      "channel",
+      "admin",
+      "identity"
+    ]
+  },
+  {
+    "id": "builtin-10",
+    "effect": "permit",
+    "resource": "channel",
+    "match": "admin",
+    "isRegex": false,
+    "condition": "(ctx) => ctx.verified && ctx.agentId.startsWith(\"admin-\")",
+    "reason": "Admin channel is restricted to verified agents with the admin- id prefix",
+    "tags": [
+      "channel",
+      "admin"
+    ]
+  },
+  {
+    "id": "builtin-11",
+    "effect": "forbid",
+    "resource": "tool",
+    "match": "^(write_file|edit_file|create_file|patch_file)$",
+    "isRegex": true,
+    "condition": "(ctx) => !ctx.verified || ![\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
+    "reason": "Write tools require a verified agent on a trusted channel",
+    "tags": [
+      "file",
+      "write",
+      "identity"
+    ]
+  },
+  {
+    "id": "builtin-12",
     "effect": "permit",
     "resource": "tool",
     "match": "^(write_file|edit_file|create_file|patch_file)$",
     "isRegex": true,
-    "condition": "(ctx) => [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
-    "reason": "Write tools are restricted to trusted and CI channels",
+    "condition": "(ctx) => ctx.verified && [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
+    "reason": "Write tools are restricted to verified agents on trusted and CI channels",
     "tags": [
       "file",
       "write"
     ]
   },
   {
-    "id": "builtin-9",
+    "id": "builtin-13",
     "effect": "forbid",
     "resource": "tool",
     "match": "delete_file",
     "isRegex": false,
-    "condition": "(ctx) => !ctx.agentId.startsWith(\"admin-\")",
-    "reason": "File deletion is restricted to admin agents",
+    "condition": "(ctx) => !ctx.verified || !ctx.agentId.startsWith(\"admin-\")",
+    "reason": "File deletion requires a verified admin agent",
     "tags": [
       "file",
       "destructive"
     ]
   },
   {
-    "id": "builtin-10",
+    "id": "builtin-14",
     "effect": "forbid",
     "resource": "tool",
     "match": "^(web_fetch|web_search)$",
@@ -141,7 +196,7 @@
     ]
   },
   {
-    "id": "builtin-11",
+    "id": "builtin-15",
     "effect": "permit",
     "resource": "tool",
     "match": "*",
@@ -153,7 +208,7 @@
     ]
   },
   {
-    "id": "builtin-12",
+    "id": "builtin-16",
     "effect": "permit",
     "resource": "command",
     "match": "^(ls|cat|pwd|echo|date|whoami|uname|env|ps|df|du|wc|head|tail|grep|find|sort|uniq)$",
@@ -165,7 +220,7 @@
     ]
   },
   {
-    "id": "builtin-13",
+    "id": "builtin-17",
     "effect": "forbid",
     "resource": "command",
     "match": "^(rm|rmdir|dd|shred|mkfs|fdisk|wipefs|truncate)$",
@@ -177,7 +232,7 @@
     ]
   },
   {
-    "id": "builtin-14",
+    "id": "builtin-18",
     "effect": "forbid",
     "resource": "command",
     "match": "^(sudo|su|chmod|chown|chattr|setuid|setgid|newgrp)$",
@@ -189,33 +244,33 @@
     ]
   },
   {
-    "id": "builtin-15",
+    "id": "builtin-19",
     "effect": "permit",
     "resource": "command",
     "match": "git",
     "isRegex": false,
-    "condition": "(ctx) => [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
-    "reason": "git is permitted on trusted and CI channels",
+    "condition": "(ctx) => ctx.verified && [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
+    "reason": "git is permitted for verified agents on trusted and CI channels",
     "tags": [
       "command",
       "git"
     ]
   },
   {
-    "id": "builtin-16",
+    "id": "builtin-20",
     "effect": "permit",
     "resource": "command",
     "match": "^(npm|yarn|pnpm|bun|pip|cargo|go)$",
     "isRegex": true,
-    "condition": "(ctx) => Boolean(ctx.userId) && [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
-    "reason": "Package managers require an authenticated user on a trusted channel",
+    "condition": "(ctx) => ctx.verified && Boolean(ctx.userId) && [\"admin\", \"trusted\", \"ci\"].includes(ctx.channel)",
+    "reason": "Package managers require a verified, authenticated user on a trusted channel",
     "tags": [
       "command",
       "package-manager"
     ]
   },
   {
-    "id": "builtin-17",
+    "id": "builtin-21",
     "effect": "permit",
     "resource": "channel",
     "match": "default",
@@ -226,7 +281,7 @@
     ]
   },
   {
-    "id": "builtin-18",
+    "id": "builtin-22",
     "effect": "forbid",
     "resource": "channel",
     "match": "untrusted",
@@ -238,20 +293,7 @@
     ]
   },
   {
-    "id": "builtin-19",
-    "effect": "permit",
-    "resource": "channel",
-    "match": "admin",
-    "isRegex": false,
-    "condition": "(ctx) => ctx.agentId.startsWith(\"admin-\")",
-    "reason": "Admin channel is restricted to agents with the admin- id prefix",
-    "tags": [
-      "channel",
-      "admin"
-    ]
-  },
-  {
-    "id": "builtin-20",
+    "id": "builtin-23",
     "effect": "permit",
     "resource": "channel",
     "match": "^(trusted|ci|readonly)$",
@@ -262,7 +304,7 @@
     ]
   },
   {
-    "id": "builtin-21",
+    "id": "builtin-24",
     "effect": "permit",
     "resource": "prompt",
     "match": "^user:",
@@ -273,7 +315,7 @@
     ]
   },
   {
-    "id": "builtin-22",
+    "id": "builtin-25",
     "effect": "forbid",
     "resource": "prompt",
     "match": "^system:",
@@ -285,7 +327,7 @@
     ]
   },
   {
-    "id": "builtin-23",
+    "id": "builtin-26",
     "effect": "forbid",
     "resource": "prompt",
     "match": "^(jailbreak:|override:|ignore-policy:|DAN:)",
@@ -297,20 +339,20 @@
     ]
   },
   {
-    "id": "builtin-24",
+    "id": "builtin-27",
     "effect": "permit",
     "resource": "prompt",
     "match": "^custom:",
     "isRegex": true,
-    "condition": "(ctx) => Boolean(ctx.userId)",
-    "reason": "Custom prompts require an authenticated user",
+    "condition": "(ctx) => ctx.verified && Boolean(ctx.userId)",
+    "reason": "Custom prompts require a verified, authenticated user",
     "tags": [
       "prompt",
       "custom"
     ]
   },
   {
-    "id": "builtin-25",
+    "id": "builtin-28",
     "effect": "permit",
     "resource": "model",
     "match": "^(anthropic\\/)?claude-",
@@ -322,20 +364,20 @@
     ]
   },
   {
-    "id": "builtin-26",
+    "id": "builtin-29",
     "effect": "forbid",
     "resource": "model",
     "match": "-(preview|experimental|alpha|beta)(\\b|-|$)",
     "isRegex": true,
-    "condition": "(ctx) => !ctx.agentId.startsWith(\"admin-\")",
-    "reason": "Preview and experimental model variants are restricted to admin agents",
+    "condition": "(ctx) => !ctx.verified || !ctx.agentId.startsWith(\"admin-\")",
+    "reason": "Preview and experimental model variants are restricted to verified admin agents",
     "tags": [
       "model",
       "security"
     ]
   },
   {
-    "id": "builtin-27",
+    "id": "builtin-30",
     "effect": "forbid",
     "resource": "model",
     "match": "^(?!anthropic\\/).+\\/.+",

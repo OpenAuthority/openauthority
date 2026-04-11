@@ -60,15 +60,47 @@ const defaultRules: Rule[] = [
   },
 
   /**
-   * Permit file-write tools only when the request arrives on a trusted
-   * channel. Agents on untrusted channels must not be able to modify files.
+   * Forbid the admin channel for agents whose identity is not verified,
+   * even if they claim an admin- prefixed ID. Prevents spoofing.
    */
+  {
+    effect: 'forbid',
+    resource: 'channel',
+    match: 'admin',
+    condition: (ctx) => !ctx.verified,
+    reason: 'Admin channel requires a verified agent identity',
+    tags: ['channel', 'admin', 'identity'],
+  },
+
+  /**
+   * Permit the admin channel only for verified agents whose ID carries
+   * the admin- prefix. This enforces a naming convention for privileged
+   * agents AND requires identity verification.
+   */
+  {
+    effect: 'permit',
+    resource: 'channel',
+    match: 'admin',
+    condition: (ctx) => ctx.verified && ctx.agentId.startsWith('admin-'),
+    reason: 'Admin channel is restricted to verified agents with the admin- id prefix',
+    tags: ['channel', 'admin'],
+  },
+
+  {
+    effect: 'forbid',
+    resource: 'tool',
+    match: /^(write_file|edit_file|create_file|patch_file)$/,
+    condition: (ctx) => !ctx.verified || !['admin', 'trusted', 'ci'].includes(ctx.channel),
+    reason: 'Write tools require a verified agent on a trusted channel',
+    tags: ['file', 'write', 'identity'],
+  },
+
   {
     effect: 'permit',
     resource: 'tool',
     match: /^(write_file|edit_file|create_file|patch_file)$/,
-    condition: (ctx) => ['admin', 'trusted', 'ci'].includes(ctx.channel),
-    reason: 'Write tools are restricted to trusted and CI channels',
+    condition: (ctx) => ctx.verified && ['admin', 'trusted', 'ci'].includes(ctx.channel),
+    reason: 'Write tools are restricted to verified agents on trusted and CI channels',
     tags: ['file', 'write'],
   },
 
@@ -80,8 +112,8 @@ const defaultRules: Rule[] = [
     effect: 'forbid',
     resource: 'tool',
     match: 'delete_file',
-    condition: (ctx) => !ctx.agentId.startsWith('admin-'),
-    reason: 'File deletion is restricted to admin agents',
+    condition: (ctx) => !ctx.verified || !ctx.agentId.startsWith('admin-'),
+    reason: 'File deletion requires a verified admin agent',
     tags: ['file', 'destructive'],
   },
 
@@ -159,8 +191,8 @@ const defaultRules: Rule[] = [
     effect: 'permit',
     resource: 'command',
     match: 'git',
-    condition: (ctx) => ['admin', 'trusted', 'ci'].includes(ctx.channel),
-    reason: 'git is permitted on trusted and CI channels',
+    condition: (ctx) => ctx.verified && ['admin', 'trusted', 'ci'].includes(ctx.channel),
+    reason: 'git is permitted for verified agents on trusted and CI channels',
     tags: ['command', 'git'],
   },
 
@@ -173,8 +205,8 @@ const defaultRules: Rule[] = [
     resource: 'command',
     match: /^(npm|yarn|pnpm|bun|pip|cargo|go)$/,
     condition: (ctx) =>
-      Boolean(ctx.userId) && ['admin', 'trusted', 'ci'].includes(ctx.channel),
-    reason: 'Package managers require an authenticated user on a trusted channel',
+      ctx.verified && Boolean(ctx.userId) && ['admin', 'trusted', 'ci'].includes(ctx.channel),
+    reason: 'Package managers require a verified, authenticated user on a trusted channel',
     tags: ['command', 'package-manager'],
   },
 
@@ -207,19 +239,6 @@ const defaultRules: Rule[] = [
   /**
    * Permit the admin channel only for agents whose ID carries the admin-
    * prefix. This enforces a naming convention for privileged agents.
-   */
-  {
-    effect: 'permit',
-    resource: 'channel',
-    match: 'admin',
-    condition: (ctx) => ctx.agentId.startsWith('admin-'),
-    reason: 'Admin channel is restricted to agents with the admin- id prefix',
-    tags: ['channel', 'admin'],
-  },
-
-  /**
-   * Permit the named trusted channels (trusted, ci, readonly).
-   * These are purpose-built channels with pre-approved access profiles.
    */
   {
     effect: 'permit',
@@ -275,8 +294,8 @@ const defaultRules: Rule[] = [
     effect: 'permit',
     resource: 'prompt',
     match: /^custom:/,
-    condition: (ctx) => Boolean(ctx.userId),
-    reason: 'Custom prompts require an authenticated user',
+    condition: (ctx) => ctx.verified && Boolean(ctx.userId),
+    reason: 'Custom prompts require a verified, authenticated user',
     tags: ['prompt', 'custom'],
   },
 
@@ -302,8 +321,8 @@ const defaultRules: Rule[] = [
     effect: 'forbid',
     resource: 'model',
     match: /-(preview|experimental|alpha|beta)(\b|-|$)/i,
-    condition: (ctx) => !ctx.agentId.startsWith('admin-'),
-    reason: 'Preview and experimental model variants are restricted to admin agents',
+    condition: (ctx) => !ctx.verified || !ctx.agentId.startsWith('admin-'),
+    reason: 'Preview and experimental model variants are restricted to verified admin agents',
     tags: ['model', 'security'],
   },
 

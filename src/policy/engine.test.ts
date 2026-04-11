@@ -5,6 +5,7 @@ import type { Rule, RuleContext } from './types.js';
 const ctx: RuleContext = {
   agentId: 'agent-1',
   channel: 'default',
+  verified: true,
 };
 
 describe('PolicyEngine', () => {
@@ -167,7 +168,7 @@ describe('PolicyEngine', () => {
     });
 
     it('filters access based on agentId', () => {
-      const adminCtx: RuleContext = { agentId: 'admin', channel: 'secure' };
+      const adminCtx: RuleContext = { agentId: 'admin', channel: 'secure', verified: true };
       engine.addRule({
         effect: 'permit',
         resource: 'tool',
@@ -187,7 +188,7 @@ describe('PolicyEngine', () => {
         match: 'risky_tool',
         condition: (c) => c.agentId !== 'admin',
       });
-      const adminCtx: RuleContext = { agentId: 'admin', channel: 'any' };
+      const adminCtx: RuleContext = { agentId: 'admin', channel: 'any', verified: true };
       // admin bypasses the forbid condition, so permit applies
       expect(engine.evaluate('tool', 'risky_tool', adminCtx).effect).toBe('permit');
       // non-admin hits the forbid
@@ -293,7 +294,7 @@ describe('PolicyEngine', () => {
     });
 
     it('tracks calls per agentId independently', () => {
-      const ctx2: RuleContext = { agentId: 'agent-2', channel: 'default' };
+      const ctx2: RuleContext = { agentId: 'agent-2', channel: 'default', verified: true };
       engine.addRule({
         effect: 'permit', resource: 'tool', match: 'api_call',
         rateLimit: { maxCalls: 1, windowSeconds: 60 },

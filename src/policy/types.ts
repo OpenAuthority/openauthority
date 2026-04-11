@@ -10,6 +10,17 @@ export interface RuleContext {
   agentId: string;
   /** The channel through which the request is made */
   channel: string;
+  /**
+   * Whether the agentId and channel have been verified by the identity registry.
+   *
+   * When false, the agentId/channel values are untrusted (self-reported by the
+   * agent) and MUST NOT be used for privilege-escalation decisions such as
+   * admin or support role checks. Rules that gate access based on agentId
+   * prefixes (e.g. `admin-*`, `support-*`) or channel membership (e.g.
+   * `['admin','trusted','ci'].includes(ctx.channel)`) MUST check `ctx.verified`
+   * first and default to deny when verification is absent.
+   */
+  verified: boolean;
   /** Optional user ID associated with the request */
   userId?: string;
   /** Optional session ID for the current session */

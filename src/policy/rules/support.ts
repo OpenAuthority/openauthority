@@ -19,11 +19,20 @@ const supportRules: Rule[] = [
    * Permit support agents to operate on the dedicated 'support' channel.
    */
   {
+    effect: 'forbid',
+    resource: 'channel',
+    match: 'support',
+    condition: (ctx) => !ctx.verified,
+    reason: 'Support channel requires a verified agent identity',
+    tags: ['channel', 'support', 'identity'],
+  },
+
+  {
     effect: 'permit',
     resource: 'channel',
     match: 'support',
-    condition: (ctx) => ctx.agentId.startsWith('support-'),
-    reason: 'Support channel is accessible to support agents',
+    condition: (ctx) => ctx.verified && ctx.agentId.startsWith('support-'),
+    reason: 'Support channel is accessible to verified support agents',
     tags: ['channel', 'support'],
   },
 
@@ -42,8 +51,8 @@ const supportRules: Rule[] = [
     effect: 'permit',
     resource: 'tool',
     match: /^(read_file|search_files|get_file_info)$/,
-    condition: (ctx) => ctx.agentId.startsWith('support-'),
-    reason: 'Support agents may use read-only file tools on any channel',
+    condition: (ctx) => ctx.verified && ctx.agentId.startsWith('support-'),
+    reason: 'Verified support agents may use read-only file tools on any channel',
     tags: ['tool', 'support'],
   },
 
@@ -56,8 +65,8 @@ const supportRules: Rule[] = [
     resource: 'tool',
     match: /^(write_file|edit_file|create_file|patch_file)$/,
     condition: (ctx) =>
-      ctx.agentId.startsWith('support-') && ctx.channel === 'support',
-    reason: 'Support agents may use write tools on the support channel',
+      ctx.verified && ctx.agentId.startsWith('support-') && ctx.channel === 'support',
+    reason: 'Verified support agents may use write tools on the support channel',
     tags: ['file', 'write', 'support'],
   },
 
@@ -71,8 +80,8 @@ const supportRules: Rule[] = [
     effect: 'forbid',
     resource: 'model',
     match: /-(preview|experimental|alpha|beta)(\b|-|$)/i,
-    condition: (ctx) => ctx.agentId.startsWith('support-'),
-    reason: 'Support agents are restricted to stable model variants',
+    condition: (ctx) => ctx.verified && ctx.agentId.startsWith('support-'),
+    reason: 'Verified support agents are restricted to stable model variants',
     tags: ['model', 'support', 'security'],
   },
 
@@ -86,8 +95,8 @@ const supportRules: Rule[] = [
     effect: 'permit',
     resource: 'prompt',
     match: /^support:/,
-    condition: (ctx) => ctx.agentId.startsWith('support-'),
-    reason: 'Support-scoped prompts are permitted for support agents',
+    condition: (ctx) => ctx.verified && ctx.agentId.startsWith('support-'),
+    reason: 'Support-scoped prompts are permitted for verified support agents',
     tags: ['prompt', 'support'],
   },
 ];

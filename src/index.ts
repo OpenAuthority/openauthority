@@ -25,6 +25,9 @@ export type { EvaluationDecision, EvaluationEffect } from "./policy/engine.js";
 export type { Rule, RuleContext, Resource, Effect, RateLimit } from "./policy/types.js";
 export { default as defaultRules, mergeRules } from "./policy/rules.js";
 
+export { AgentIdentityRegistry } from "./identity.js";
+export type { RegisteredAgent, IdentityVerificationResult } from "./identity.js";
+
 // ─── Human-in-the-loop policy configuration ──────────────────────────────────
 export {
   HitlFallbackSchema,
@@ -89,6 +92,7 @@ import type { HitlPolicyConfig } from "./hitl/types.js";
 import { ApprovalManager } from "./hitl/approval-manager.js";
 import { TelegramListener, sendApprovalRequest, sendConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
 import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig } from "./hitl/slack.js";
+import { AgentIdentityRegistry, type RegisteredAgent } from "./identity.js";
 import { readFile, writeFile, mkdir } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -99,6 +103,8 @@ import { fileURLToPath } from "node:url";
 export interface HookContext {
   agentId?: string;
   channelId?: string;
+  userId?: string;
+  sessionId?: string;
 }
 
 // ── before_tool_call ──
@@ -176,6 +182,13 @@ export interface OpenclawPluginContext {
   registerPolicyEngine(engine: TypeboxPolicyEngine): void;
   /** Subscribe to policy-load events so new policies are added to the engine. */
   onPolicyLoad(callback: (policy: TPolicy) => void): void;
+  /**
+   * Register a verified agent identity with its allowed channels.
+   * Only registered agents will have `ctx.verified === true` in rule
+   * conditions, preventing untrusted agentId/channel claims from
+   * being used for privilege escalation.
+   */
+  registerIdentity(agentId: string, allowedChannels: string[], role?: string): void;
   /** Register a handler for a lifecycle hook (legacy — pushes to registry.hooks only). */
   registerHook(hookName: "before_tool_call", handler: BeforeToolCallHandler, options?: { name?: string; description?: string }): void;
   registerHook(hookName: "before_prompt_build", handler: BeforePromptBuildHandler, options?: { name?: string; description?: string }): void;
@@ -236,6 +249,16 @@ auditLogger.addHandler(consoleAuditHandler);
 
 /** ABAC engine for the policy-evaluation capability. */
 const abacEngine = new TypeboxPolicyEngine({ auditLogger });
+
+/**
+ * Agent identity registry for verifying that agentId and channel claims are
+ * legitimate before using them for authorization decisions.
+ *
+ * When the registry is empty (no agents registered), verification always
+ * returns `verified: true` to maintain backwards compatibility. Operators
+ * must explicitly register agents to enable identity verification.
+ */
+const identityRegistry = new AgentIdentityRegistry();
 
 /** Mutable container for the Cedar-style engine used by lifecycle hooks.
  *  Hot reload swaps `.current` in-place so all hook handlers pick up new rules
@@ -576,14 +599,22 @@ async function logHitlDecision(
 
 const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }, ctx) => {
   console.log(`[openauthority] ┌─ before_tool_call ──────────────────────────────────`);
-  console.log(`[openauthority] │ tool=${toolName}  agent=${ctx.agentId ?? "unknown"}  channel=${ctx.channelId ?? "unknown"}`);
-  const ruleContext: RuleContext = {
-    agentId: ctx.agentId ?? "unknown",
-    // Preserve the real channel name. Only fall back to "default" when the
-    // host provides no channel at all (undefined/empty string). Do NOT remap
-    // named channels like "webchat" — rules explicitly reference them.
-    channel: ctx.channelId || "default",
-  };
+  const agentId = ctx.agentId ?? "unknown";
+  const channel = ctx.channelId || "default";
+  console.log(`[openauthority] │ tool=${toolName}  agent=${agentId}  channel=${channel}`);
+
+  const ruleContext: RuleContext = identityRegistry.buildRuleContext(
+    agentId,
+    channel,
+    {
+      ...(ctx.userId != null ? { userId: ctx.userId } : {}),
+      ...(ctx.sessionId != null ? { sessionId: ctx.sessionId } : {}),
+    },
+  );
+
+  if (!ruleContext.verified) {
+    console.log(`[openauthority] │ ⚠ IDENTITY NOT VERIFIED — agentId/channel not in registry. Rules relying on identity will deny.`);
+  }
 
   // ── 1. Cedar engine (TypeScript rules, hot-reloaded) ──────────────────────
   try {
@@ -632,6 +663,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params }
         subject: {
           agentId: ruleContext.agentId,
           channel: ruleContext.channel,
+          verified: ruleContext.verified,
           ...(ruleContext.userId !== undefined ? { userId: ruleContext.userId } : {}),
           ...(ruleContext.sessionId !== undefined ? { sessionId: ruleContext.sessionId } : {}),
         },
@@ -779,6 +811,35 @@ const plugin: OpenclawPlugin = {
       ctx.onPolicyLoad((policy) => abacEngine.addPolicy(policy));
     }
 
+    // ── Identity registration ─────────────────────────────────────────────────
+    // If the host provides registerIdentity, wire it to the identity registry.
+    // This allows OpenClaw to register known agents at activation time.
+    if (typeof ctx.registerIdentity === "function") {
+      // The host registers agents; we just need to be ready to receive them.
+      // The identityRegistry singleton is used in beforeToolCallHandler.
+      console.log("[plugin:openauthority] identity registration available via ctx.registerIdentity()");
+    }
+
+    /**
+     * Convenience function for registering agent identities from outside the
+     * plugin lifecycle. Useful for programmatic setup and testing.
+     */
+    (plugin as unknown as { registerIdentity: (agentId: string, allowedChannels: string[], role?: string) => void }).registerIdentity = (
+      agentId: string,
+      allowedChannels: string[],
+      role?: string,
+    ) => {
+      identityRegistry.register({ agentId, allowedChannels, role });
+      console.log(`[openauthority] registered identity: ${agentId} → channels=[${allowedChannels.join(',')}]${role ? ` role=${role}` : ''}`);
+    };
+
+    /**
+     * Convenience function for listing all registered identities.
+     */
+    (plugin as unknown as { listIdentities: () => RegisteredAgent[] }).listIdentities = () => {
+      return identityRegistry.list();
+    };
+
     rulesWatcher = startRulesWatcher(cedarEngineRef, 300, (compiledRules) => {
       writeBuiltinRulesSnapshot(compiledRules);
     });
@@ -921,6 +982,7 @@ const plugin: OpenclawPlugin = {
       await rulesWatcher.stop();
       rulesWatcher = null;
     }
+    identityRegistry.clear();
     activated = false;
     console.log("[plugin:openauthority] deactivated");
   },

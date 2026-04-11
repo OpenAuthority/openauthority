@@ -86,6 +86,7 @@ function createMockContext() {
     onPolicyLoad(cb) {
       policyLoadCb = cb;
     },
+    registerIdentity() {},
     registerHook(hookName: string, handler: unknown) {
       // eslint-disable-next-line @typescript-eslint/no-explicit-any
       (hooks as any)[hookName] = handler;
@@ -108,7 +109,7 @@ function createMockContext() {
 const defaultHookCtx: HookContext = { agentId: 'agent-1', channelId: 'default' };
 
 /** Convenience RuleContext for direct engine calls. */
-const defaultRuleCtx: RuleContext = { agentId: 'agent-1', channel: 'default' };
+const defaultRuleCtx: RuleContext = { agentId: 'agent-1', channel: 'default', verified: true };
 
 // ─── 1. Plugin registration and initialization ────────────────────────────────
 
@@ -217,70 +218,68 @@ describe('before_tool_call hook', () => {
     await plugin.deactivate?.();
   });
 
-  it('permits read-only tools on the default channel', () => {
+  it('permits read-only tools on the default channel', async () => {
     for (const tool of ['read_file', 'list_dir', 'search_files', 'get_file_info', 'glob']) {
-      const result = toolCallHandler({ toolName: tool }, defaultHookCtx);
-      // No block returned means permitted
+      const result = await toolCallHandler({ toolName: tool }, defaultHookCtx);
       expect(result).toBeUndefined();
     }
   });
 
-  it('permits write tools on the trusted channel', () => {
+  it('permits write tools on the trusted channel', async () => {
     const ctx: HookContext = { agentId: 'agent-1', channelId: 'trusted' };
     for (const tool of ['write_file', 'edit_file', 'create_file', 'patch_file']) {
-      const result = toolCallHandler({ toolName: tool }, ctx);
+      const result = await toolCallHandler({ toolName: tool }, ctx);
       expect(result).toBeUndefined();
     }
   });
 
-  it('permits write tools on the default channel (catch-all rule)', () => {
+  it('permits write tools on the default channel (catch-all rule)', async () => {
     for (const tool of ['write_file', 'edit_file', 'create_file', 'patch_file']) {
-      const result = toolCallHandler({ toolName: tool }, defaultHookCtx);
+      const result = await toolCallHandler({ toolName: tool }, defaultHookCtx);
       expect(result).toBeUndefined();
     }
   });
 
-  it('blocks write tools on unrecognised channels (no catch-all)', () => {
+  it('blocks write tools on unrecognised channels (no catch-all)', async () => {
     const unknownCtx: HookContext = { agentId: 'agent-1', channelId: 'custom_channel' };
     for (const tool of ['write_file', 'edit_file', 'create_file', 'patch_file']) {
-      const result = toolCallHandler({ toolName: tool }, unknownCtx);
-      // Implicit deny → fail closed → block
+      const result = await toolCallHandler({ toolName: tool }, unknownCtx);
       expect(result).toMatchObject({ block: true });
     }
   });
 
-  it('blocks the exec tool entirely', () => {
-    const result = toolCallHandler({ toolName: 'exec' }, defaultHookCtx);
+  it('blocks the exec tool entirely', async () => {
+    const result = await toolCallHandler({ toolName: 'exec' }, defaultHookCtx);
     expect(result).toMatchObject({ block: true });
     expect((result as { block: true; blockReason: string }).blockReason).toMatch(/exec/i);
   });
 
-  it('blocks shell-spawning tools', () => {
+  it('blocks shell-spawning tools', async () => {
     for (const tool of ['bash', 'shell', 'terminal', 'run_command', 'spawn']) {
-      const result = toolCallHandler({ toolName: tool }, defaultHookCtx);
+      const result = await toolCallHandler({ toolName: tool }, defaultHookCtx);
       expect(result).toMatchObject({ block: true });
     }
   });
 
-  it('blocks delete_file for non-admin agents', () => {
-    const result = toolCallHandler({ toolName: 'delete_file' }, defaultHookCtx);
+  it('blocks delete_file for non-admin agents', async () => {
+    const result = await toolCallHandler({ toolName: 'delete_file' }, defaultHookCtx);
     expect(result).toMatchObject({ block: true });
     expect((result as { block: true; blockReason: string }).blockReason).toMatch(/admin/i);
   });
 
-  it('permits delete_file for admin-prefixed agents on the default channel', () => {
+  it('permits delete_file for admin-prefixed agents on the default channel', async () => {
     const adminCtx: HookContext = { agentId: 'admin-1', channelId: 'default' };
-    const result = toolCallHandler({ toolName: 'delete_file' }, adminCtx);
+    const result = await toolCallHandler({ toolName: 'delete_file' }, adminCtx);
     expect(result).toBeUndefined();
   });
 
-  it('includes a blockReason when blocked', () => {
-    const result = toolCallHandler({ toolName: 'exec' }, defaultHookCtx);
+  it('includes a blockReason when blocked', async () => {
+    const result = await toolCallHandler({ toolName: 'exec' }, defaultHookCtx);
     expect((result as { block: true; blockReason: string }).blockReason).toBeTruthy();
   });
 
-  it('unknown tool on default channel is permitted by catch-all rule', () => {
-    const result = toolCallHandler({ toolName: 'some_custom_tool' }, defaultHookCtx);
+  it('unknown tool on default channel is permitted by catch-all rule', async () => {
+    const result = await toolCallHandler({ toolName: 'some_custom_tool' }, defaultHookCtx);
     expect(result).toBeUndefined();
   });
 });
@@ -439,7 +438,7 @@ describe('complex rule evaluation scenarios', () => {
   it('admin agent can access admin channel', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(defaultRules);
-    const adminCtx: RuleContext = { agentId: 'admin-bot', channel: 'admin' };
+    const adminCtx: RuleContext = { agentId: 'admin-bot', channel: 'admin', verified: true };
     expect(engine.evaluate('channel', 'admin', adminCtx).effect).toBe('permit');
   });
 
@@ -455,7 +454,7 @@ describe('complex rule evaluation scenarios', () => {
   it('untrusted channel is always forbidden regardless of agent', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(defaultRules);
-    const adminCtx: RuleContext = { agentId: 'admin-bot', channel: 'admin' };
+    const adminCtx: RuleContext = { agentId: 'admin-bot', channel: 'admin', verified: true };
     expect(engine.evaluate('channel', 'untrusted', defaultRuleCtx).effect).toBe('forbid');
     expect(engine.evaluate('channel', 'untrusted', adminCtx).effect).toBe('forbid');
   });
@@ -471,7 +470,7 @@ describe('complex rule evaluation scenarios', () => {
   it('destructive commands are always forbidden', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(defaultRules);
-    const adminCtx: RuleContext = { agentId: 'admin-bot', channel: 'trusted' };
+    const adminCtx: RuleContext = { agentId: 'admin-bot', channel: 'trusted', verified: true };
     for (const cmd of ['rm', 'dd', 'shred', 'mkfs']) {
       expect(engine.evaluate('command', cmd, defaultRuleCtx).effect).toBe('forbid');
       expect(engine.evaluate('command', cmd, adminCtx).effect).toBe('forbid');
@@ -481,7 +480,7 @@ describe('complex rule evaluation scenarios', () => {
   it('privilege-escalation commands are always forbidden', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(defaultRules);
-    const adminCtx: RuleContext = { agentId: 'admin-bot', channel: 'trusted' };
+    const adminCtx: RuleContext = { agentId: 'admin-bot', channel: 'trusted', verified: true };
     for (const cmd of ['sudo', 'su', 'chmod', 'chown']) {
       expect(engine.evaluate('command', cmd, defaultRuleCtx).effect).toBe('forbid');
       expect(engine.evaluate('command', cmd, adminCtx).effect).toBe('forbid');
@@ -491,8 +490,8 @@ describe('complex rule evaluation scenarios', () => {
   it('git is permitted on trusted channels only', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(defaultRules);
-    const trustedCtx: RuleContext = { agentId: 'agent-1', channel: 'trusted' };
-    const ciCtx: RuleContext = { agentId: 'agent-1', channel: 'ci' };
+    const trustedCtx: RuleContext = { agentId: 'agent-1', channel: 'trusted', verified: true };
+    const ciCtx: RuleContext = { agentId: 'agent-1', channel: 'ci', verified: true };
     expect(engine.evaluate('command', 'git', trustedCtx).effect).toBe('permit');
     expect(engine.evaluate('command', 'git', ciCtx).effect).toBe('permit');
     // With implicit permit, git on non-trusted channel falls through to default permit
@@ -505,9 +504,10 @@ describe('complex rule evaluation scenarios', () => {
     const authedTrustedCtx: RuleContext = {
       agentId: 'agent-1',
       channel: 'trusted',
+      verified: true,
       userId: 'user-abc',
     };
-    const unauthTrustedCtx: RuleContext = { agentId: 'agent-1', channel: 'trusted' };
+    const unauthTrustedCtx: RuleContext = { agentId: 'agent-1', channel: 'trusted', verified: true };
     expect(engine.evaluate('command', 'npm', authedTrustedCtx).effect).toBe('permit');
     // With implicit permit, failed conditions fall through to default permit
     expect(engine.evaluate('command', 'npm', unauthTrustedCtx).effect).toBe('permit');
@@ -882,7 +882,7 @@ describe('mergeRules', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(mergeRules(supportRules, defaultRules));
 
-    const supportCtx: RuleContext = { agentId: 'support-bot', channel: 'default' };
+    const supportCtx: RuleContext = { agentId: 'support-bot', channel: 'default', verified: true };
     expect(engine.evaluate('channel', 'support', supportCtx).effect).toBe('permit');
   });
 
@@ -890,7 +890,7 @@ describe('mergeRules', () => {
     const engine = new CedarPolicyEngine();
     engine.addRules(mergeRules([...supportRules], defaultRules));
 
-    const supportCtx: RuleContext = { agentId: 'support-bot', channel: 'default' };
+    const supportCtx: RuleContext = { agentId: 'support-bot', channel: 'default', verified: true };
     expect(engine.evaluate('channel', 'support', supportCtx).effect).toBe('permit');
   });
 
@@ -899,7 +899,7 @@ describe('mergeRules', () => {
     engine.addRules(mergeRules(supportRules, defaultRules));
 
     // With implicit permit, wrong agent type falls through to default permit
-    const wrongAgentCtx: RuleContext = { agentId: 'random-bot', channel: 'default' };
+    const wrongAgentCtx: RuleContext = { agentId: 'random-bot', channel: 'default', verified: true };
     expect(engine.evaluate('channel', 'support', wrongAgentCtx).effect).toBe('permit');
   });
 
@@ -908,7 +908,7 @@ describe('mergeRules', () => {
     engine.addRules(mergeRules(supportRules, defaultRules));
 
     // read_file is permitted for ALL agents by a default rule
-    const someCtx: RuleContext = { agentId: 'random-bot', channel: 'default' };
+    const someCtx: RuleContext = { agentId: 'random-bot', channel: 'default', verified: true };
     expect(engine.evaluate('tool', 'read_file', someCtx).effect).toBe('permit');
   });
 
@@ -924,7 +924,7 @@ describe('mergeRules', () => {
     engine.addRules(mergeRules([blockSupportReadFile], defaultRules));
 
     // Support agent hit by the forbid rule even though a default permit also matches
-    const supportCtx: RuleContext = { agentId: 'support-bot', channel: 'default' };
+    const supportCtx: RuleContext = { agentId: 'support-bot', channel: 'default', verified: true };
     expect(engine.evaluate('tool', 'read_file', supportCtx).effect).toBe('forbid');
 
     // Non-support agent not affected
