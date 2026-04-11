@@ -1,3 +1,4 @@
+import { EventEmitter } from 'node:events';
 import { PolicyEngine } from '../policy/engine.js';
 import type { RuleContext, Resource } from '../policy/types.js';
 import type { EvaluationDecision } from '../policy/engine.js';
@@ -88,6 +89,61 @@ export function buildEnvelope(
     metadata,
     provenance: {},
   };
+}
+
+/** Result returned by the runPipeline orchestrator. */
+export interface OrchestratorResult {
+  /** Authorization decision produced by the pipeline. */
+  decision: CeeDecision;
+  /** Wall-clock time elapsed during pipeline execution, in milliseconds. */
+  latency_ms: number;
+}
+
+/**
+ * Orchestrates the two-stage enforcement pipeline.
+ *
+ * Execution order:
+ *   1. HITL pre-check — if `hitl_mode !== 'none'` and no `approval_id`,
+ *      returns `pending_hitl_approval` without invoking either stage.
+ *   2. Stage 1 (capability gate) — on `forbid`, returns early without Stage 2.
+ *   3. Stage 2 (policy evaluation) — returns its decision.
+ *   4. Any thrown error — returns `pipeline_error` forbid (fail-closed).
+ *
+ * Emits `'executionEvent'` on `emitter` with `{ decision, timestamp }` on
+ * every execution path.
+ */
+export async function runPipeline(
+  ctx: PipelineContext,
+  stage1: Stage1Fn,
+  stage2: Stage2Fn,
+  emitter: EventEmitter,
+): Promise<OrchestratorResult> {
+  const start = Date.now();
+
+  const finish = (decision: CeeDecision): OrchestratorResult => {
+    const latency_ms = Date.now() - start;
+    emitter.emit('executionEvent', { decision, timestamp: new Date().toISOString() });
+    return { decision, latency_ms };
+  };
+
+  try {
+    // HITL pre-check: approval required but not yet granted.
+    if (ctx.hitl_mode !== 'none' && !ctx.approval_id) {
+      return finish({ effect: 'forbid', reason: 'pending_hitl_approval', stage: 'hitl' });
+    }
+
+    // Stage 1: capability gate.
+    const s1 = await stage1(ctx);
+    if (s1.effect === 'forbid') {
+      return finish(s1);
+    }
+
+    // Stage 2: policy evaluation.
+    const s2 = await stage2(ctx);
+    return finish(s2);
+  } catch {
+    return finish({ effect: 'forbid', reason: 'pipeline_error', stage: 'pipeline' });
+  }
 }
 
 /**
