@@ -1,25 +1,7 @@
 import { appendFileSync, mkdirSync } from "node:fs";
 import { dirname } from "node:path";
-import type { TPolicy, TEvaluationContext, TEvaluationResult } from "./types.js";
 
 // ─── Types ────────────────────────────────────────────────────────────────────
-
-/** An audit entry produced by the ABAC policy engine after each evaluation. */
-export interface AuditEntry {
-  /** ISO 8601 timestamp of the evaluation. */
-  timestamp: string;
-  /** ID of the policy that was evaluated. */
-  policyId: string;
-  /** Name of the policy that was evaluated. */
-  policyName: string;
-  /** Evaluation context passed to the engine. */
-  context: TEvaluationContext;
-  /** The evaluation result. */
-  result: TEvaluationResult;
-}
-
-/** A handler function called with each audit entry after an evaluation. */
-export type AuditHandler = (entry: AuditEntry) => void | Promise<void>;
 
 /** A single Cedar-engine policy decision entry for JSONL logging. */
 export interface PolicyDecisionEntry {
@@ -66,45 +48,6 @@ export interface JsonlAuditLoggerOptions {
   /** Absolute or relative path to the JSONL log file. */
   logFile: string;
 }
-
-// ─── AuditLogger ─────────────────────────────────────────────────────────────
-
-/** Dispatches ABAC audit entries to all registered handler functions. */
-export class AuditLogger {
-  private handlers: AuditHandler[] = [];
-
-  addHandler(handler: AuditHandler): void {
-    this.handlers.push(handler);
-  }
-
-  removeHandler(handler: AuditHandler): void {
-    this.handlers = this.handlers.filter(h => h !== handler);
-  }
-
-  async log(policy: TPolicy, context: TEvaluationContext, result: TEvaluationResult): Promise<void> {
-    const entry: AuditEntry = {
-      timestamp: new Date().toISOString(),
-      policyId: policy.id,
-      policyName: policy.name,
-      context,
-      result,
-    };
-    for (const handler of this.handlers) {
-      await handler(entry);
-    }
-  }
-}
-
-// ─── consoleAuditHandler ─────────────────────────────────────────────────────
-
-/** Built-in audit handler that logs decisions to the console. */
-export const consoleAuditHandler: AuditHandler = (entry: AuditEntry): void => {
-  const verdict = entry.result.allowed ? 'ALLOW' : 'DENY';
-  const ruleStr = entry.result.matchedRuleId !== undefined
-    ? ` rule=${entry.result.matchedRuleId}`
-    : '';
-  console.log(`[audit] ${verdict} policy=${entry.policyId}${ruleStr}`);
-};
 
 // ─── JsonlAuditLogger ────────────────────────────────────────────────────────
 

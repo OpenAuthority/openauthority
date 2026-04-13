@@ -1,16 +1,6 @@
 // ─── Audit re-exports ─────────────────────────────────────────────────────────
-export { AuditLogger, consoleAuditHandler, JsonlAuditLogger } from "./audit.js";
+export { JsonlAuditLogger } from "./audit.js";
 export type {
-  TPolicyEffect,
-  TPolicyCondition,
-  TPolicyRule,
-  TPolicy,
-  TEvaluationContext,
-  TEvaluationResult,
-} from "./types.js";
-export type {
-  AuditEntry,
-  AuditHandler,
   PolicyDecisionEntry,
   HitlDecisionEntry,
   JsonlAuditLoggerOptions,
@@ -81,7 +71,7 @@ export type {
 } from "./hitl/index.js";
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
-import { AuditLogger, consoleAuditHandler, JsonlAuditLogger } from "./audit.js";
+import { JsonlAuditLogger } from "./audit.js";
 import type { HitlDecisionEntry } from "./audit.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
@@ -96,7 +86,7 @@ import { ApprovalManager } from "./hitl/approval-manager.js";
 import { TelegramListener, sendApprovalRequest, sendConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
 import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig } from "./hitl/slack.js";
 import { createHash } from "node:crypto";
-import { readFile, writeFile, mkdir } from "node:fs/promises";
+import { readFile } from "node:fs/promises";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalize_action, sortedJsonStringify } from "./enforcement/normalize.js";
@@ -244,9 +234,6 @@ function detectPromptInjection(messages?: unknown[]): boolean {
 
 // ─── Singleton instances ──────────────────────────────────────────────────────
 
-const auditLogger = new AuditLogger();
-auditLogger.addHandler(consoleAuditHandler);
-
 /** Mutable container for the Cedar-style engine used by lifecycle hooks.
  *  Hot reload swaps `.current` in-place so all hook handlers pick up new rules
  *  without requiring a Gateway restart.
@@ -264,10 +251,6 @@ cedarEngineRef.current.addRules(defaultRules);
  */
 export const coverageMap = new CoverageMap();
 
-// Phase 2 modification point: DashboardServer singleton — instantiate
-// createDashboardServer({ coverageMap, auditLogFile, rulesDataFile }) here
-// and export the handle so activate() / deactivate() can start / stop it.
-
 // Log compiled rules at startup
 console.log(`[openauthority] compiled rules (${defaultRules.length}):`);
 for (const r of defaultRules) {
@@ -275,41 +258,6 @@ for (const r of defaultRules) {
   const reason = r.reason ? ` — ${r.reason}` : '';
   console.log(`[openauthority]   ${r.effect.toUpperCase().padEnd(6)} ${r.resource}:${matchStr}${reason}`);
 }
-
-/**
- * Serializes the compiled Cedar rules to data/builtin-rules.json so the UI
- * server can expose them as read-only built-in rules. RegExp matches and
- * condition functions are serialized to strings.
- */
-async function writeBuiltinRulesSnapshot(rules: Rule[]): Promise<void> {
-  try {
-    const moduleDir = dirname(fileURLToPath(import.meta.url));
-    const pluginRoot = resolve(moduleDir, "..");
-    const dataDir = resolve(pluginRoot, "data");
-    const snapshotPath = resolve(dataDir, "builtin-rules.json");
-
-    await mkdir(dataDir, { recursive: true });
-
-    const serialized = rules.map((r, i) => ({
-      id: `builtin-${i}`,
-      effect: r.effect,
-      resource: r.resource,
-      match: r.match instanceof RegExp ? r.match.source : r.match,
-      isRegex: r.match instanceof RegExp,
-      condition: r.condition ? r.condition.toString() : undefined,
-      reason: r.reason,
-      tags: r.tags,
-    }));
-
-    await writeFile(snapshotPath, JSON.stringify(serialized, null, 2), "utf-8");
-    console.log(`[openauthority] wrote ${serialized.length} built-in rules to ${snapshotPath}`);
-  } catch (err) {
-    console.error("[openauthority] failed to write builtin-rules.json:", err);
-  }
-}
-
-// Write initial snapshot
-writeBuiltinRulesSnapshot(defaultRules);
 
 /**
  * Separate Cedar engine for rules loaded from data/rules.json.
@@ -832,10 +780,7 @@ const plugin: OpenclawPlugin = {
     }
     activated = true;
 
-    rulesWatcher = startRulesWatcher(cedarEngineRef, 300, (compiledRules) => {
-      writeBuiltinRulesSnapshot(compiledRules);
-    }, { defaultEffect: 'forbid' }, defaultRules, coverageMap);
-    // Phase 2 modification point: await dashboardServer.start() here
+    rulesWatcher = startRulesWatcher(cedarEngineRef, 300, undefined, { defaultEffect: 'forbid' }, defaultRules, coverageMap);
 
     // Load user-defined JSON rules from data/rules.json into the dedicated
     // JSON Cedar engine. Async but errors are swallowed so activation is
@@ -969,8 +914,6 @@ const plugin: OpenclawPlugin = {
     }
     hitlConfigRef.current = null;
     hitlAuditLogger = null;
-
-    // Phase 2 modification point: await dashboardServer.stop() here
 
     // ── Rules watcher cleanup ─────────────────────────────────────────────
     if (rulesWatcher !== null) {
