@@ -161,8 +161,7 @@ policies:
 | [Human-in-the-Loop](docs/human-in-the-loop.md) | HITL approval flows, Telegram integration, and policy reference |
 | [Architecture](docs/architecture.md) | Design overview, hooks pipeline, and key decisions |
 | [API Reference](docs/api.md) | REST endpoints for the dashboard server |
-| [Cedar Compilation](docs/cedar-compilation.md) | Cedar policy language compilation guide |
-| [SecuritySPEC Schema](docs/securityspec-schema.md) | SecuritySPEC YAML schema reference |
+| [Action Registry](docs/action-registry.md) | Canonical action classes, risk levels, and HITL modes |
 | [Roadmap](docs/roadmap.md) | What's shipped, in progress, and planned next |
 | [Troubleshooting](docs/troubleshooting.md) | Common issues and fixes |
 | [Contributing](docs/contributing.md) | Development setup and PR process |
