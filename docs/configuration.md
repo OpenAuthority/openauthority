@@ -19,8 +19,7 @@ Complete configuration reference for deploying and operating the OpenAuthority p
 11. [Engine Options](#engine-options)
 12. [Example Configurations](#example-configurations)
 13. [Resource Types and Channel Values](#resource-types-and-channel-values)
-14. [Condition Operators](#condition-operators)
-15. [TypeScript Configuration](#typescript-configuration)
+14. [TypeScript Configuration](#typescript-configuration)
 
 ---
 
@@ -659,18 +658,6 @@ const engine = new PolicyEngine({ cleanupIntervalMs: 60_000 });
 |---|---|---|---|
 | `cleanupIntervalMs` | `number` | `0` (disabled) | Interval in ms for automatic rate-limit window cleanup. `0` disables the timer; call `cleanup()` manually instead. |
 
-### ABAC policy engine
-
-```typescript
-import { PolicyEngine, AuditLogger } from "@openauthority/policy-engine";
-
-const engine = new PolicyEngine({ auditLogger });
-```
-
-| Option | Type | Default | Description |
-|---|---|---|---|
-| `auditLogger` | `AuditLogger` | `undefined` | Audit logger to receive policy decisions. |
-
 ### Hot-reload watcher (`src/watcher.ts`)
 
 The watcher starts automatically during plugin `activate()`. It monitors the rules file for changes.
@@ -909,24 +896,6 @@ The `channel` field in a `RuleContext` controls the authorization tier. Set in r
 | `untrusted` | Explicitly untrusted or anonymous callers. Blocked by default rules. |
 
 Channels are asserted by the caller and validated by channel-level rules. The default built-in rules forbid `untrusted` callers and require the `admin-` agent ID prefix for the `admin` channel.
-
----
-
-## Condition Operators
-
-Available operators for ABAC policy rule conditions:
-
-| Operator | Description | Example |
-|---|---|---|
-| `eq` | Equality | `{ "field": "subject.role", "operator": "eq", "value": "admin" }` |
-| `neq` | Inequality | `{ "field": "subject.role", "operator": "neq", "value": "guest" }` |
-| `in` | Array membership | `{ "field": "subject.role", "operator": "in", "value": ["admin", "editor"] }` |
-| `nin` | Array non-membership | `{ "field": "subject.role", "operator": "nin", "value": ["banned"] }` |
-| `contains` | Substring match | `{ "field": "resource.id", "operator": "contains", "value": "secret" }` |
-| `startsWith` | Prefix match | `{ "field": "subject.id", "operator": "startsWith", "value": "svc-" }` |
-| `regex` | Regular expression | `{ "field": "action", "operator": "regex", "value": "^(read|list)$" }` |
-
-Field paths use dot notation for nested access (e.g., `"subject.role"`, `"environment.ipAddress"`).
 
 ---
 

@@ -169,22 +169,22 @@ policies:
 
 ## Architecture
 
-### Two policy engines
+### Policy engine
 
-| | ABAC Engine | Cedar-Style Engine |
-|---|---|---|
-| **Semantics** | Priority-ordered, allow/deny | Forbid-wins, permit/forbid |
-| **Rule format** | TypeBox-validated JSON schema | Plain TypeScript objects |
-| **Rate limiting** | Not supported | Built-in sliding window |
-| **Use case** | Structured attribute-based access control | Lifecycle hook gating, tool/command/prompt/model restrictions |
+Open Authority uses a single Cedar-style policy engine with **forbid-wins** semantics. Rules are evaluated against normalised action contexts. A single `forbid` rule overrides any number of `permit` rules.
+
+| Feature | Detail |
+|---|---|
+| **Semantics** | Forbid-wins, permit/forbid |
+| **Rule formats** | Action-class rules (TypeScript) + resource-match rules (JSON) |
+| **Rate limiting** | Built-in sliding window per rule and agent |
+| **Hot reload** | ~300 ms debounce, no restart required |
 
 ### Gateway hooks
 
-The plugin implements three OpenClaw gateway hooks. Currently only `before_tool_call` is active:
+The plugin implements the `before_tool_call` OpenClaw gateway hook:
 
-- **`before_tool_call`** (active) --- primary enforcement hook. Evaluates Cedar rules, JSON rules, and ABAC policies. Can block execution.
-- **`before_prompt_build`** (implemented, disabled) --- prompt injection detection (10 regex patterns). Will be re-enabled after false-positive tuning.
-- **`before_model_resolve`** (implemented, disabled) --- model routing. Waiting for OpenClaw to pass the model name in the event payload.
+- **`before_tool_call`** (active) --- primary enforcement hook. Normalises the tool call to a semantic action class, evaluates rules in Stage 1 (capability gate) and Stage 2 (Cedar engine). Can block execution or route to HITL.
 
 ### Key design decisions
 
@@ -197,24 +197,33 @@ The plugin implements three OpenClaw gateway hooks. Currently only `before_tool_
 
 ```
 src/
-  index.ts          — Plugin entry point and OpenClaw integration
-  engine.ts         — ABAC PolicyEngine (add/remove/evaluate policies)
-  rules.ts          — Rule evaluation logic and condition operators
-  types.ts          — TypeBox schemas and TypeScript types
-  audit.ts          — AuditLogger and audit handlers
-  watcher.ts        — Hot-reload file watcher for rules
+  index.ts          — Plugin entry point and OpenClaw hook registration
+  types.ts          — Core v0.1 runtime types (Intent, Capability, ExecutionEnvelope, CeeDecision)
+  audit.ts          — JsonlAuditLogger for append-only JSONL audit log
+  envelope.ts       — Re-export shim (buildEnvelope, sortedJsonStringify, uuidv7)
+  watcher.ts        — Hot-reload watcher for JSON + TypeScript rules
+  enforcement/
+    pipeline.ts     — runPipeline, EnforcementPolicyEngine, envelope builder
+    normalize.ts    — Action normalization registry (tool name → action_class)
+    decision.ts     — StructuredDecision type layer
+    stage2-policy.ts — Stage 2 evaluator factory
   policy/
     engine.ts       — Cedar-style PolicyEngine (forbid-wins, rate limiting)
-    types.ts        — Cedar types (Effect, Resource, Rule, RuleContext)
+    types.ts        — Rule, RuleContext, Effect, Resource, RateLimit
     rules/
-      default.ts    — 24 default rules across 5 resource types
-      support.ts    — Agent-specific rules
-      index.ts      — Rule merging logic
+      default.ts    — Baseline action-class rules (priority 10/90/100)
+      index.ts      — mergeRules() + combined default export
   hitl/
     types.ts        — HITL policy schemas (TypeBox)
     matcher.ts      — Action pattern matching (dot-notation wildcards)
     parser.ts       — YAML/JSON policy file parsing and validation
     watcher.ts      — HITL policy hot-reload watcher
+    approval-manager.ts — Approval lifecycle and token management
+    telegram.ts     — Telegram approval channel adapter
+    slack.ts        — Slack approval channel adapter
+  adapter/
+    index.ts        — IAuthorityAdapter interface
+    file-adapter.ts — File-based adapter implementation
 skills/
   token-budget/     — /token-budget skill for ClawHub (token tracking, spend alerts)
   whatdidyoudo/     — /whatdidyoudo skill for ClawHub (action replay log)
@@ -226,6 +235,10 @@ ui/
     audit.ts        — Audit log API and SSE streaming
   client/           — React 18 + Vite SPA
 docs/               — Full documentation
+data/
+  rules.json        — JSON-format runtime rules (hot-reloaded)
+  audit.jsonl       — Append-only JSONL audit log
+  bundles/          — Policy bundle directory
 ```
 
 ## Development
