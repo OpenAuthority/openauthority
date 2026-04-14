@@ -256,9 +256,12 @@ export const coverageMap = new CoverageMap();
 // Log compiled rules at startup
 console.log(`[openauthority] compiled rules (${defaultRules.length}):`);
 for (const r of defaultRules) {
-  const matchStr = r.match instanceof RegExp ? r.match.toString() : r.match;
+  // Rules are either Cedar-style (resource + match) or Stage-2 (action_class).
+  const target = r.action_class
+    ? `action:${r.action_class}`
+    : `${r.resource ?? '?'}:${r.match instanceof RegExp ? r.match.toString() : (r.match ?? '*')}`;
   const reason = r.reason ? ` — ${r.reason}` : '';
-  console.log(`[openauthority]   ${r.effect.toUpperCase().padEnd(6)} ${r.resource}:${matchStr}${reason}`);
+  console.log(`[openauthority]   ${r.effect.toUpperCase().padEnd(6)} ${target}${reason}`);
 }
 
 /**
@@ -810,18 +813,6 @@ const plugin: OpenclawPlugin = {
   version: getVersionInfo().version,
 
   async activate(ctx: OpenclawPluginContext) {
-    // ── Version banner: confirm at a glance which build is running ──────────
-    const v = getVersionInfo();
-    const dirtyTag = v.commitDirty ? " (dirty)" : "";
-    console.log("┌──────────────────────────────────────────────────────────────┐");
-    console.log("│  [plugin:openauthority] VERSION                              │");
-    console.log("├──────────────────────────────────────────────────────────────┤");
-    console.log(`│  version:    ${v.version}${dirtyTag}`.padEnd(63) + "│");
-    console.log(`│  commit:     ${v.commit}${dirtyTag}`.padEnd(63) + "│");
-    console.log(`│  built at:   ${v.builtAt}`.padEnd(63) + "│");
-    console.log(`│  root:       ${v.pluginRoot}`.padEnd(63) + "│");
-    console.log("└──────────────────────────────────────────────────────────────┘");
-
     // ── Typed hooks: register into EVERY registry ───────────────────────────
     // OpenClaw loads plugins from multiple subsystems, each with its own
     // registry. ctx.on() targets the calling registry's typedHooks array.
@@ -839,6 +830,18 @@ const plugin: OpenclawPlugin = {
     }
     activated = true;
 
+    // ── Version banner: confirm at a glance which build is running ──────────
+    const v = getVersionInfo();
+    const dirtyTag = v.commitDirty ? " (dirty)" : "";
+    console.log("┌──────────────────────────────────────────────────────────────┐");
+    console.log("│  [plugin:openauthority] VERSION                              │");
+    console.log("├──────────────────────────────────────────────────────────────┤");
+    console.log(`│  version:    ${v.version}${dirtyTag}`.padEnd(63) + "│");
+    console.log(`│  commit:     ${v.commit}${dirtyTag}`.padEnd(63) + "│");
+    console.log(`│  built at:   ${v.builtAt}`.padEnd(63) + "│");
+    console.log(`│  root:       ${v.pluginRoot}`.padEnd(63) + "│");
+    console.log("└──────────────────────────────────────────────────────────────┘");
+
     rulesWatcher = startRulesWatcher(cedarEngineRef, 300, undefined, { defaultEffect: 'forbid' }, defaultRules, coverageMap);
 
     // Load user-defined JSON rules from data/rules.json into the dedicated
@@ -854,7 +857,11 @@ const plugin: OpenclawPlugin = {
     const rules = cedarEngineRef.current.rules;
     const rulesByResource: Record<string, Rule[]> = {};
     for (const r of rules) {
-      const key = r.resource ?? "unknown";
+      // Group action_class rules under their dotted namespace prefix
+      // (e.g. "filesystem.read" → "filesystem"); fall back to resource.
+      const key = r.action_class
+        ? r.action_class.split(".")[0] ?? "action"
+        : (r.resource ?? "unknown");
       if (!rulesByResource[key]) rulesByResource[key] = [];
       rulesByResource[key].push(r);
     }
@@ -879,10 +886,12 @@ const plugin: OpenclawPlugin = {
     console.log("│  RULE DETAILS:                                               │");
     for (const r of rules) {
       const effect = r.effect === "permit" ? "✓ PERMIT" : "✕ FORBID";
-      const match = r.match instanceof RegExp ? r.match.source : String(r.match ?? "*");
-      const truncMatch = match.length > 40 ? match.slice(0, 37) + "..." : match;
+      const target = r.action_class
+        ? `action:${r.action_class}`
+        : `${r.resource ?? "?"}:${r.match instanceof RegExp ? r.match.source : String(r.match ?? "*")}`;
+      const truncTarget = target.length > 48 ? target.slice(0, 45) + "..." : target;
       const cond = r.condition ? " [conditional]" : "";
-      console.log(`│  ${effect} ${r.resource}:${truncMatch}${cond}`.padEnd(63) + "│");
+      console.log(`│  ${effect} ${truncTarget}${cond}`.padEnd(63) + "│");
     }
     console.log("└──────────────────────────────────────────────────────────────┘");
 
@@ -943,9 +952,12 @@ const plugin: OpenclawPlugin = {
       const listenerInfo = listeners.length > 0 ? `, listeners: ${listeners.join(', ')}` : ' (no channel listeners configured)';
       console.log(`[plugin:openauthority] HITL loaded: ${hitlConfig.policies.length} polic${hitlConfig.policies.length !== 1 ? 'ies' : 'y'}${listenerInfo}`);
     } catch (err) {
-      // HITL is optional — failing to load doesn't prevent activation
-      const code = (err as NodeJS.ErrnoException)?.code;
-      if (code === 'ENOENT') {
+      // HITL is optional — failing to load doesn't prevent activation.
+      // parseHitlPolicyFile wraps the underlying fs error in `cause`, so
+      // check both the top-level code and the cause chain.
+      const directCode = (err as NodeJS.ErrnoException)?.code;
+      const causeCode = ((err as { cause?: NodeJS.ErrnoException })?.cause)?.code;
+      if (directCode === 'ENOENT' || causeCode === 'ENOENT') {
         console.log("[plugin:openauthority] no hitl-policy.yaml found — HITL disabled");
       } else {
         console.warn("[plugin:openauthority] HITL policy not loaded (invalid config):", err);
