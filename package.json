@@ -28,6 +28,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@cedar-policy/cedar-wasm": "^4.0.0",
     "@sinclair/typebox": "^0.34.0",
     "chokidar": "^4.0.0",
     "yaml": "^2.8.2"
