@@ -13,6 +13,7 @@
  *  TC-09  audit log: pipeline emits ExecutionEvent with required fields
  *  TC-10  bundle hot-reload: FileAuthorityAdapter notifies onUpdate within 500ms
  *  TC-11  deactivate leaves no hanging listeners or watchers
+ *  TC-22  trust propagation: untrusted source + high-risk action denied regardless of approval
  */
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
@@ -639,5 +640,90 @@ describe('plugin integration suite', () => {
     const secondEvent = events[1] as { decision: { effect: string }; timestamp: string };
     expect(secondEvent.decision.effect).toBe('permit');
     expect(typeof secondEvent.timestamp).toBe('string');
+  });
+
+  // ── TC-22: trust propagation — untrusted source + high-risk denied regardless of approval ──
+
+  it('TC-22: untrusted source with high-risk action is denied even with a valid approval (untrusted_source_high_risk)', async () => {
+    const actionClass = 'filesystem.delete';
+    const target = '/tmp/tc22-secret.txt';
+    const payloadHash = 'tc22-hash';
+
+    const engine = createEnforcementEngine([
+      { effect: 'permit', resource: 'tool', match: '*' } satisfies Rule,
+    ]);
+
+    const adapter = new FileAuthorityAdapter({ bundlePath: '/dev/null' });
+
+    // Issue a valid capability — Stage 1 would normally pass with this token.
+    const capability = await adapter.issueCapability({
+      action_class: actionClass,
+      target,
+      payload_hash: payloadHash,
+    });
+
+    const stage1 = (pCtx: PipelineContext) =>
+      validateCapability(pCtx, approvalManager, (id) =>
+        id === capability.approval_id ? capability : undefined,
+      );
+    const stage2 = createStage2(engine);
+
+    // ── Part 1: untrusted source + high risk + valid approval → denied ─────────
+    // The HITL pre-check passes (approval_id is present). Trust level validation
+    // fires first inside Stage 1 (Check 0), before any capability lookup.
+
+    const denied = await runPipeline(
+      {
+        action_class: actionClass,
+        target,
+        payload_hash: payloadHash,
+        hitl_mode: 'per_request',
+        approval_id: capability.approval_id,
+        sourceTrustLevel: 'untrusted',
+        risk: 'high',
+        rule_context: { agentId: 'agent-tc22', channel: 'default' },
+      },
+      stage1,
+      stage2,
+      emitter,
+    );
+
+    expect(denied.decision.effect).toBe('forbid');
+    expect(denied.decision.reason).toBe('untrusted_source_high_risk');
+    // stage1 (not hitl) confirms trust check fired after the HITL pre-check
+    // but before capability validation — i.e. trust validation precedes capability check.
+    expect(denied.decision.stage).toBe('stage1');
+
+    // ── Part 2: same action from trusted source with approval → permitted ──────
+    // Issue a fresh capability so each path is independent.
+
+    const trustedCapability = await adapter.issueCapability({
+      action_class: actionClass,
+      target,
+      payload_hash: payloadHash,
+    });
+
+    const stage1Trusted = (pCtx: PipelineContext) =>
+      validateCapability(pCtx, approvalManager, (id) =>
+        id === trustedCapability.approval_id ? trustedCapability : undefined,
+      );
+
+    const permitted = await runPipeline(
+      {
+        action_class: actionClass,
+        target,
+        payload_hash: payloadHash,
+        hitl_mode: 'per_request',
+        approval_id: trustedCapability.approval_id,
+        sourceTrustLevel: 'user',
+        risk: 'high',
+        rule_context: { agentId: 'agent-tc22', channel: 'default' },
+      },
+      stage1Trusted,
+      stage2,
+      emitter,
+    );
+
+    expect(permitted.decision.effect).toBe('permit');
   });
 });
