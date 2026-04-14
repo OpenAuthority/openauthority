@@ -18,7 +18,7 @@ export default defineConfig({
           lines: 95,
         },
         'src/hitl/**': {
-          lines: 85,
+          lines: 88,
         },
         'src/policy/**': {
           lines: 90,
