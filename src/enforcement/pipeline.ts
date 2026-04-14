@@ -157,7 +157,7 @@ export async function runPipeline(
  *   (all others)    → tool
  */
 export class EnforcementPolicyEngine extends PolicyEngine {
-  evaluateByActionClass(
+  override evaluateByActionClass(
     action_class: string,
     target: string,
     context: RuleContext,
