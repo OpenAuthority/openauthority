@@ -96,6 +96,51 @@ describe('credit card', () => {
   });
 });
 
+// ─── IBAN ─────────────────────────────────────────────────────────────────────
+
+describe('IBAN', () => {
+  it('detects a compact German IBAN', () => {
+    const result = detectSensitiveData('IBAN: DE89370400440532013000');
+    expect(result.hasPii).toBe(true);
+    expect(result.categories).toContain('iban');
+  });
+
+  it('detects a compact GB IBAN', () => {
+    const result = detectSensitiveData('account: GB29NWBK60161331926819');
+    expect(result.hasPii).toBe(true);
+    expect(result.categories).toContain('iban');
+  });
+
+  it('detects a space-formatted GB IBAN', () => {
+    const result = detectSensitiveData('bank: GB29 NWBK 6016 1331 9268 19');
+    expect(result.hasPii).toBe(true);
+    expect(result.categories).toContain('iban');
+  });
+
+  it('detects a space-formatted DE IBAN', () => {
+    const result = detectSensitiveData('DE89 3704 0044 0532 0130 00');
+    expect(result.hasPii).toBe(true);
+    expect(result.categories).toContain('iban');
+  });
+
+  it('detects an IBAN embedded in longer text', () => {
+    const result = detectSensitiveData('Please transfer to FR7630006000011234567890189 by end of week.');
+    expect(result.hasPii).toBe(true);
+    expect(result.categories).toContain('iban');
+  });
+
+  it('does not flag a short alphanumeric code that is not an IBAN', () => {
+    // Too short to be a valid IBAN BBAN segment
+    const result = detectSensitiveData('ref: AB12345');
+    expect(result.categories).not.toContain('iban');
+  });
+
+  it('does not flag plain text without an IBAN', () => {
+    const result = detectSensitiveData('Order confirmed. Payment due in 30 days.');
+    expect(result.categories).not.toContain('iban');
+  });
+});
+
 // ─── Private key ──────────────────────────────────────────────────────────────
 
 describe('private key', () => {
@@ -213,10 +258,11 @@ describe('multiple categories', () => {
     expect(result.categories).toContain('credit_card');
   });
 
-  it('detects all four categories in the same text', () => {
+  it('detects all five categories in the same text', () => {
     const text = [
       'ssn: 123-45-6789',
       'card: 4111111111111111',
+      'iban: GB29NWBK60161331926819',
       '-----BEGIN PRIVATE KEY-----',
       'api_key=sk-abc123',
     ].join('\n');
@@ -224,9 +270,10 @@ describe('multiple categories', () => {
     expect(result.hasPii).toBe(true);
     expect(result.categories).toContain('ssn');
     expect(result.categories).toContain('credit_card');
+    expect(result.categories).toContain('iban');
     expect(result.categories).toContain('private_key');
     expect(result.categories).toContain('credential');
-    expect(result.categories).toHaveLength(4);
+    expect(result.categories).toHaveLength(5);
   });
 
   it('detects private_key and credential together', () => {

@@ -27,6 +27,8 @@ export type { CoverageCell, CoverageEntry, CoverageState } from "./policy/covera
 export { fromCeeDecision, askUser, forbidDecision } from "./enforcement/decision.js";
 export type { StructuredDecision, CapabilityInfo } from "./enforcement/decision.js";
 export { createStage2, createEnforcementEngine } from "./enforcement/stage2-policy.js";
+export { detectSensitiveData } from "./enforcement/pii-classifier.js";
+export type { PiiCategory, PiiDetectionResult } from "./enforcement/pii-classifier.js";
 export { buildEnvelope, uuidv7, computePayloadHash, computeContextHash, sortedJsonStringify } from "./envelope.js";
 
 // ─── Human-in-the-loop policy configuration ──────────────────────────────────

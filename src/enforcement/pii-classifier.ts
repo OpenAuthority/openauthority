@@ -7,7 +7,7 @@
  */
 
 /** Categories of sensitive data that can be detected. */
-export type PiiCategory = 'ssn' | 'credit_card' | 'private_key' | 'credential';
+export type PiiCategory = 'ssn' | 'credit_card' | 'iban' | 'private_key' | 'credential';
 
 /** Result of PII detection on a text string. */
 export interface PiiDetectionResult {
@@ -28,6 +28,14 @@ const SSN_RE = /\b\d{3}-\d{2}-\d{4}\b/;
  * Matches are then validated with the Luhn algorithm.
  */
 const CC_CANDIDATE_RE = /\b(?:\d{4}[ -]?\d{4}[ -]?\d{4}[ -]?\d{4}|\d{4}[ -]?\d{6}[ -]?\d{5}|\d{13})\b/g;
+
+/**
+ * IBAN (International Bank Account Number):
+ *   - Compact form:    CC\d{2}[A-Z0-9]{11,30}  (no spaces, 15–34 total chars)
+ *   - Formatted form:  CC\d{2} followed by space-separated groups of 4 alphanumeric chars
+ */
+const IBAN_RE =
+  /\b[A-Z]{2}\d{2}(?:[A-Z0-9]{11,30}|(?:\s[A-Z0-9]{4})+(?:\s[A-Z0-9]{1,4})?)\b/;
 
 /** PEM-encoded private key header. */
 const PRIVATE_KEY_RE = /-----BEGIN (?:RSA |EC |OPENSSH )?PRIVATE KEY-----/;
@@ -82,6 +90,7 @@ function detectCreditCard(text: string): boolean {
  * Detection categories:
  *   - `'ssn'`         — US Social Security Numbers (XXX-XX-XXXX)
  *   - `'credit_card'` — Credit card numbers (Luhn-valid, 13–19 digits)
+ *   - `'iban'`        — International Bank Account Numbers (compact or formatted)
  *   - `'private_key'` — PEM-encoded private key headers
  *   - `'credential'`  — Credential key-value pairs (password=, api_key:, …)
  *
@@ -93,6 +102,7 @@ export function detectSensitiveData(text: string): PiiDetectionResult {
 
   if (SSN_RE.test(text)) categories.push('ssn');
   if (detectCreditCard(text)) categories.push('credit_card');
+  if (IBAN_RE.test(text)) categories.push('iban');
   if (PRIVATE_KEY_RE.test(text)) categories.push('private_key');
   if (CREDENTIAL_RE.test(text)) categories.push('credential');
 
