@@ -23,6 +23,7 @@ const TLoadedRule = Type.Object({
   tags: Type.Optional(Type.Array(Type.String())),
   rateLimit: Type.Optional(TRateLimitSchema),
   action_class: Type.Optional(Type.String()),
+  intent_group: Type.Optional(Type.String()),
 });
 
 /**

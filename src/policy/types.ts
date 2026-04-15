@@ -54,6 +54,8 @@ export interface Rule {
   rateLimit?: RateLimit;
   /** Action class for Stage 2 semantic evaluation matching (e.g. 'filesystem.read') */
   action_class?: string;
+  /** Intent group for grouping related actions (e.g. 'data_exfiltration') */
+  intent_group?: string;
   /**
    * Evaluation priority. Lower numbers are evaluated first.
    * Tier 10 = permitted baseline, 90 = HITL-gated forbid, 100 = unconditional forbid.

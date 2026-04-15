@@ -70,6 +70,14 @@ describe('loadPolicyFile', () => {
     await expect(loadPolicyFile('/policy.json')).rejects.toBeInstanceOf(PolicyLoadError);
   });
 
+  it('accepts a rule with an intent_group field', async () => {
+    const rule: LoadedRule = { effect: 'forbid', resource: 'tool', match: '*', intent_group: 'data_exfiltration' };
+    const bundle = { version: 1, rules: [rule] };
+    mockReadFile.mockResolvedValue(JSON.stringify(bundle) as any);
+    const result = await loadPolicyFile('/policy.json');
+    expect(result.rules![0].intent_group).toBe('data_exfiltration');
+  });
+
   it('throws PolicyLoadError when a rule has an empty resource string', async () => {
     const bundle = { version: 1, rules: [{ effect: 'permit', resource: '', match: '*' }] };
     mockReadFile.mockResolvedValue(JSON.stringify(bundle) as any);
