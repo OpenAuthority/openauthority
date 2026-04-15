@@ -1,0 +1,393 @@
+/* ─── Overlay ──────────────────────────────────────────────────────────────── */
+
+.rde-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(0, 0, 0, 0.55);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  z-index: 1000;
+  padding: 1rem;
+}
+
+/* ─── Modal container ─────────────────────────────────────────────────────── */
+
+.rde-modal {
+  background: #ffffff;
+  border-radius: 8px;
+  box-shadow: 0 20px 60px rgba(0, 0, 0, 0.3);
+  width: 100%;
+  max-width: 860px;
+  max-height: 90vh;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+}
+
+/* ─── Header ──────────────────────────────────────────────────────────────── */
+
+.rde-header {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  padding: 1.25rem 1.5rem 1rem;
+  border-bottom: 1px solid #e5e7eb;
+  flex-shrink: 0;
+}
+
+.rde-title {
+  font-size: 1.125rem;
+  font-weight: 600;
+  color: #111827;
+  margin: 0 0 0.125rem;
+}
+
+.rde-subtitle {
+  font-size: 0.8125rem;
+  color: #9ca3af;
+  margin: 0;
+}
+
+.rde-close {
+  background: none;
+  border: none;
+  cursor: pointer;
+  color: #6b7280;
+  font-size: 1.25rem;
+  line-height: 1;
+  padding: 0.25rem 0.375rem;
+  border-radius: 4px;
+  flex-shrink: 0;
+  transition: background 0.12s;
+}
+.rde-close:hover {
+  background: #f3f4f6;
+  color: #111827;
+}
+
+/* ─── Body: two-column layout ─────────────────────────────────────────────── */
+
+.rde-body {
+  display: flex;
+  flex: 1;
+  overflow: hidden;
+  min-height: 0;
+}
+
+/* ─── Side panel ──────────────────────────────────────────────────────────── */
+
+.rde-side {
+  width: 240px;
+  flex-shrink: 0;
+  background: #f9fafb;
+  border-right: 1px solid #e5e7eb;
+  padding: 1.25rem 1rem;
+  overflow-y: auto;
+}
+
+.rde-panel-title,
+.rde-section-title {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+  color: #6b7280;
+  margin: 0 0 0.75rem;
+}
+
+/* ─── Impact content ──────────────────────────────────────────────────────── */
+
+.rde-impact {
+  font-size: 0.8125rem;
+  line-height: 1.5;
+  color: #374151;
+}
+
+.rde-impact-summary {
+  margin: 0 0 1rem;
+}
+
+.rde-effect-badge {
+  display: inline-block;
+  padding: 0.1em 0.45em;
+  border-radius: 3px;
+  font-size: 0.75rem;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.rde-effect-badge--forbid {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.rde-effect-badge--permit {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.rde-impact-fields {
+  margin: 0 0 0.75rem;
+  padding: 0;
+}
+
+.rde-impact-field {
+  margin-bottom: 0.75rem;
+}
+.rde-impact-field dt {
+  font-weight: 600;
+  font-size: 0.75rem;
+  color: #374151;
+  margin-bottom: 0.125rem;
+}
+.rde-impact-field dd {
+  margin: 0;
+  color: #6b7280;
+  font-size: 0.75rem;
+  line-height: 1.4;
+}
+.rde-impact-field code {
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  background: #f3f4f6;
+  padding: 0.1em 0.35em;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  color: #1f2937;
+}
+
+.rde-tag {
+  display: inline-block;
+  background: #e5e7eb;
+  color: #374151;
+  border-radius: 9999px;
+  padding: 0.1em 0.5em;
+  font-size: 0.7rem;
+  margin: 0.125rem 0.125rem 0 0;
+}
+
+.rde-impact-warning {
+  margin: 0.75rem 0 0;
+  padding: 0.5rem 0.625rem;
+  background: #fff7ed;
+  border: 1px solid #fdba74;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  color: #7c2d12;
+  line-height: 1.4;
+}
+.rde-impact-warning-icon {
+  color: #ea580c;
+}
+
+/* ─── Main panel ──────────────────────────────────────────────────────────── */
+
+.rde-main {
+  flex: 1;
+  overflow-y: auto;
+  padding: 1.25rem 1.5rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.25rem;
+}
+
+/* ─── Rule preview ────────────────────────────────────────────────────────── */
+
+.rde-rule-text {
+  font-family: ui-monospace, 'Cascadia Code', 'Fira Code', monospace;
+  font-size: 0.8125rem;
+  line-height: 1.6;
+  background: #f9fafb;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  padding: 0.75rem 1rem;
+  margin: 0;
+  white-space: pre;
+  overflow-x: auto;
+  color: #1f2937;
+  outline: none;
+}
+.rde-rule-text:focus-visible {
+  box-shadow: 0 0 0 2px #6366f1;
+}
+
+/* ─── Audit list ──────────────────────────────────────────────────────────── */
+
+.rde-count-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: #e5e7eb;
+  color: #374151;
+  border-radius: 9999px;
+  font-size: 0.6875rem;
+  font-weight: 600;
+  min-width: 1.25rem;
+  height: 1.25rem;
+  padding: 0 0.3rem;
+  margin-left: 0.375rem;
+  vertical-align: middle;
+}
+
+.rde-audit-list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  border: 1px solid #e5e7eb;
+  border-radius: 6px;
+  overflow: hidden;
+  font-size: 0.8125rem;
+}
+
+.rde-audit-entry {
+  display: flex;
+  align-items: center;
+  gap: 0.625rem;
+  padding: 0.4375rem 0.75rem;
+  border-bottom: 1px solid #f3f4f6;
+  flex-wrap: wrap;
+}
+.rde-audit-entry:last-child {
+  border-bottom: none;
+}
+.rde-audit-entry:nth-child(even) {
+  background: #fafafa;
+}
+
+.rde-audit-time {
+  color: #9ca3af;
+  font-size: 0.75rem;
+  white-space: nowrap;
+  flex-shrink: 0;
+}
+
+.rde-audit-action {
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 0.75rem;
+  color: #1f2937;
+  flex: 1;
+}
+
+.rde-audit-effect {
+  font-size: 0.6875rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  flex-shrink: 0;
+}
+.rde-audit-effect--forbid {
+  background: #fee2e2;
+  color: #b91c1c;
+}
+.rde-audit-effect--permit {
+  background: #d1fae5;
+  color: #065f46;
+}
+
+.rde-audit-agent {
+  font-size: 0.6875rem;
+  color: #9ca3af;
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+}
+
+/* ─── Confirmation section ────────────────────────────────────────────────── */
+
+.rde-confirm-section {
+  border-top: 1px solid #e5e7eb;
+  padding-top: 1.25rem;
+}
+
+.rde-confirm-label {
+  display: block;
+  font-size: 0.8125rem;
+  color: #374151;
+  margin-bottom: 0.5rem;
+  line-height: 1.5;
+}
+.rde-confirm-code {
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 0.8125rem;
+  background: #f3f4f6;
+  padding: 0.1em 0.4em;
+  border-radius: 3px;
+  color: #1f2937;
+}
+
+.rde-confirm-input {
+  width: 100%;
+  box-sizing: border-box;
+  padding: 0.5rem 0.75rem;
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  font-size: 0.875rem;
+  border: 1.5px solid #d1d5db;
+  border-radius: 6px;
+  background: #ffffff;
+  color: #111827;
+  outline: none;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+.rde-confirm-input:focus {
+  border-color: #6366f1;
+  box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.12);
+}
+.rde-confirm-input--error {
+  border-color: #f87171;
+}
+.rde-confirm-input--error:focus {
+  border-color: #ef4444;
+  box-shadow: 0 0 0 3px rgba(239, 68, 68, 0.12);
+}
+
+.rde-confirm-error {
+  margin: 0.375rem 0 0;
+  font-size: 0.75rem;
+  color: #dc2626;
+  line-height: 1.4;
+}
+.rde-confirm-error code {
+  font-family: ui-monospace, 'Cascadia Code', monospace;
+  background: #fef2f2;
+  padding: 0.1em 0.3em;
+  border-radius: 2px;
+}
+
+/* ─── Action buttons ──────────────────────────────────────────────────────── */
+
+.rde-actions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 0.5rem;
+}
+
+.rde-btn {
+  padding: 0.5rem 1.25rem;
+  border-radius: 6px;
+  font-size: 0.875rem;
+  font-weight: 500;
+  cursor: pointer;
+  border: none;
+  transition: background 0.15s, opacity 0.15s;
+  line-height: 1.25;
+}
+
+.rde-btn--cancel {
+  background: #f3f4f6;
+  color: #374151;
+  border: 1px solid #d1d5db;
+}
+.rde-btn--cancel:hover {
+  background: #e5e7eb;
+}
+
+.rde-btn--delete {
+  background: #dc2626;
+  color: #ffffff;
+}
+.rde-btn--delete:hover:not(:disabled) {
+  background: #b91c1c;
+}
+.rde-btn--delete:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
