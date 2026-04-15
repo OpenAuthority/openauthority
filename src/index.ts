@@ -31,6 +31,10 @@ export { detectSensitiveData } from "./enforcement/pii-classifier.js";
 export type { PiiCategory, PiiDetectionResult } from "./enforcement/pii-classifier.js";
 export { buildEnvelope, uuidv7, computePayloadHash, computeContextHash, sortedJsonStringify } from "./envelope.js";
 
+// ─── Utilities ───────────────────────────────────────────────────────────────
+export { generateDeltaSummary } from "./utils/delta-summary.js";
+export type { DeltaSummaryInput, ResidualRisk, ResidualRiskLevel } from "./utils/delta-summary.js";
+
 // ─── Human-in-the-loop policy configuration ──────────────────────────────────
 export {
   HitlFallbackSchema,
