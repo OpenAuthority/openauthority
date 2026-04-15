@@ -438,11 +438,11 @@ describe('intent_group — normalize_action propagation', () => {
   });
 
   it('all web.fetch aliases propagate the data_exfiltration intent_group', () => {
-    const webFetchAliases = ['fetch', 'http_get', 'web_fetch', 'get_url', 'fetch_url', 'http_request', 'curl', 'wget', 'download_url'];
+    const webFetchAliases = ['fetch', 'http_get', 'web_fetch', 'get_url', 'fetch_url', 'http_request', 'curl', 'wget', 'download_url', 'http_head', 'head_url', 'http_options'];
     for (const alias of webFetchAliases) {
       expect(normalize_action(alias).intent_group).toBe('data_exfiltration');
     }
-    const webPostAliases = ['http_post', 'post_url', 'web_post', 'post_request', 'submit_form'];
+    const webPostAliases = ['http_post', 'post_url', 'web_post', 'post_request', 'submit_form', 'http_put', 'put_url', 'web_put', 'put_request', 'http_patch', 'patch_url', 'web_patch', 'patch_request'];
     for (const alias of webPostAliases) {
       expect(normalize_action(alias).intent_group).toBe('web_access');
     }
@@ -515,6 +515,8 @@ describe('web.search — aliases resolve to web.search with medium risk and per_
     'web_search',
     'google_search',
     'bing_search',
+    'duckduckgo_search',
+    'ddg_search',
     'search_web',
     'web_research',
     'news_search',
@@ -574,6 +576,78 @@ describe('web.fetch — new aliases and updated risk/hitl/intent_group', () => {
   it('web.fetch default_hitl_mode is per_request', () => {
     expect(getRegistryEntry('fetch').default_hitl_mode).toBe('per_request');
   });
+});
+
+// ---------------------------------------------------------------------------
+// web.post — PUT and PATCH HTTP method variants (TC-WP)
+// ---------------------------------------------------------------------------
+
+describe('web.post — HTTP PUT and PATCH method aliases resolve to web.post', () => {
+  const HTTP_WRITE_ALIASES = [
+    'http_put',
+    'put_url',
+    'web_put',
+    'put_request',
+    'http_patch',
+    'patch_url',
+    'web_patch',
+    'patch_request',
+  ] as const;
+
+  for (const alias of HTTP_WRITE_ALIASES) {
+    it(`TC-WP: "${alias}" resolves to web.post`, () => {
+      expect(normalizeActionClass(alias)).toBe('web.post');
+    });
+
+    it(`TC-WP: "${alias}" has intent_group web_access`, () => {
+      expect(getRegistryEntry(alias).intent_group).toBe('web_access');
+    });
+
+    it(`TC-WP: normalize_action("${alias}") returns correct action_class, risk, hitl_mode`, () => {
+      const result = normalize_action(alias);
+      expect(result.action_class).toBe('web.post');
+      expect(result.risk).toBe('medium');
+      expect(result.hitl_mode).toBe('per_request');
+      expect(result.intent_group).toBe('web_access');
+    });
+  }
+
+  it('HTTP PUT/PATCH aliases are case-insensitive', () => {
+    expect(normalizeActionClass('HTTP_PUT')).toBe('web.post');
+    expect(normalizeActionClass('Http_Patch')).toBe('web.post');
+    expect(normalizeActionClass('PUT_URL')).toBe('web.post');
+    expect(normalizeActionClass('PATCH_REQUEST')).toBe('web.post');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// web.fetch — HEAD and OPTIONS HTTP method variants (TC-WFH)
+// ---------------------------------------------------------------------------
+
+describe('web.fetch — HTTP HEAD and OPTIONS method aliases resolve to web.fetch', () => {
+  const HTTP_READ_ALIASES = [
+    'http_head',
+    'head_url',
+    'http_options',
+  ] as const;
+
+  for (const alias of HTTP_READ_ALIASES) {
+    it(`TC-WFH: "${alias}" resolves to web.fetch`, () => {
+      expect(normalizeActionClass(alias)).toBe('web.fetch');
+    });
+
+    it(`TC-WFH: "${alias}" has intent_group data_exfiltration`, () => {
+      expect(getRegistryEntry(alias).intent_group).toBe('data_exfiltration');
+    });
+
+    it(`TC-WFH: normalize_action("${alias}") returns correct action_class, risk, hitl_mode`, () => {
+      const result = normalize_action(alias);
+      expect(result.action_class).toBe('web.fetch');
+      expect(result.risk).toBe('medium');
+      expect(result.hitl_mode).toBe('per_request');
+      expect(result.intent_group).toBe('data_exfiltration');
+    });
+  }
 });
 
 // ---------------------------------------------------------------------------
