@@ -178,10 +178,10 @@ describe('default-permit regression', () => {
   it(
     'TC-DP-03: web_search is permitted by default-permit stage2',
     async () => {
-      // web_search is not in the action registry → resolves to unknown_sensitive_action
-      // with hitl_mode: per_request; a pre-issued capability satisfies Stage 1.
+      // web_search resolves to web.search (registered alias) with hitl_mode:
+      // per_request; a pre-issued capability satisfies Stage 1.
       const normalized = normalize_action('web_search', {});
-      expect(normalized.action_class).toBe('unknown_sensitive_action');
+      expect(normalized.action_class).toBe('web.search');
       expect(normalized.hitl_mode).toBe('per_request');
 
       const HASH = 'hash-dp-03';
