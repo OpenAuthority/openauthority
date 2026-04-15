@@ -24,6 +24,8 @@ const TLoadedRule = Type.Object({
   rateLimit: Type.Optional(TRateLimitSchema),
   action_class: Type.Optional(Type.String()),
   intent_group: Type.Optional(Type.String()),
+  target_match: Type.Optional(Type.String()),
+  target_in: Type.Optional(Type.Array(Type.String())),
 });
 
 /**
@@ -91,6 +93,21 @@ export async function loadPolicyFile(filePath: string): Promise<LoadedPolicyBund
     throw new PolicyLoadError(
       `Policy validation failed (${filePath}): ${errors.join('; ')}`,
     );
+  }
+
+  // Validate that all target_match patterns compile as valid regexes
+  for (let i = 0; i < (parsed.rules?.length ?? 0); i++) {
+    const rule = parsed.rules![i];
+    if (rule.target_match !== undefined) {
+      try {
+        new RegExp(rule.target_match);
+      } catch (err) {
+        throw new PolicyLoadError(
+          `Policy validation failed (${filePath}): rules[${i}].target_match is not a valid regex: "${rule.target_match}"`,
+          err,
+        );
+      }
+    }
   }
 
   return parsed;
