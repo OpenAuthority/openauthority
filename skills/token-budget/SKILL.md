@@ -87,7 +87,7 @@ This skill operates in the **context window**. It can observe and report on usag
 
 The skill provides **soft stops** — it warns the model and asks it to pause. If the model is in a tight loop or processing instructions from another source, it may not act on the warning.
 
-> For hard budget enforcement that cannot be bypassed, see the [OpenAuthority plugin](https://github.com/OpenAuthority/openauthority).
+> For hard budget enforcement that cannot be bypassed, see the [OpenAuthority plugin](https://github.com/Firma-AI/openauthority).
 
 ## Data Sources
 
@@ -97,3 +97,7 @@ The skill reads from:
 - Local state file at `~/.openclaw/openauthority/budget-state.json` (thresholds, history)
 
 No data is sent externally. All tracking is local and read-only from session context.
+
+## Terminology
+
+Terms used in this document (OpenAuthority, OpenClaw) are defined in the [Glossary](../../docs/architecture.md#12-glossary).

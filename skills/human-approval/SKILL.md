@@ -136,7 +136,7 @@ This skill operates in the **context window**. It is a **soft gate** — it reli
 
 This is by design. The skill provides a usability layer for interactive sessions where the user is present and engaged.
 
-> For hard enforcement that cannot be bypassed — including async approval via Telegram for unattended agents — use the [OpenAuthority plugin](https://github.com/OpenAuthority/openauthority) with HITL policies.
+> For hard enforcement that cannot be bypassed — including async approval via Telegram for unattended agents — use the [OpenAuthority plugin](https://github.com/Firma-AI/openauthority) with HITL policies.
 
 ## Relationship to the Plugin
 
@@ -149,3 +149,7 @@ This is by design. The skill provides a usability layer for interactive sessions
 | **Can be bypassed?** | Yes (prompt injection, loops) | No |
 
 Start with this skill for day-one visibility. Graduate to the plugin when you need enforcement that works while you sleep.
+
+## Terminology
+
+Terms used in this document (OpenAuthority, OpenClaw, HITL, Capability, two-stage pipeline) are defined in the [Glossary](../../docs/architecture.md#12-glossary).
