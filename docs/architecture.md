@@ -758,7 +758,7 @@ The semantic description of a tool call action embedded inside an `ExecutionEnve
 The result of running a raw tool name through `normalize_action()`. Contains `{ action_class, risk, hitl_mode, target }`. Produced before the enforcement pipeline runs. See §4.
 
 **OpenAuthority**
-This plugin. A policy enforcement engine for OpenClaw that intercepts agent tool calls via hooks, classifies them, runs them through a two-stage authorization pipeline, and blocks execution on `forbid` decisions. The repository is `Firma-AI/openauthority`.
+This plugin. A policy enforcement engine for OpenClaw that intercepts agent tool calls via hooks, classifies them, runs them through a two-stage authorization pipeline, and blocks execution on `forbid` decisions. The repository is `openauthority/openauthority`.
 
 **OpenClaw**
 The AI agent gateway and runtime that OpenAuthority is installed into as a plugin. OpenClaw fires hook events (`before_tool_call`, `before_prompt_build`, `before_model_resolve`) at defined points in the agent execution lifecycle. Only `before_tool_call` can block execution. See §10.
