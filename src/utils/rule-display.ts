@@ -98,6 +98,8 @@ function buildAriaDescription(effect: string, fields: RuleDisplayField[]): strin
     ['Resource', 'Action class', 'Intent group'].includes(f.label),
   );
   const matchField = fields.find((f) => f.label === 'Match');
+  const targetPatternField = fields.find((f) => f.label === 'Target pattern');
+  const targetListField = fields.find((f) => f.label === 'Target list');
   const condField = fields.find((f) => f.label === 'Condition');
   const rateLimitField = fields.find((f) => f.label === 'Rate limit');
 
@@ -107,6 +109,12 @@ function buildAriaDescription(effect: string, fields: RuleDisplayField[]): strin
   }
   if (matchField !== undefined) {
     desc += ` matching ${matchField.value}`;
+  }
+  if (targetPatternField !== undefined) {
+    desc += ` targeting ${targetPatternField.value}`;
+  }
+  if (targetListField !== undefined) {
+    desc += ` targeting listed addresses`;
   }
   if (condField !== undefined) {
     desc += ` with custom condition`;
@@ -171,6 +179,16 @@ export function formatRuleStructure(rule: Rule): RuleDisplayResult {
   // ── Match pattern ─────────────────────────────────────────────────────────
   if (rule.match !== undefined) {
     fields.push(makeField('Match', formatMatch(rule.match)));
+  }
+
+  // ── Target pattern (target_match) ─────────────────────────────────────────
+  if (rule.target_match !== undefined) {
+    fields.push(makeField('Target pattern', formatMatch(rule.target_match)));
+  }
+
+  // ── Target list (target_in) ───────────────────────────────────────────────
+  if (rule.target_in !== undefined && rule.target_in.length > 0) {
+    fields.push(makeField('Target list', rule.target_in.join(', ')));
   }
 
   // ── Condition (presence only — functions are not serialisable) ────────────

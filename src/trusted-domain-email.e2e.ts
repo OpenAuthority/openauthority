@@ -135,6 +135,43 @@ class HitlTestHarness {
   }
 }
 
+// ─── Helpers (continued) ──────────────────────────────────────────────────────
+
+/**
+ * Builds a Stage 2 policy engine that both enforces domain trust AND
+ * forbids any address in the provided per-address blocklist.
+ *
+ * The per-address forbid uses `target_match` to match a specific email address
+ * exactly, demonstrating that target-level refinement works alongside domain-
+ * level trust policies.  Cedar forbid-wins: even if the domain is trusted, a
+ * blocklisted individual address is denied.
+ */
+function buildDomainTrustWithAddressBlockStage2(
+  trustedDomains: string[],
+  blockedAddresses: string[],
+): Stage2Fn {
+  const escapedDomains = trustedDomains.map((d) => d.replace('.', '\\.'));
+  const untrustedPattern = new RegExp(`^(?!.*@(${escapedDomains.join('|')})$)`);
+
+  const rules: Rule[] = [
+    {
+      effect: 'forbid',
+      resource: 'channel',
+      match: untrustedPattern,
+      reason: 'untrusted_domain',
+    },
+    ...blockedAddresses.map((addr) => ({
+      effect: 'forbid' as const,
+      resource: 'channel' as const,
+      match: '*',
+      target_match: new RegExp(`^${addr.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}$`, 'i'),
+      reason: 'per_address_forbid',
+    })),
+  ];
+
+  return createStage2(createEnforcementEngine(rules satisfies Rule[]));
+}
+
 // ─── Suite ────────────────────────────────────────────────────────────────────
 
 describe('trusted domain email policy', () => {
@@ -223,6 +260,82 @@ describe('trusted domain email policy', () => {
 
       expect(result.decision.effect).toBe('forbid');
       expect(result.decision.reason).toBe('untrusted_domain');
+    },
+  );
+
+  // ── TC-EMAIL-04 ─────────────────────────────────────────────────────────────
+
+  it(
+    'TC-EMAIL-04: send_email to per-address blocklisted target is denied even for trusted domain',
+    async () => {
+      const ACTION = 'communication.email' as const;
+      // blocked@acme.com belongs to the trusted acme.com domain but is on the per-address blocklist
+      const TARGET = 'blocked@acme.com' as const;
+      const HASH = 'hash-email-04';
+
+      const approvalManager = new ApprovalManager();
+      const adapter = new FileAuthorityAdapter({ bundlePath: '/dev/null' });
+      const capability = await adapter.issueCapability({
+        action_class: ACTION,
+        target: TARGET,
+        payload_hash: HASH,
+      });
+
+      const stage1: Stage1Fn = (pCtx: PipelineContext) =>
+        validateCapability(pCtx, approvalManager, (id) =>
+          id === capability.approval_id ? capability : undefined,
+        );
+
+      // Stage 2: domain trust + per-address block for blocked@acme.com
+      const stage2 = buildDomainTrustWithAddressBlockStage2(trustedAcme.trustedDomains, [
+        TARGET,
+      ]);
+
+      const result = await runPipeline(
+        {
+          action_class: ACTION,
+          target: TARGET,
+          payload_hash: HASH,
+          hitl_mode: 'per_request',
+          approval_id: capability.approval_id,
+          rule_context: { agentId: 'agent-1', channel: 'default' },
+        },
+        stage1,
+        stage2,
+        emitter,
+      );
+
+      approvalManager.shutdown();
+
+      expect(result.decision.effect).toBe('forbid');
+      expect(result.decision.reason).toBe('per_address_forbid');
+
+      // Sanity-check: a different trusted address is still permitted with the same policy
+      const capability2 = await adapter.issueCapability({
+        action_class: ACTION,
+        target: 'cto@acme.com',
+        payload_hash: 'hash-email-04b',
+      });
+      const approvalManager2 = new ApprovalManager();
+      const stage1b: Stage1Fn = (pCtx: PipelineContext) =>
+        validateCapability(pCtx, approvalManager2, (id) =>
+          id === capability2.approval_id ? capability2 : undefined,
+        );
+      const result2 = await runPipeline(
+        {
+          action_class: ACTION,
+          target: 'cto@acme.com',
+          payload_hash: 'hash-email-04b',
+          hitl_mode: 'per_request',
+          approval_id: capability2.approval_id,
+          rule_context: { agentId: 'agent-1', channel: 'default' },
+        },
+        stage1b,
+        buildDomainTrustWithAddressBlockStage2(trustedAcme.trustedDomains, [TARGET]),
+        emitter,
+      );
+      approvalManager2.shutdown();
+      expect(result2.decision.effect).toBe('permit');
     },
   );
 

@@ -191,6 +191,8 @@ export class PolicyEngine {
       if (rule.resource !== resource) continue;
       if (rule.match === undefined) continue;
       if (!matchesPattern(rule.match, resourceName)) continue;
+      if (rule.target_match !== undefined && !matchesPattern(rule.target_match, resourceName)) continue;
+      if (rule.target_in !== undefined && !rule.target_in.some(t => t.toLowerCase() === resourceName.toLowerCase())) continue;
       if (rule.condition !== undefined && !rule.condition(context)) continue;
       matchingRules.push(rule);
     }
@@ -299,6 +301,8 @@ export class PolicyEngine {
     const actionClassRules: Rule[] = [];
     for (const rule of this._rules) {
       if (rule.action_class !== actionClass) continue;
+      if (rule.target_match !== undefined && !matchesPattern(rule.target_match, resourceName)) continue;
+      if (rule.target_in !== undefined && !rule.target_in.some(t => t.toLowerCase() === resourceName.toLowerCase())) continue;
       if (rule.condition !== undefined && !rule.condition(context)) continue;
       actionClassRules.push(rule);
     }

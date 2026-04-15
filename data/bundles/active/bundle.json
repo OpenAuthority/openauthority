@@ -56,5 +56,25 @@
       "tags": ["security"]
     }
   ],
-  "checksum": "5325663c82960744f02dda54c236e43b56625ee446ed6c83401615f07b96fa13"
+  "checksum": "5325663c82960744f02dda54c236e43b56625ee446ed6c83401615f07b96fa13",
+  "_examples": [
+    {
+      "_comment": "Per-address block: forbid a specific email address using target_match regex. This rule applies to all 'channel' resources (*) but target_match narrows it to one address. Cedar forbid-wins: even a trusted-domain address is denied if it appears here.",
+      "effect": "forbid",
+      "resource": "channel",
+      "match": "*",
+      "target_match": "^blocked@example\\.com$",
+      "reason": "Address blocked by per-address policy",
+      "tags": ["communication", "per-address-block"]
+    },
+    {
+      "_comment": "Per-address block list: forbid an explicit set of email targets using target_in. Checked for case-insensitive equality against the action target.",
+      "effect": "forbid",
+      "resource": "channel",
+      "match": "*",
+      "target_in": ["noreply@spam.example.com", "abuse@badactor.net"],
+      "reason": "Address in blocklist",
+      "tags": ["communication", "per-address-block"]
+    }
+  ]
 }

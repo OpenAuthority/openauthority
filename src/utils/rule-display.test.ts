@@ -160,6 +160,117 @@ describe('formatRuleStructure', () => {
     expect(hasField(result, 'Match')).toBe(false);
   });
 
+  // ── Target pattern field (target_match) ────────────────────────────────────
+
+  it('includes "Target pattern" field when target_match is a RegExp', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_match: /^blocked@evil\.com$/,
+    });
+    expect(fieldValue(result, 'Target pattern')).toBe('/^blocked@evil\\.com$/');
+  });
+
+  it('includes "Target pattern" field when target_match is a string', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_match: 'blocked@evil.com',
+    });
+    expect(fieldValue(result, 'Target pattern')).toBe('blocked@evil.com');
+  });
+
+  it('omits "Target pattern" field when target_match is not set', () => {
+    const result = formatRuleStructure({ effect: 'permit', resource: 'external', match: '*' });
+    expect(hasField(result, 'Target pattern')).toBe(false);
+  });
+
+  it('includes "Target list" field when target_in is non-empty', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_in: ['spam@blocked.com', 'abuse@badactor.net'],
+    });
+    expect(fieldValue(result, 'Target list')).toBe('spam@blocked.com, abuse@badactor.net');
+  });
+
+  it('omits "Target list" field when target_in is an empty array', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_in: [],
+    });
+    expect(hasField(result, 'Target list')).toBe(false);
+  });
+
+  it('omits "Target list" field when target_in is not set', () => {
+    const result = formatRuleStructure({ effect: 'permit', resource: 'external', match: '*' });
+    expect(hasField(result, 'Target list')).toBe(false);
+  });
+
+  it('"Target pattern" appears after "Match" in field ordering', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_match: /^blocked@evil\.com$/,
+    });
+    const labels = result.fields.map((f) => f.label);
+    const matchIdx = labels.indexOf('Match');
+    const targetIdx = labels.indexOf('Target pattern');
+    expect(matchIdx).toBeGreaterThanOrEqual(0);
+    expect(targetIdx).toBeGreaterThan(matchIdx);
+  });
+
+  it('"Target list" appears after "Match" in field ordering', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_in: ['a@b.com'],
+    });
+    const labels = result.fields.map((f) => f.label);
+    const matchIdx = labels.indexOf('Match');
+    const listIdx = labels.indexOf('Target list');
+    expect(matchIdx).toBeGreaterThanOrEqual(0);
+    expect(listIdx).toBeGreaterThan(matchIdx);
+  });
+
+  it('ariaLabel for "Target pattern" follows "Label is value" convention', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_match: /^blocked@evil\.com$/,
+    });
+    const field = result.fields.find((f) => f.label === 'Target pattern');
+    expect(field?.ariaLabel).toBe('Target pattern is /^blocked@evil\\.com$/');
+  });
+
+  it('ariaDescription includes target pattern when target_match is set', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_match: /^blocked@evil\.com$/,
+    });
+    expect(result.ariaDescription).toContain('targeting');
+  });
+
+  it('ariaDescription mentions listed addresses when target_in is set', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_in: ['spam@blocked.com'],
+    });
+    expect(result.ariaDescription).toContain('targeting listed addresses');
+  });
+
   // ── Condition field ────────────────────────────────────────────────────────
 
   it('shows "custom function" when condition is present', () => {
@@ -292,6 +403,34 @@ describe('formatRuleStructure', () => {
       'Effect',
       'Resource',
       'Match',
+      'Condition',
+      'Rate limit',
+      'Priority',
+      'Tags',
+      'Reason',
+    ]);
+  });
+
+  it('orders fields: Effect → Resource → Match → Target pattern → Target list → Condition → Rate limit → Priority → Tags → Reason', () => {
+    const result = formatRuleStructure({
+      effect: 'forbid',
+      resource: 'external',
+      match: '*',
+      target_match: /^blocked@evil\.com$/,
+      target_in: ['spam@block.com'],
+      condition: () => true,
+      rateLimit: { maxCalls: 1, windowSeconds: 60 },
+      priority: 90,
+      tags: ['email'],
+      reason: 'Blocked',
+    });
+    const labels = result.fields.map((f) => f.label);
+    expect(labels).toEqual([
+      'Effect',
+      'Resource',
+      'Match',
+      'Target pattern',
+      'Target list',
       'Condition',
       'Rate limit',
       'Priority',

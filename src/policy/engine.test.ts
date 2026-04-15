@@ -455,6 +455,112 @@ describe('PolicyEngine', () => {
     });
   });
 
+  describe('target matching — target_match regex and target_in array', () => {
+    it('TC-TM-01: target_match regex blocks matching email addresses', () => {
+      engine.addRule({ effect: 'permit', resource: 'external', match: '*' });
+      engine.addRule({
+        effect: 'forbid',
+        resource: 'external',
+        match: '*',
+        target_match: /^blocked@evil\.com$/,
+        reason: 'blocked_address',
+      });
+      // Matching address is forbidden
+      const blocked = engine.evaluate('external', 'blocked@evil.com', ctx);
+      expect(blocked.effect).toBe('forbid');
+      expect(blocked.reason).toBe('blocked_address');
+      // Non-matching address is permitted by the wildcard permit rule
+      expect(engine.evaluate('external', 'safe@acme.com', ctx).effect).toBe('permit');
+    });
+
+    it('TC-TM-02: target_in array blocks listed targets', () => {
+      engine.addRule({
+        effect: 'forbid',
+        action_class: 'communication.email',
+        target_in: ['spam@blocked.com', 'abuse@badactor.net'],
+        reason: 'blocked_address_list',
+      });
+      const r1 = engine.evaluateByActionClass('communication.email', 'spam@blocked.com', ctx);
+      expect(r1.effect).toBe('forbid');
+      expect(r1.reason).toBe('blocked_address_list');
+
+      const r2 = engine.evaluateByActionClass('communication.email', 'abuse@badactor.net', ctx);
+      expect(r2.effect).toBe('forbid');
+      expect(r2.reason).toBe('blocked_address_list');
+
+      // Target not in the list falls through to implicit permit
+      const r3 = engine.evaluateByActionClass('communication.email', 'good@trusted.com', ctx);
+      expect(r3.effect).toBe('permit');
+    });
+
+    it('target_match does not prevent non-matching targets from passing through', () => {
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({
+        effect: 'forbid',
+        resource: 'external',
+        match: '*',
+        target_match: /@evil\.com$/,
+        reason: 'evil_domain',
+      });
+      // Non-evil.com address: target_match skips this rule, falls to implicit deny
+      const result = strictEngine.evaluate('external', 'safe@acme.com', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.matchedRule).toBeUndefined(); // no matched rule — implicit deny
+      expect(result.reason).toMatch(/implicit deny/i);
+    });
+
+    it('target_in matching is case-insensitive', () => {
+      engine.addRule({
+        effect: 'forbid',
+        resource: 'external',
+        match: '*',
+        target_in: ['BLOCKED@EVIL.COM'],
+        reason: 'case_insensitive_block',
+      });
+      expect(engine.evaluate('external', 'blocked@evil.com', ctx).effect).toBe('forbid');
+      expect(engine.evaluate('external', 'BLOCKED@EVIL.COM', ctx).effect).toBe('forbid');
+    });
+
+    it('target_match works with action_class rules in evaluateByActionClass', () => {
+      engine.addRule({
+        effect: 'forbid',
+        action_class: 'communication.email',
+        target_match: /^specific@target\.com$/,
+        reason: 'targeted_block',
+      });
+      const blocked = engine.evaluateByActionClass('communication.email', 'specific@target.com', ctx);
+      expect(blocked.effect).toBe('forbid');
+      expect(blocked.reason).toBe('targeted_block');
+      // Other targets are not affected
+      const allowed = engine.evaluateByActionClass('communication.email', 'other@target.com', ctx);
+      expect(allowed.effect).toBe('permit');
+    });
+
+    it('target_match string permits exact-match target and blocks others', () => {
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({
+        effect: 'permit',
+        resource: 'external',
+        match: '*',
+        target_match: 'allowed@acme.com',
+      });
+      expect(strictEngine.evaluate('external', 'allowed@acme.com', ctx).effect).toBe('permit');
+      // Different address: target_match filters it out, falls to implicit deny
+      expect(strictEngine.evaluate('external', 'other@acme.com', ctx).effect).toBe('forbid');
+    });
+
+    it('target_in with empty array never matches', () => {
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({
+        effect: 'permit',
+        resource: 'external',
+        match: '*',
+        target_in: [],
+      });
+      expect(strictEngine.evaluate('external', 'anything@example.com', ctx).effect).toBe('forbid');
+    });
+  });
+
   describe('rate limiting', () => {
     it('allows calls within the rate limit', () => {
       engine.addRule({
