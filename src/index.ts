@@ -42,6 +42,8 @@ export type {
   CommitMessageParts,
   CommitValidationResult,
 } from "./utils/commit-validator.js";
+export { validateRoadmapUpdate } from "./utils/roadmap-validator.js";
+export type { RoadmapValidationResult } from "./utils/roadmap-validator.js";
 
 // ─── Human-in-the-loop policy configuration ──────────────────────────────────
 export {
