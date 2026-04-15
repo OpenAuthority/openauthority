@@ -17,6 +17,7 @@ This document describes the design of the OpenAuthority policy engine plugin for
 9. [Limitations](#9-limitations)
 10. [OpenClaw Hook Integration](#10-openclaw-hook-integration)
 11. [Design Decisions](#11-design-decisions)
+12. [Glossary](#12-glossary)
 
 ---
 
@@ -708,3 +709,71 @@ TypeBox generates both runtime validators and TypeScript types from a single sch
 ### Why not a database?
 
 The plugin is designed to be installed as a standalone OpenClaw plugin without infrastructure dependencies. JSON files for rules and JSONL for audit logs make the plugin self-contained. For high-volume production deployments, the audit log path can point to a log-rotated file managed externally.
+
+---
+
+## 12. Glossary
+
+Authoritative definitions for terms used throughout this document and the codebase.
+
+---
+
+**action_class**
+A dot-separated canonical identifier for an agent action (e.g., `filesystem.delete`, `shell.exec`, `web.post`). Produced by `normalize_action()` via the action registry. Unknown tool names resolve to the catch-all `unknown_sensitive_action`. See §4.
+
+**Capability**
+A cryptographic authorization token issued after a HITL approval. Binds the approval to the exact tool call parameters via SHA-256 and expires after a configured TTL. Stage 1 of the enforcement pipeline validates the capability before any Cedar rule evaluation occurs. See §2 and §5.
+
+**CeeDecision**
+The low-level decision type (`{ effect: 'permit' | 'forbid', reason, stage? }`) produced by pipeline stage functions. Not exposed outside the pipeline; callers receive a `StructuredDecision` instead. See §6.
+
+**CEE (Cedar Engine Evaluation)**
+Stage 2 of the enforcement pipeline. Evaluates Cedar-style authorization rules against the normalized `action_class`. Forbid wins over permit; rate limits apply only to permit rules. See §3.
+
+**ExecutionEnvelope**
+The primary data structure that wraps a single agent action as it travels through the enforcement pipeline. Contains `Intent`, `Capability`, `Metadata`, and `provenance`. Constructed via `buildEnvelope()` in `src/envelope.ts`. See §2.
+
+**fail-closed**
+The design principle that any unknown or error state resolves to `forbid`. Unknown tool names produce `unknown_sensitive_action` (critical risk, per-request HITL). Exceptions in any pipeline stage return a `forbid` decision; they never produce `permit`. See §3 and §11.
+
+**FileAuthorityAdapter**
+The file-based implementation of `IAuthorityAdapter` used during development. Reads policy bundles from a local JSON file and provides no real-time revocation streaming (`watchRevocations()` yields nothing). See §5.
+
+**Firma**
+A planned remote authority backend. When a Firma adapter is implemented, it replaces `FileAuthorityAdapter` to provide remote policy distribution, real-time capability revocation streams, and distributed capability storage — all without modifying the enforcement pipeline. See §5.
+
+**HITL (Human-in-the-Loop)**
+The approval mechanism that pauses execution of a high-risk tool call and routes a decision request to a human operator via an approval channel (Telegram, Slack, Webhook, or Console). The pipeline emits `forbid: pending_hitl_approval`; callers with HITL awareness convert this to `ask-user` and surface it to the operator. See §6 and §10.
+
+**hot reload**
+The capability to update policy rules while the gateway continues running without a restart. Achieved via a mutable `engineRef.current` swapped atomically on each successful reload, ESM cache busting (unique query-string URLs), and a 300 ms debounced chokidar file watcher. See §7.
+
+**IAuthorityAdapter**
+The interface (`src/adapter/types.ts`) that decouples the enforcement pipeline from the authority backend. Defines `issueCapability()`, `watchPolicyBundle()`, and `watchRevocations()`. The current implementation is `FileAuthorityAdapter`; Firma is the planned production implementation. See §5.
+
+**Intent**
+The semantic description of a tool call action embedded inside an `ExecutionEnvelope`. Contains `action_class`, `target`, `summary`, `payload_hash`, and the raw `parameters`. Captures what the agent intends to do, independent of the raw tool name. See §2.
+
+**NormalizedAction**
+The result of running a raw tool name through `normalize_action()`. Contains `{ action_class, risk, hitl_mode, target }`. Produced before the enforcement pipeline runs. See §4.
+
+**OpenAuthority**
+This plugin. A policy enforcement engine for OpenClaw that intercepts agent tool calls via hooks, classifies them, runs them through a two-stage authorization pipeline, and blocks execution on `forbid` decisions. The repository is `Firma-AI/openauthority`.
+
+**OpenClaw**
+The AI agent gateway and runtime that OpenAuthority is installed into as a plugin. OpenClaw fires hook events (`before_tool_call`, `before_prompt_build`, `before_model_resolve`) at defined points in the agent execution lifecycle. Only `before_tool_call` can block execution. See §10.
+
+**payload binding**
+The SHA-256 commitment that ties a `Capability` to the exact tool call parameters at approval time: `SHA-256("${action_class}|${target}|${payload_hash}")`. Stage 1 Check 4 recomputes this hash and compares it to the stored `binding`; a mismatch blocks execution. See §3.
+
+**PipelineContext**
+The shared context object threaded through all enforcement pipeline stages. Contains `action_class`, `target`, `payload_hash`, `hitl_mode`, `risk`, `approval_id`, `session_id`, `rule_context`, and `sourceTrustLevel`. See §3.
+
+**PolicyBundle**
+The versioned collection of Cedar-style authorization rules loaded by the adapter and evaluated by Stage 2. Version monotonicity is enforced on reload (new version must exceed the current version). See §5.
+
+**StructuredDecision**
+The high-level enriched authorization decision type exposed to callers outside the pipeline. Wraps `CeeDecision` with `outcome: 'permit' | 'forbid' | 'ask-user'`, an optional `ruleId` for audit traceability, and an optional `capability` on permit decisions. See §6.
+
+**two-stage pipeline**
+The enforcement pipeline consisting of Stage 1 (capability gate, `src/enforcement/stage1-capability.ts`) followed by Stage 2 (Cedar Engine Evaluation, `src/enforcement/stage2-policy.ts`). Stage 1 validates cryptographic tokens; Stage 2 evaluates policy rules. A `forbid` from Stage 1 short-circuits Stage 2. See §3.
