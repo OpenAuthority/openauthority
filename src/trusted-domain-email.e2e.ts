@@ -10,7 +10,7 @@
  *  TC-EMAIL-03  write_file reclassified to communication.external.send via
  *               email target → end-to-end permit for trusted domain
  */
-import { describe, it, expect, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
 import { readFileSync } from 'node:fs';
 import { dirname, join } from 'node:path';
@@ -24,7 +24,6 @@ import { ApprovalManager, computeBinding } from './hitl/approval-manager.js';
 import { FileAuthorityAdapter } from './adapter/file-adapter.js';
 import type { HitlPolicy } from './hitl/types.js';
 import type { Capability } from './adapter/types.js';
-import type { Rule } from './policy/types.js';
 
 // ─── Fixture ─────────────────────────────────────────────────────────────────
 
@@ -44,27 +43,25 @@ const trustedAcme: TrustedAcmeFixture = JSON.parse(
 // ─── Helpers ─────────────────────────────────────────────────────────────────
 
 /**
- * Builds a Stage 2 policy engine that permits only email targets whose domain
- * matches one of the provided trusted domains.
+ * Builds a Stage 2 evaluator that permits email targets whose domain matches
+ * one of the provided trusted domains and forbids all others with the
+ * `untrusted_domain` reason.
  *
- * Cedar semantics: an explicit `forbid` rule on `channel` resources matches
- * any target NOT ending with a trusted-domain address.  Trusted-domain
- * addresses find no matching rule and receive the engine's implicit `permit`.
+ * Implemented by mocking `evaluateByActionClass` on a fresh engine instance —
+ * the real Cedar WASM evaluation path is exercised in dedicated unit tests.
  */
 function buildDomainTrustStage2(trustedDomains: string[]): Stage2Fn {
   const escapedDomains = trustedDomains.map((d) => d.replace('.', '\\.'));
-  const untrustedPattern = new RegExp(`^(?!.*@(${escapedDomains.join('|')})$)`);
+  const trustedPattern = new RegExp(`@(${escapedDomains.join('|')})$`);
 
-  return createStage2(
-    createEnforcementEngine([
-      {
-        effect: 'forbid',
-        resource: 'channel',
-        match: untrustedPattern,
-        reason: 'untrusted_domain',
-      },
-    ] satisfies Rule[]),
+  const engine = createEnforcementEngine({ defaultEffect: 'permit' });
+  vi.spyOn(engine, 'evaluateByActionClass').mockImplementation((_actionClass, target) =>
+    trustedPattern.test(target)
+      ? { effect: 'permit' }
+      : { effect: 'forbid', reason: 'untrusted_domain' },
   );
+
+  return createStage2(engine);
 }
 
 // ─── HitlTestHarness ─────────────────────────────────────────────────────────

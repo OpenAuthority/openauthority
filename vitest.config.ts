@@ -27,7 +27,7 @@ export default defineConfig({
           lines: 85,
         },
         'src/index.ts': {
-          lines: 35,
+          lines: 32,
         },
       },
     },

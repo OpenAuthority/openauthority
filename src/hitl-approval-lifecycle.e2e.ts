@@ -20,7 +20,6 @@ import { createStage2, createEnforcementEngine } from './enforcement/stage2-poli
 import { ApprovalManager, computeBinding } from './hitl/approval-manager.js';
 import type { HitlPolicy } from './hitl/types.js';
 import type { Capability } from './adapter/types.js';
-import type { Rule } from './policy/types.js';
 
 // ─── Test helpers ─────────────────────────────────────────────────────────────
 
@@ -129,10 +128,7 @@ class HitlTestHarness {
  * The HITL tests target Stage 1 and the HITL pre-check, not policy evaluation.
  */
 const permissiveStage2 = createStage2(
-  createEnforcementEngine([
-    { effect: 'permit', resource: 'tool', match: '*' },
-    { effect: 'permit', resource: 'channel', match: '*' },
-  ] satisfies Rule[]),
+  createEnforcementEngine({ defaultEffect: 'permit' }),
 );
 
 const ACTION = 'communication.email' as const;
