@@ -290,6 +290,54 @@ export class PolicyEngine {
     return this.evaluate(resource, resourceName, context);
   }
 
+  /**
+   * Evaluates access for all actions belonging to a given intent group.
+   *
+   * Scans rules where `rule.intent_group === intentGroup` and applies Cedar
+   * semantics: an explicit `forbid` rule wins over any `permit`. Rules without
+   * a matching `intent_group` are ignored.
+   *
+   * If no rules match the intent group, returns a permit with no matched rule
+   * (no opinion — the action_class evaluation result takes precedence).
+   *
+   * @param intentGroup  The intent group to evaluate (e.g. `'destructive_fs'`).
+   * @param context      Evaluation context forwarded to condition functions.
+   */
+  evaluateByIntentGroup(intentGroup: string, context: RuleContext): EvaluationDecision {
+    const matchingRules: Rule[] = [];
+
+    for (const rule of this._rules) {
+      if (rule.intent_group !== intentGroup) continue;
+      if (rule.condition !== undefined && !rule.condition(context)) continue;
+      matchingRules.push(rule);
+    }
+
+    // Cedar semantics: any explicit forbid wins immediately
+    for (const rule of matchingRules) {
+      if (rule.effect === 'forbid') {
+        return {
+          effect: 'forbid',
+          ...(rule.reason !== undefined ? { reason: rule.reason } : {}),
+          matchedRule: rule,
+        };
+      }
+    }
+
+    // Return first matching permit rule
+    for (const rule of matchingRules) {
+      if (rule.effect === 'permit') {
+        return {
+          effect: 'permit',
+          ...(rule.reason !== undefined ? { reason: rule.reason } : {}),
+          matchedRule: rule,
+        };
+      }
+    }
+
+    // No intent_group rules matched — no opinion
+    return { effect: 'permit', reason: 'No matching intent_group rule' };
+  }
+
   private static mapActionClassToResource(actionClass: string): Resource {
     if (actionClass === 'unknown_sensitive_action') return 'unknown';
     const prefix = actionClass.split('.')[0];

@@ -274,6 +274,79 @@ describe('createStage2', () => {
     expect(permit.stage).toBe('stage2');
     expect(forbid.stage).toBe('stage2');
   });
+
+  // ── 9. Intent group evaluation ────────────────────────────────────────────
+
+  it('forbids when an intent_group rule forbids even if action_class evaluation permits', async () => {
+    const engine = new EnforcementPolicyEngine();
+    engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+    engine.addRule({ effect: 'forbid', intent_group: 'destructive_fs', reason: 'no_deletion' });
+
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCtx({ action_class: 'filesystem.delete', target: '/tmp/test.txt', intent_group: 'destructive_fs' }),
+    );
+    expect(result.effect).toBe('forbid');
+    expect(result.reason).toBe('no_deletion');
+    expect(result.stage).toBe('stage2');
+  });
+
+  it('permits when intent_group rule permits and action_class evaluation permits', async () => {
+    const engine = new EnforcementPolicyEngine();
+    engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+    engine.addRule({ effect: 'permit', intent_group: 'web_access', reason: 'web_ok' });
+
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCtx({ action_class: 'web.fetch', target: 'https://example.com', intent_group: 'web_access' }),
+    );
+    expect(result.effect).toBe('permit');
+    expect(result.stage).toBe('stage2');
+  });
+
+  it('skips intent_group evaluation when ctx.intent_group is undefined', async () => {
+    const engine = new EnforcementPolicyEngine();
+    engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+    engine.addRule({ effect: 'forbid', intent_group: 'destructive_fs', reason: 'blocked' });
+    const igSpy = vi.spyOn(engine, 'evaluateByIntentGroup');
+
+    const stage2 = createStage2(engine);
+    const result = await stage2(makeCtx({ action_class: 'filesystem.delete', target: '/tmp/x' }));
+    expect(igSpy).not.toHaveBeenCalled();
+    expect(result.effect).toBe('permit');
+  });
+
+  it('action_class forbid wins before intent_group is evaluated', async () => {
+    const engine = new EnforcementPolicyEngine();
+    // EnforcementPolicyEngine maps filesystem.* → 'tool', so use resource: 'tool'
+    engine.addRule({ effect: 'forbid', resource: 'tool', match: '*', reason: 'all_files_blocked' });
+    engine.addRule({ effect: 'permit', intent_group: 'destructive_fs', reason: 'intent_permits' });
+    const igSpy = vi.spyOn(engine, 'evaluateByIntentGroup');
+
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCtx({ action_class: 'filesystem.delete', target: '/tmp/x', intent_group: 'destructive_fs' }),
+    );
+    expect(result.effect).toBe('forbid');
+    expect(result.reason).toBe('all_files_blocked');
+    expect(igSpy).not.toHaveBeenCalled();
+  });
+
+  it('all aliases for same intent_group apply the same intent_group policy', async () => {
+    const engine = new EnforcementPolicyEngine();
+    engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+    engine.addRule({ effect: 'forbid', intent_group: 'external_send', reason: 'comms_blocked' });
+
+    const stage2 = createStage2(engine);
+    const [emailResult, slackResult] = await Promise.all([
+      stage2(makeCtx({ action_class: 'communication.email', target: 'user@example.com', intent_group: 'external_send' })),
+      stage2(makeCtx({ action_class: 'communication.slack', target: '#general', intent_group: 'external_send' })),
+    ]);
+    expect(emailResult.effect).toBe('forbid');
+    expect(emailResult.reason).toBe('comms_blocked');
+    expect(slackResult.effect).toBe('forbid');
+    expect(slackResult.reason).toBe('comms_blocked');
+  });
 });
 
 // ─── createEnforcementEngine ─────────────────────────────────────────────────

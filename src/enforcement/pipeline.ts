@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events';
 import { PolicyEngine } from '../policy/engine.js';
 import type { RuleContext, Resource } from '../policy/types.js';
 import type { EvaluationDecision } from '../policy/engine.js';
-import type { RiskLevel } from './normalize.js';
+import type { RiskLevel, IntentGroup } from './normalize.js';
 import type { ExecutionEnvelope, Intent, Capability, Metadata } from '../types.js';
 
 /** HITL enforcement mode for the capability gate. */
@@ -28,6 +28,8 @@ export interface PipelineContext {
   sourceTrustLevel?: string;
   /** Effective risk level of the normalized action. */
   risk?: RiskLevel;
+  /** Intent group of the normalized action, used for broad intent-based policy matching. */
+  intent_group?: IntentGroup;
 }
 
 export type CeeEffect = 'permit' | 'forbid';

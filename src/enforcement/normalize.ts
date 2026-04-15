@@ -16,7 +16,8 @@ export type IntentGroup =
   | 'external_send'
   | 'data_exfiltration'
   | 'credential_access'
-  | 'payment';
+  | 'payment'
+  | 'web_access';
 
 /** A single entry in the action normalization registry. */
 export interface ActionRegistryEntry {
@@ -120,6 +121,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
       'fetch_url',
       'http_request',
     ],
+    intent_group: 'web_access',
   },
   {
     action_class: 'web.post',
@@ -132,6 +134,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
       'post_request',
       'submit_form',
     ],
+    intent_group: 'web_access',
   },
   {
     action_class: 'shell.exec',

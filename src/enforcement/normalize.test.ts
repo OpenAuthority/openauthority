@@ -366,6 +366,14 @@ describe('intent_group — registry entry tags', () => {
   it('shell.exec has no intent_group', () => {
     expect(getRegistryEntry('bash').intent_group).toBeUndefined();
   });
+
+  it('web.fetch has intent_group web_access', () => {
+    expect(getRegistryEntry('fetch').intent_group).toBe('web_access');
+  });
+
+  it('web.post has intent_group web_access', () => {
+    expect(getRegistryEntry('http_post').intent_group).toBe('web_access');
+  });
 });
 
 describe('intent_group — normalize_action propagation', () => {
@@ -407,6 +415,27 @@ describe('intent_group — normalize_action propagation', () => {
   it('normalize_action omits intent_group for unknown tools', () => {
     const result = normalize_action('some_unknown_tool');
     expect(result.intent_group).toBeUndefined();
+  });
+
+  it('normalize_action includes intent_group web_access for web.fetch', () => {
+    const result = normalize_action('fetch', { url: 'https://example.com' });
+    expect(result.intent_group).toBe('web_access');
+  });
+
+  it('normalize_action includes intent_group web_access for web.post', () => {
+    const result = normalize_action('http_post', { url: 'https://api.example.com' });
+    expect(result.intent_group).toBe('web_access');
+  });
+
+  it('all web_access aliases propagate the web_access intent_group', () => {
+    const webFetchAliases = ['fetch', 'http_get', 'web_fetch', 'get_url', 'fetch_url', 'http_request'];
+    for (const alias of webFetchAliases) {
+      expect(normalize_action(alias).intent_group).toBe('web_access');
+    }
+    const webPostAliases = ['http_post', 'post_url', 'web_post', 'post_request', 'submit_form'];
+    for (const alias of webPostAliases) {
+      expect(normalize_action(alias).intent_group).toBe('web_access');
+    }
   });
 });
 

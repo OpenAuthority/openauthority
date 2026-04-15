@@ -312,6 +312,70 @@ describe('PolicyEngine', () => {
     });
   });
 
+  describe('evaluateByIntentGroup', () => {
+    it('returns permit with no-opinion reason when no rules have the given intent_group', () => {
+      engine.addRule({ effect: 'forbid', resource: 'tool', match: '*' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('permit');
+      expect(result.reason).toMatch(/no matching intent_group rule/i);
+      expect(result.matchedRule).toBeUndefined();
+    });
+
+    it('forbids when a rule with matching intent_group has effect forbid', () => {
+      engine.addRule({ effect: 'forbid', intent_group: 'destructive_fs', reason: 'no_delete_allowed' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('no_delete_allowed');
+    });
+
+    it('permits when a rule with matching intent_group has effect permit', () => {
+      engine.addRule({ effect: 'permit', intent_group: 'web_access', reason: 'web_allowed' });
+      const result = engine.evaluateByIntentGroup('web_access', ctx);
+      expect(result.effect).toBe('permit');
+      expect(result.reason).toBe('web_allowed');
+    });
+
+    it('Cedar semantics: forbid wins over permit for same intent_group', () => {
+      engine.addRule({ effect: 'permit', intent_group: 'destructive_fs', reason: 'baseline_permit' });
+      engine.addRule({ effect: 'forbid', intent_group: 'destructive_fs', reason: 'delete_blocked' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('delete_blocked');
+    });
+
+    it('ignores rules with a different intent_group', () => {
+      engine.addRule({ effect: 'forbid', intent_group: 'external_send', reason: 'comms_blocked' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('permit');
+    });
+
+    it('applies condition function to intent_group rules', () => {
+      engine.addRule({
+        effect: 'forbid',
+        intent_group: 'destructive_fs',
+        reason: 'restricted',
+        condition: (c) => c.agentId === 'restricted-agent',
+      });
+      const restrictedCtx: RuleContext = { agentId: 'restricted-agent', channel: 'default' };
+      expect(engine.evaluateByIntentGroup('destructive_fs', restrictedCtx).effect).toBe('forbid');
+      // non-matching condition → no opinion
+      expect(engine.evaluateByIntentGroup('destructive_fs', ctx).effect).toBe('permit');
+    });
+
+    it('includes matchedRule reference in the decision', () => {
+      const rule: Rule = { effect: 'forbid', intent_group: 'credential_access', reason: 'secrets_blocked' };
+      engine.addRule(rule);
+      const result = engine.evaluateByIntentGroup('credential_access', ctx);
+      expect(result.matchedRule).toBe(rule);
+    });
+
+    it('ignores rules without intent_group even when they match resource/name', () => {
+      engine.addRule({ effect: 'forbid', resource: 'tool', match: '*' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('permit');
+    });
+  });
+
   describe('rate limiting', () => {
     it('allows calls within the rate limit', () => {
       engine.addRule({
