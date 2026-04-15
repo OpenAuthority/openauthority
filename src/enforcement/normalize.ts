@@ -11,6 +11,12 @@
 
 export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
 export type HitlModeNorm = 'none' | 'per_request' | 'session_approval';
+export type IntentGroup =
+  | 'destructive_fs'
+  | 'external_send'
+  | 'data_exfiltration'
+  | 'credential_access'
+  | 'payment';
 
 /** A single entry in the action normalization registry. */
 export interface ActionRegistryEntry {
@@ -25,6 +31,8 @@ export interface ActionRegistryEntry {
    * All stored in lowercase; matching is case-insensitive.
    */
   readonly aliases: readonly string[];
+  /** Optional intent group for broader policy targeting. */
+  readonly intent_group?: IntentGroup;
 }
 
 /** Result of normalizing a tool call. */
@@ -37,6 +45,8 @@ export interface NormalizedAction {
   hitl_mode: HitlModeNorm;
   /** Extracted target resource (file path, URL, email address, etc.). */
   target: string;
+  /** Intent group for broader policy targeting, if applicable. */
+  intent_group?: IntentGroup;
 }
 
 // ---------------------------------------------------------------------------
@@ -83,6 +93,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
       'rm_file',
       'unlink_file',
     ],
+    intent_group: 'destructive_fs',
   },
   {
     action_class: 'filesystem.list',
@@ -147,6 +158,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
       'compose_email',
       'email',
     ],
+    intent_group: 'external_send',
   },
   {
     action_class: 'communication.slack',
@@ -158,6 +170,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
       'slack_send',
       'post_slack',
     ],
+    intent_group: 'external_send',
   },
   {
     action_class: 'communication.webhook',
@@ -206,6 +219,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
       'retrieve_secret',
       'read_credential',
     ],
+    intent_group: 'credential_access',
   },
   {
     action_class: 'credential.write',
@@ -218,6 +232,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
       'store_secret',
       'create_secret',
     ],
+    intent_group: 'credential_access',
   },
   {
     action_class: 'code.execute',
@@ -245,6 +260,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
       'charge',
       'stripe_payment',
     ],
+    intent_group: 'payment',
   },
   {
     action_class: 'unknown_sensitive_action',
@@ -379,7 +395,8 @@ export function normalize_action(
     risk = 'critical';
   }
 
-  return { action_class, risk, hitl_mode, target };
+  const intent_group = entry.intent_group;
+  return { action_class, risk, hitl_mode, target, ...(intent_group !== undefined && { intent_group }) };
 }
 
 // ---------------------------------------------------------------------------

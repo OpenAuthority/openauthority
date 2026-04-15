@@ -5,7 +5,7 @@ import {
   normalizeActionClass,
   sortedJsonStringify,
 } from './normalize.js';
-import type { ActionRegistryEntry, NormalizedAction, RiskLevel, HitlModeNorm } from './normalize.js';
+import type { ActionRegistryEntry, NormalizedAction, RiskLevel, HitlModeNorm, IntentGroup } from './normalize.js';
 
 // ---------------------------------------------------------------------------
 // getRegistryEntry
@@ -330,8 +330,89 @@ describe('sortedJsonStringify', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// intent_group — registry entries and normalize_action propagation
+// ---------------------------------------------------------------------------
+
+describe('intent_group — registry entry tags', () => {
+  it('filesystem.delete has intent_group destructive_fs', () => {
+    expect(getRegistryEntry('delete_file').intent_group).toBe('destructive_fs');
+  });
+
+  it('communication.email has intent_group external_send', () => {
+    expect(getRegistryEntry('send_email').intent_group).toBe('external_send');
+  });
+
+  it('communication.slack has intent_group external_send', () => {
+    expect(getRegistryEntry('send_slack').intent_group).toBe('external_send');
+  });
+
+  it('credential.read has intent_group credential_access', () => {
+    expect(getRegistryEntry('read_secret').intent_group).toBe('credential_access');
+  });
+
+  it('credential.write has intent_group credential_access', () => {
+    expect(getRegistryEntry('write_secret').intent_group).toBe('credential_access');
+  });
+
+  it('payment.initiate has intent_group payment', () => {
+    expect(getRegistryEntry('pay').intent_group).toBe('payment');
+  });
+
+  it('filesystem.read has no intent_group', () => {
+    expect(getRegistryEntry('read_file').intent_group).toBeUndefined();
+  });
+
+  it('shell.exec has no intent_group', () => {
+    expect(getRegistryEntry('bash').intent_group).toBeUndefined();
+  });
+});
+
+describe('intent_group — normalize_action propagation', () => {
+  it('normalize_action includes intent_group for filesystem.delete', () => {
+    const result = normalize_action('delete_file', { path: '/tmp/test.txt' });
+    expect(result.intent_group).toBe('destructive_fs');
+  });
+
+  it('normalize_action includes intent_group for communication.email', () => {
+    const result = normalize_action('send_email', { to: 'user@example.com' });
+    expect(result.intent_group).toBe('external_send');
+  });
+
+  it('normalize_action includes intent_group for communication.slack', () => {
+    const result = normalize_action('send_slack', { channel: '#general' });
+    expect(result.intent_group).toBe('external_send');
+  });
+
+  it('normalize_action includes intent_group for credential.read', () => {
+    const result = normalize_action('read_secret', { path: 'my-secret' });
+    expect(result.intent_group).toBe('credential_access');
+  });
+
+  it('normalize_action includes intent_group for credential.write', () => {
+    const result = normalize_action('write_secret', { path: 'new-secret' });
+    expect(result.intent_group).toBe('credential_access');
+  });
+
+  it('normalize_action includes intent_group for payment.initiate', () => {
+    const result = normalize_action('pay', { amount: '100' });
+    expect(result.intent_group).toBe('payment');
+  });
+
+  it('normalize_action omits intent_group for actions without a group', () => {
+    const result = normalize_action('read_file', { path: '/etc/hosts' });
+    expect(result.intent_group).toBeUndefined();
+  });
+
+  it('normalize_action omits intent_group for unknown tools', () => {
+    const result = normalize_action('some_unknown_tool');
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
 // Satisfy TypeScript — type-only imports used in stub file
 void ({} as ActionRegistryEntry);
 void ({} as NormalizedAction);
 void ({} as RiskLevel);
 void ({} as HitlModeNorm);
+void ({} as IntentGroup);
