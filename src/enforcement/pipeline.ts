@@ -2,8 +2,23 @@ import { EventEmitter } from 'node:events';
 import { PolicyEngine } from '../policy/engine.js';
 import type { RuleContext, Resource } from '../policy/types.js';
 import type { EvaluationDecision } from '../policy/engine.js';
-import type { RiskLevel } from './normalize.js';
+import type { RiskLevel, IntentGroup } from './normalize.js';
 import type { ExecutionEnvelope, Intent, Capability, Metadata } from '../types.js';
+
+/**
+ * Returns true when the process is running inside an npm install lifecycle
+ * (install, preinstall, postinstall, or prepare). Policy enforcement is
+ * bypassed in this phase to prevent blocking bootstrap commands.
+ *
+ * Detection relies on the `npm_lifecycle_event` environment variable set by
+ * npm during lifecycle script execution. Set `OPENAUTH_FORCE_ACTIVE=1` to
+ * suppress this bypass in development or CI environments.
+ */
+export function isInstallPhase(): boolean {
+  if (process.env.OPENAUTH_FORCE_ACTIVE === '1') return false;
+  const event = process.env.npm_lifecycle_event ?? '';
+  return ['install', 'preinstall', 'postinstall', 'prepare'].includes(event);
+}
 
 /** HITL enforcement mode for the capability gate. */
 export type HitlMode = 'none' | 'per_request' | 'session_approval';
@@ -28,6 +43,8 @@ export interface PipelineContext {
   sourceTrustLevel?: string;
   /** Effective risk level of the normalized action. */
   risk?: RiskLevel;
+  /** Intent group of the normalized action, used for broad intent-based policy matching. */
+  intent_group?: IntentGroup;
 }
 
 export type CeeEffect = 'permit' | 'forbid';
@@ -127,6 +144,11 @@ export async function runPipeline(
   };
 
   try {
+    // Install phase bypass: skip enforcement during npm install lifecycle.
+    if (isInstallPhase()) {
+      return finish({ effect: 'permit', reason: 'install_phase_bypass', stage: 'pipeline' });
+    }
+
     // HITL pre-check: approval required but not yet granted.
     if (ctx.hitl_mode !== 'none' && !ctx.approval_id) {
       return finish({ effect: 'forbid', reason: 'pending_hitl_approval', stage: 'hitl' });

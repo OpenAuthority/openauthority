@@ -70,6 +70,14 @@ describe('loadPolicyFile', () => {
     await expect(loadPolicyFile('/policy.json')).rejects.toBeInstanceOf(PolicyLoadError);
   });
 
+  it('accepts a rule with an intent_group field', async () => {
+    const rule: LoadedRule = { effect: 'forbid', resource: 'tool', match: '*', intent_group: 'data_exfiltration' };
+    const bundle = { version: 1, rules: [rule] };
+    mockReadFile.mockResolvedValue(JSON.stringify(bundle) as any);
+    const result = await loadPolicyFile('/policy.json');
+    expect(result.rules![0].intent_group).toBe('data_exfiltration');
+  });
+
   it('throws PolicyLoadError when a rule has an empty resource string', async () => {
     const bundle = { version: 1, rules: [{ effect: 'permit', resource: '', match: '*' }] };
     mockReadFile.mockResolvedValue(JSON.stringify(bundle) as any);
@@ -87,6 +95,52 @@ describe('loadPolicyFile', () => {
     }
     expect(caught).toBeInstanceOf(PolicyLoadError);
     expect((caught as PolicyLoadError).message).toContain('/my-policy.json');
+  });
+
+  // TC-TM-01: valid target_match regex loads successfully
+  it('TC-TM-01: accepts a rule with a valid target_match regex pattern', async () => {
+    const rule: LoadedRule = {
+      effect: 'forbid',
+      resource: 'channel',
+      match: '*',
+      target_match: '^blocked@example\\.com$',
+    };
+    const bundle = { version: 1, rules: [rule] };
+    mockReadFile.mockResolvedValue(JSON.stringify(bundle) as any);
+    const result = await loadPolicyFile('/policy.json');
+    expect(result.rules![0].target_match).toBe('^blocked@example\\.com$');
+  });
+
+  // TC-TM-02: invalid target_match regex throws PolicyLoadError with clear message
+  it('TC-TM-02: throws PolicyLoadError when a rule has an invalid target_match regex', async () => {
+    const bundle = {
+      version: 1,
+      rules: [{ effect: 'forbid', resource: 'channel', match: '*', target_match: '[invalid(regex' }],
+    };
+    mockReadFile.mockResolvedValue(JSON.stringify(bundle) as any);
+    let caught: unknown;
+    try {
+      await loadPolicyFile('/policy.json');
+    } catch (err) {
+      caught = err;
+    }
+    expect(caught).toBeInstanceOf(PolicyLoadError);
+    expect((caught as PolicyLoadError).message).toContain('target_match');
+    expect((caught as PolicyLoadError).message).toContain('[invalid(regex');
+  });
+
+  // TC-TM-03: valid target_in array loads successfully
+  it('TC-TM-03: accepts a rule with a valid target_in string array', async () => {
+    const rule: LoadedRule = {
+      effect: 'forbid',
+      resource: 'channel',
+      match: '*',
+      target_in: ['noreply@spam.example.com', 'abuse@badactor.net'],
+    };
+    const bundle = { version: 1, rules: [rule] };
+    mockReadFile.mockResolvedValue(JSON.stringify(bundle) as any);
+    const result = await loadPolicyFile('/policy.json');
+    expect(result.rules![0].target_in).toEqual(['noreply@spam.example.com', 'abuse@badactor.net']);
   });
 });
 

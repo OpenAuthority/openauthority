@@ -54,6 +54,21 @@ export interface Rule {
   rateLimit?: RateLimit;
   /** Action class for Stage 2 semantic evaluation matching (e.g. 'filesystem.read') */
   action_class?: string;
+  /** Intent group for grouping related actions (e.g. 'data_exfiltration') */
+  intent_group?: string;
+  /**
+   * Regex or string pattern matched against the specific target of the action
+   * (e.g. an email address, URL, or file path). When set, the rule only applies
+   * when the target also matches this pattern. Used alongside `match` or
+   * `action_class` to narrow scope to individual targets.
+   */
+  target_match?: string | RegExp;
+  /**
+   * Exhaustive list of specific target values this rule applies to.
+   * Checked for exact case-insensitive equality against the target.
+   * When set, the rule only applies when the target appears in this list.
+   */
+  target_in?: string[];
   /**
    * Evaluation priority. Lower numbers are evaluated first.
    * Tier 10 = permitted baseline, 90 = HITL-gated forbid, 100 = unconditional forbid.

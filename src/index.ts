@@ -27,7 +27,51 @@ export type { CoverageCell, CoverageEntry, CoverageState } from "./policy/covera
 export { fromCeeDecision, askUser, forbidDecision } from "./enforcement/decision.js";
 export type { StructuredDecision, CapabilityInfo } from "./enforcement/decision.js";
 export { createStage2, createEnforcementEngine } from "./enforcement/stage2-policy.js";
+export { detectSensitiveData } from "./enforcement/pii-classifier.js";
+export type { PiiCategory, PiiDetectionResult } from "./enforcement/pii-classifier.js";
 export { buildEnvelope, uuidv7, computePayloadHash, computeContextHash, sortedJsonStringify } from "./envelope.js";
+
+// ─── Utilities ───────────────────────────────────────────────────────────────
+export { generateDeltaSummary } from "./utils/delta-summary.js";
+export type { DeltaSummaryInput, ResidualRisk, ResidualRiskLevel } from "./utils/delta-summary.js";
+export { validateCommitMessage } from "./utils/commit-validator.js";
+export type {
+  CommitType,
+  CommitValidationField,
+  CommitValidationError,
+  CommitMessageParts,
+  CommitValidationResult,
+} from "./utils/commit-validator.js";
+export { validateRoadmapUpdate } from "./utils/roadmap-validator.js";
+export type { RoadmapValidationResult } from "./utils/roadmap-validator.js";
+
+// ─── Token telemetry ──────────────────────────────────────────────────────────
+export {
+  MODEL_PRICING,
+  DEFAULT_STATE_PATH,
+  resolvePricing,
+  calculateCost,
+  todayUtc,
+  TokenTelemetry,
+} from "./utils/token-telemetry.js";
+export type {
+  TokenRecord,
+  DailyEntry,
+  BudgetState,
+  ModelPricing,
+  DailyUsageSummary,
+  UsageReport,
+} from "./utils/token-telemetry.js";
+
+// ─── Budget tracker ───────────────────────────────────────────────────────────
+export {
+  PRICING as BUDGET_PRICING,
+  resolvePricing as resolveBudgetPricing,
+  estimateCost,
+} from "./budget/pricing.js";
+export type { ModelPricing as BudgetModelPricing } from "./budget/pricing.js";
+export { BudgetTracker, createBudgetTracker } from "./budget/tracker.js";
+export type { BudgetEntry, BudgetTrackerOptions } from "./budget/tracker.js";
 
 // ─── Human-in-the-loop policy configuration ──────────────────────────────────
 export {
@@ -94,13 +138,14 @@ import { TelegramListener, sendApprovalRequest, sendConfirmation, resolveTelegra
 import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig } from "./hitl/slack.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { readFileSync, statSync } from "node:fs";
+import { readFileSync, statSync, existsSync } from "node:fs";
 import { execSync } from "node:child_process";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { normalize_action, sortedJsonStringify } from "./enforcement/normalize.js";
 import { buildEnvelope } from "./envelope.js";
 import { defaultAgentIdentityRegistry } from "./identity.js";
+import { BudgetTracker, createBudgetTracker } from "./budget/tracker.js";
 
 /**
  * Resolved identity view used by audit and HITL call sites. Derived from
@@ -405,6 +450,9 @@ const slackMessageTimestamps = new Map<string, string>();
 /** JSONL audit logger for HITL decisions — initialised in activate(). */
 let hitlAuditLogger: JsonlAuditLogger | null = null;
 
+/** Budget tracker — appends events to data/budget.jsonl; initialised in activate(). */
+let budgetTracker: BudgetTracker | null = null;
+
 /** Activation guard — prevents duplicate hook registration when openclaw
  *  loads the plugin from multiple subsystems (gateway, CLI, etc.). */
 let activated = false;
@@ -609,6 +657,15 @@ function determineSourceTrustLevel(source?: string): 'user' | 'agent' | 'untrust
 const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source }, ctx) => {
   console.log(`[openauthority] ┌─ before_tool_call ──────────────────────────────────`);
   console.log(`[openauthority] │ tool=${toolName}  agent=${ctx.agentId ?? "unknown"}  channel=${ctx.channelId ?? "unknown"}`);
+
+  // ── Budget tracking — log every hook event to data/budget.jsonl ───────────
+  if (budgetTracker !== null) {
+    // Estimate input tokens from serialised params (rough: 1 token ≈ 4 UTF-16
+    // code units). Output tokens are not available pre-call; recorded as 0.
+    const paramJson = params !== undefined ? JSON.stringify(params) : '';
+    const estimatedInputTokens = Math.max(1, Math.round(paramJson.length / 4));
+    budgetTracker.append(estimatedInputTokens, 0);
+  }
 
   // ── Identity verification (V-03 v0.1 follow-up) ──────────────────────────
   // Verify the (agentId, channel) claim against the AgentIdentityRegistry
@@ -858,12 +915,42 @@ function getVersionInfo(): VersionInfo {
 
 let rulesWatcher: WatcherHandle | null = null;
 
+/**
+ * Returns true when policy enforcement should be active.
+ *
+ * Activation is deferred until `data/.installed` exists — written by the
+ * install script after bootstrap completes. Activation is also deferred when
+ * `npm_lifecycle_event` indicates an active npm install lifecycle (install,
+ * preinstall, postinstall, prepare) to prevent policy from blocking bootstrap
+ * commands. Set `OPENAUTH_FORCE_ACTIVE=1` to bypass both gates in development
+ * or CI environments.
+ */
+function isInstalled(): boolean {
+  if (process.env.OPENAUTH_FORCE_ACTIVE === "1") return true;
+  // Defer during npm install lifecycle phases (preinstall, install, postinstall, prepare).
+  const lifecycleEvent = process.env.npm_lifecycle_event ?? "";
+  if (["install", "preinstall", "postinstall", "prepare"].includes(lifecycleEvent)) return false;
+  const moduleDir = dirname(fileURLToPath(import.meta.url));
+  const pluginRoot = resolve(moduleDir, "..");
+  return existsSync(resolve(pluginRoot, "data", ".installed"));
+}
+
 const plugin: OpenclawPlugin = {
   name: "openauthority",
   // Single source of truth: package.json (read by getVersionInfo at activation).
   version: getVersionInfo().version,
 
   async activate(ctx: OpenclawPluginContext) {
+    // ── Install lifecycle gate ────────────────────────────────────────────────
+    // Policy enforcement is deferred until install completes (indicated by
+    // data/.installed). This prevents bootstrap commands from being blocked
+    // before plugin setup finishes. Set OPENAUTH_FORCE_ACTIVE=1 to bypass
+    // this gate in development or CI environments.
+    if (!isInstalled()) {
+      console.log("[plugin:openauthority] install incomplete — policy activation deferred (data/.installed not found; set OPENAUTH_FORCE_ACTIVE=1 to override)");
+      return;
+    }
+
     // ── Typed hooks: register into EVERY registry ───────────────────────────
     // OpenClaw loads plugins from multiple subsystems, each with its own
     // registry. ctx.on() targets the calling registry's typedHooks array.
@@ -880,6 +967,12 @@ const plugin: OpenclawPlugin = {
       return;
     }
     activated = true;
+
+    // ── Budget tracker — initialise singleton for data/budget.jsonl ──────────
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const pluginRoot = resolve(moduleDir, "..");
+    budgetTracker = createBudgetTracker(pluginRoot);
+    console.log(`[plugin:openauthority] budget tracker active — session=${budgetTracker.sessionId}  dailyLimit=${budgetTracker.dailyTokenLimit}  warnAt=${budgetTracker.warnAt}`);
 
     // ── Version banner: confirm at a glance which build is running ──────────
     const v = getVersionInfo();

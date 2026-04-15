@@ -5,7 +5,7 @@ import {
   normalizeActionClass,
   sortedJsonStringify,
 } from './normalize.js';
-import type { ActionRegistryEntry, NormalizedAction, RiskLevel, HitlModeNorm } from './normalize.js';
+import type { ActionRegistryEntry, NormalizedAction, RiskLevel, HitlModeNorm, IntentGroup } from './normalize.js';
 
 // ---------------------------------------------------------------------------
 // getRegistryEntry
@@ -55,7 +55,7 @@ describe('normalizeActionClass', () => {
 });
 
 // ---------------------------------------------------------------------------
-// All 17 action classes resolve from at least one alias
+// All 20 action classes resolve from at least one alias
 // ---------------------------------------------------------------------------
 
 describe('registry coverage — each action class resolves from at least one alias', () => {
@@ -64,8 +64,10 @@ describe('registry coverage — each action class resolves from at least one ali
     ['write_file',       'filesystem.write'],
     ['delete_file',      'filesystem.delete'],
     ['list_files',       'filesystem.list'],
+    ['web_search',       'web.search'],
     ['fetch',            'web.fetch'],
     ['http_post',        'web.post'],
+    ['scrape_page',      'browser.scrape'],
     ['bash',             'shell.exec'],
     ['send_email',       'communication.email'],
     ['send_slack',       'communication.slack'],
@@ -330,8 +332,356 @@ describe('sortedJsonStringify', () => {
   });
 });
 
+// ---------------------------------------------------------------------------
+// intent_group — registry entries and normalize_action propagation
+// ---------------------------------------------------------------------------
+
+describe('intent_group — registry entry tags', () => {
+  it('filesystem.delete has intent_group destructive_fs', () => {
+    expect(getRegistryEntry('delete_file').intent_group).toBe('destructive_fs');
+  });
+
+  it('communication.email has intent_group external_send', () => {
+    expect(getRegistryEntry('send_email').intent_group).toBe('external_send');
+  });
+
+  it('communication.slack has intent_group external_send', () => {
+    expect(getRegistryEntry('send_slack').intent_group).toBe('external_send');
+  });
+
+  it('credential.read has intent_group credential_access', () => {
+    expect(getRegistryEntry('read_secret').intent_group).toBe('credential_access');
+  });
+
+  it('credential.write has intent_group credential_access', () => {
+    expect(getRegistryEntry('write_secret').intent_group).toBe('credential_access');
+  });
+
+  it('payment.initiate has intent_group payment', () => {
+    expect(getRegistryEntry('pay').intent_group).toBe('payment');
+  });
+
+  it('filesystem.read has no intent_group', () => {
+    expect(getRegistryEntry('read_file').intent_group).toBeUndefined();
+  });
+
+  it('shell.exec has no intent_group', () => {
+    expect(getRegistryEntry('bash').intent_group).toBeUndefined();
+  });
+
+  it('web.fetch has intent_group data_exfiltration', () => {
+    expect(getRegistryEntry('fetch').intent_group).toBe('data_exfiltration');
+  });
+
+  it('web.post has intent_group web_access', () => {
+    expect(getRegistryEntry('http_post').intent_group).toBe('web_access');
+  });
+
+  it('web.search has no intent_group', () => {
+    expect(getRegistryEntry('web_search').intent_group).toBeUndefined();
+  });
+
+  it('browser.scrape has no intent_group', () => {
+    expect(getRegistryEntry('scrape_page').intent_group).toBeUndefined();
+  });
+});
+
+describe('intent_group — normalize_action propagation', () => {
+  it('normalize_action includes intent_group for filesystem.delete', () => {
+    const result = normalize_action('delete_file', { path: '/tmp/test.txt' });
+    expect(result.intent_group).toBe('destructive_fs');
+  });
+
+  it('normalize_action includes intent_group for communication.email', () => {
+    const result = normalize_action('send_email', { to: 'user@example.com' });
+    expect(result.intent_group).toBe('external_send');
+  });
+
+  it('normalize_action includes intent_group for communication.slack', () => {
+    const result = normalize_action('send_slack', { channel: '#general' });
+    expect(result.intent_group).toBe('external_send');
+  });
+
+  it('normalize_action includes intent_group for credential.read', () => {
+    const result = normalize_action('read_secret', { path: 'my-secret' });
+    expect(result.intent_group).toBe('credential_access');
+  });
+
+  it('normalize_action includes intent_group for credential.write', () => {
+    const result = normalize_action('write_secret', { path: 'new-secret' });
+    expect(result.intent_group).toBe('credential_access');
+  });
+
+  it('normalize_action includes intent_group for payment.initiate', () => {
+    const result = normalize_action('pay', { amount: '100' });
+    expect(result.intent_group).toBe('payment');
+  });
+
+  it('normalize_action omits intent_group for actions without a group', () => {
+    const result = normalize_action('read_file', { path: '/etc/hosts' });
+    expect(result.intent_group).toBeUndefined();
+  });
+
+  it('normalize_action omits intent_group for unknown tools', () => {
+    const result = normalize_action('some_unknown_tool');
+    expect(result.intent_group).toBeUndefined();
+  });
+
+  it('normalize_action includes intent_group data_exfiltration for web.fetch', () => {
+    const result = normalize_action('fetch', { url: 'https://example.com' });
+    expect(result.intent_group).toBe('data_exfiltration');
+  });
+
+  it('normalize_action includes intent_group web_access for web.post', () => {
+    const result = normalize_action('http_post', { url: 'https://api.example.com' });
+    expect(result.intent_group).toBe('web_access');
+  });
+
+  it('all web.fetch aliases propagate the data_exfiltration intent_group', () => {
+    const webFetchAliases = ['fetch', 'http_get', 'web_fetch', 'get_url', 'fetch_url', 'http_request', 'curl', 'wget', 'download_url', 'http_head', 'head_url', 'http_options'];
+    for (const alias of webFetchAliases) {
+      expect(normalize_action(alias).intent_group).toBe('data_exfiltration');
+    }
+    const webPostAliases = ['http_post', 'post_url', 'web_post', 'post_request', 'submit_form', 'http_put', 'put_url', 'web_put', 'put_request', 'http_patch', 'patch_url', 'web_patch', 'patch_request'];
+    for (const alias of webPostAliases) {
+      expect(normalize_action(alias).intent_group).toBe('web_access');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// filesystem.delete — expanded alias coverage (T14)
+// ---------------------------------------------------------------------------
+
+describe('filesystem.delete — new aliases resolve to filesystem.delete with destructive_fs', () => {
+  const NEW_ALIASES = [
+    'rm',
+    'rm_rf',
+    'unlink',
+    'delete',
+    'remove',
+    'move_to_trash',
+    'trash',
+    'shred',
+    'rmdir',
+    'format',
+    'empty_trash',
+    'purge',
+  ] as const;
+
+  for (const alias of NEW_ALIASES) {
+    it(`"${alias}" resolves to filesystem.delete`, () => {
+      expect(normalizeActionClass(alias)).toBe('filesystem.delete');
+    });
+
+    it(`"${alias}" has intent_group destructive_fs`, () => {
+      expect(getRegistryEntry(alias).intent_group).toBe('destructive_fs');
+    });
+
+    it(`normalize_action("${alias}") propagates intent_group destructive_fs`, () => {
+      const result = normalize_action(alias, { path: '/tmp/target' });
+      expect(result.action_class).toBe('filesystem.delete');
+      expect(result.intent_group).toBe('destructive_fs');
+    });
+  }
+
+  it('all new aliases are case-insensitive', () => {
+    expect(normalizeActionClass('RM')).toBe('filesystem.delete');
+    expect(normalizeActionClass('Trash')).toBe('filesystem.delete');
+    expect(normalizeActionClass('SHRED')).toBe('filesystem.delete');
+    expect(normalizeActionClass('PURGE')).toBe('filesystem.delete');
+    expect(normalizeActionClass('FORMAT')).toBe('filesystem.delete');
+  });
+
+  it('all new aliases have high default_risk', () => {
+    for (const alias of NEW_ALIASES) {
+      expect(getRegistryEntry(alias).default_risk).toBe('high');
+    }
+  });
+
+  it('all new aliases have per_request default_hitl_mode', () => {
+    for (const alias of NEW_ALIASES) {
+      expect(getRegistryEntry(alias).default_hitl_mode).toBe('per_request');
+    }
+  });
+});
+
+// ---------------------------------------------------------------------------
+// web.search — alias coverage (TC-WS)
+// ---------------------------------------------------------------------------
+
+describe('web.search — aliases resolve to web.search with medium risk and per_request HITL', () => {
+  const WEB_SEARCH_ALIASES = [
+    'web_search',
+    'google_search',
+    'bing_search',
+    'duckduckgo_search',
+    'ddg_search',
+    'search_web',
+    'web_research',
+    'news_search',
+  ] as const;
+
+  for (const alias of WEB_SEARCH_ALIASES) {
+    it(`TC-WS: "${alias}" resolves to web.search`, () => {
+      expect(normalizeActionClass(alias)).toBe('web.search');
+    });
+
+    it(`TC-WS: "${alias}" has default_risk medium`, () => {
+      expect(getRegistryEntry(alias).default_risk).toBe('medium');
+    });
+
+    it(`TC-WS: "${alias}" has default_hitl_mode per_request`, () => {
+      expect(getRegistryEntry(alias).default_hitl_mode).toBe('per_request');
+    });
+
+    it(`TC-WS: normalize_action("${alias}") returns correct action_class and risk`, () => {
+      const result = normalize_action(alias);
+      expect(result.action_class).toBe('web.search');
+      expect(result.risk).toBe('medium');
+      expect(result.hitl_mode).toBe('per_request');
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// web.fetch — new alias coverage + updated properties (TC-WF)
+// ---------------------------------------------------------------------------
+
+describe('web.fetch — new aliases and updated risk/hitl/intent_group', () => {
+  const NEW_WEB_FETCH_ALIASES = ['curl', 'wget', 'download_url'] as const;
+
+  for (const alias of NEW_WEB_FETCH_ALIASES) {
+    it(`TC-WF: "${alias}" resolves to web.fetch`, () => {
+      expect(normalizeActionClass(alias)).toBe('web.fetch');
+    });
+
+    it(`TC-WF: "${alias}" has intent_group data_exfiltration`, () => {
+      expect(getRegistryEntry(alias).intent_group).toBe('data_exfiltration');
+    });
+
+    it(`TC-WF: normalize_action("${alias}") has action_class, risk, hitl_mode, intent_group`, () => {
+      const result = normalize_action(alias);
+      expect(result.action_class).toBe('web.fetch');
+      expect(result.risk).toBe('medium');
+      expect(result.hitl_mode).toBe('per_request');
+      expect(result.intent_group).toBe('data_exfiltration');
+    });
+  }
+
+  it('web.fetch default_risk is medium', () => {
+    expect(getRegistryEntry('fetch').default_risk).toBe('medium');
+  });
+
+  it('web.fetch default_hitl_mode is per_request', () => {
+    expect(getRegistryEntry('fetch').default_hitl_mode).toBe('per_request');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// web.post — PUT and PATCH HTTP method variants (TC-WP)
+// ---------------------------------------------------------------------------
+
+describe('web.post — HTTP PUT and PATCH method aliases resolve to web.post', () => {
+  const HTTP_WRITE_ALIASES = [
+    'http_put',
+    'put_url',
+    'web_put',
+    'put_request',
+    'http_patch',
+    'patch_url',
+    'web_patch',
+    'patch_request',
+  ] as const;
+
+  for (const alias of HTTP_WRITE_ALIASES) {
+    it(`TC-WP: "${alias}" resolves to web.post`, () => {
+      expect(normalizeActionClass(alias)).toBe('web.post');
+    });
+
+    it(`TC-WP: "${alias}" has intent_group web_access`, () => {
+      expect(getRegistryEntry(alias).intent_group).toBe('web_access');
+    });
+
+    it(`TC-WP: normalize_action("${alias}") returns correct action_class, risk, hitl_mode`, () => {
+      const result = normalize_action(alias);
+      expect(result.action_class).toBe('web.post');
+      expect(result.risk).toBe('medium');
+      expect(result.hitl_mode).toBe('per_request');
+      expect(result.intent_group).toBe('web_access');
+    });
+  }
+
+  it('HTTP PUT/PATCH aliases are case-insensitive', () => {
+    expect(normalizeActionClass('HTTP_PUT')).toBe('web.post');
+    expect(normalizeActionClass('Http_Patch')).toBe('web.post');
+    expect(normalizeActionClass('PUT_URL')).toBe('web.post');
+    expect(normalizeActionClass('PATCH_REQUEST')).toBe('web.post');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// web.fetch — HEAD and OPTIONS HTTP method variants (TC-WFH)
+// ---------------------------------------------------------------------------
+
+describe('web.fetch — HTTP HEAD and OPTIONS method aliases resolve to web.fetch', () => {
+  const HTTP_READ_ALIASES = [
+    'http_head',
+    'head_url',
+    'http_options',
+  ] as const;
+
+  for (const alias of HTTP_READ_ALIASES) {
+    it(`TC-WFH: "${alias}" resolves to web.fetch`, () => {
+      expect(normalizeActionClass(alias)).toBe('web.fetch');
+    });
+
+    it(`TC-WFH: "${alias}" has intent_group data_exfiltration`, () => {
+      expect(getRegistryEntry(alias).intent_group).toBe('data_exfiltration');
+    });
+
+    it(`TC-WFH: normalize_action("${alias}") returns correct action_class, risk, hitl_mode`, () => {
+      const result = normalize_action(alias);
+      expect(result.action_class).toBe('web.fetch');
+      expect(result.risk).toBe('medium');
+      expect(result.hitl_mode).toBe('per_request');
+      expect(result.intent_group).toBe('data_exfiltration');
+    });
+  }
+});
+
+// ---------------------------------------------------------------------------
+// browser.scrape — alias coverage (TC-BS)
+// ---------------------------------------------------------------------------
+
+describe('browser.scrape — aliases resolve to browser.scrape with medium risk and per_request HITL', () => {
+  const BROWSER_SCRAPE_ALIASES = ['scrape_page', 'extract_page', 'read_url'] as const;
+
+  for (const alias of BROWSER_SCRAPE_ALIASES) {
+    it(`TC-BS: "${alias}" resolves to browser.scrape`, () => {
+      expect(normalizeActionClass(alias)).toBe('browser.scrape');
+    });
+
+    it(`TC-BS: "${alias}" has default_risk medium`, () => {
+      expect(getRegistryEntry(alias).default_risk).toBe('medium');
+    });
+
+    it(`TC-BS: "${alias}" has default_hitl_mode per_request`, () => {
+      expect(getRegistryEntry(alias).default_hitl_mode).toBe('per_request');
+    });
+
+    it(`TC-BS: normalize_action("${alias}") returns correct action_class and risk`, () => {
+      const result = normalize_action(alias);
+      expect(result.action_class).toBe('browser.scrape');
+      expect(result.risk).toBe('medium');
+      expect(result.hitl_mode).toBe('per_request');
+    });
+  }
+});
+
 // Satisfy TypeScript — type-only imports used in stub file
 void ({} as ActionRegistryEntry);
 void ({} as NormalizedAction);
 void ({} as RiskLevel);
 void ({} as HitlModeNorm);
+void ({} as IntentGroup);

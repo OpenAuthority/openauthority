@@ -16,6 +16,7 @@ import { createStage2, createEnforcementEngine } from './stage2-policy.js';
 import { EnforcementPolicyEngine } from './pipeline.js';
 import type { PipelineContext } from './pipeline.js';
 import type { Rule } from '../policy/types.js';
+import defaultRules from '../policy/rules/default.js';
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
@@ -273,6 +274,177 @@ describe('createStage2', () => {
     const [permit, forbid] = await Promise.all([stage2(makeCtx()), stage2(makeCtx())]);
     expect(permit.stage).toBe('stage2');
     expect(forbid.stage).toBe('stage2');
+  });
+
+  // ── 9. Intent group evaluation ────────────────────────────────────────────
+
+  it('forbids when an intent_group rule forbids even if action_class evaluation permits', async () => {
+    const engine = new EnforcementPolicyEngine();
+    engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+    engine.addRule({ effect: 'forbid', intent_group: 'destructive_fs', reason: 'no_deletion' });
+
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCtx({ action_class: 'filesystem.delete', target: '/tmp/test.txt', intent_group: 'destructive_fs' }),
+    );
+    expect(result.effect).toBe('forbid');
+    expect(result.reason).toBe('no_deletion');
+    expect(result.stage).toBe('stage2');
+  });
+
+  it('permits when intent_group rule permits and action_class evaluation permits', async () => {
+    const engine = new EnforcementPolicyEngine();
+    engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+    engine.addRule({ effect: 'permit', intent_group: 'web_access', reason: 'web_ok' });
+
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCtx({ action_class: 'web.fetch', target: 'https://example.com', intent_group: 'web_access' }),
+    );
+    expect(result.effect).toBe('permit');
+    expect(result.stage).toBe('stage2');
+  });
+
+  it('skips intent_group evaluation when ctx.intent_group is undefined', async () => {
+    const engine = new EnforcementPolicyEngine();
+    engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+    engine.addRule({ effect: 'forbid', intent_group: 'destructive_fs', reason: 'blocked' });
+    const igSpy = vi.spyOn(engine, 'evaluateByIntentGroup');
+
+    const stage2 = createStage2(engine);
+    const result = await stage2(makeCtx({ action_class: 'filesystem.delete', target: '/tmp/x' }));
+    expect(igSpy).not.toHaveBeenCalled();
+    expect(result.effect).toBe('permit');
+  });
+
+  it('action_class forbid wins before intent_group is evaluated', async () => {
+    const engine = new EnforcementPolicyEngine();
+    // EnforcementPolicyEngine maps filesystem.* → 'tool', so use resource: 'tool'
+    engine.addRule({ effect: 'forbid', resource: 'tool', match: '*', reason: 'all_files_blocked' });
+    engine.addRule({ effect: 'permit', intent_group: 'destructive_fs', reason: 'intent_permits' });
+    const igSpy = vi.spyOn(engine, 'evaluateByIntentGroup');
+
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCtx({ action_class: 'filesystem.delete', target: '/tmp/x', intent_group: 'destructive_fs' }),
+    );
+    expect(result.effect).toBe('forbid');
+    expect(result.reason).toBe('all_files_blocked');
+    expect(igSpy).not.toHaveBeenCalled();
+  });
+
+  it('all aliases for same intent_group apply the same intent_group policy', async () => {
+    const engine = new EnforcementPolicyEngine();
+    engine.addRule({ effect: 'permit', resource: 'tool', match: '*' });
+    engine.addRule({ effect: 'forbid', intent_group: 'external_send', reason: 'comms_blocked' });
+
+    const stage2 = createStage2(engine);
+    const [emailResult, slackResult] = await Promise.all([
+      stage2(makeCtx({ action_class: 'communication.email', target: 'user@example.com', intent_group: 'external_send' })),
+      stage2(makeCtx({ action_class: 'communication.slack', target: '#general', intent_group: 'external_send' })),
+    ]);
+    expect(emailResult.effect).toBe('forbid');
+    expect(emailResult.reason).toBe('comms_blocked');
+    expect(slackResult.effect).toBe('forbid');
+    expect(slackResult.reason).toBe('comms_blocked');
+  });
+});
+
+// ─── PII blocking — card data (integration) ───────────────────────────────────
+
+describe('PII blocking — card data (integration)', () => {
+  const CARD_NUMBER = '4111111111111111';
+  const CLEAN_PAYLOAD = 'Order #12345 for customer Alice — total $99.00';
+
+  function makeCardCtx(
+    action_class: string,
+    target: string,
+    payload?: string,
+  ): PipelineContext {
+    return {
+      action_class,
+      target,
+      payload_hash: 'abc',
+      hitl_mode: 'none',
+      intent_group: 'external_send',
+      rule_context: {
+        agentId: 'agent-1',
+        channel: 'test',
+        metadata: payload !== undefined ? { payload } : undefined,
+      },
+    };
+  }
+
+  // ── Forbid each channel with sensitive payload ────────────────────────────
+
+  it('forbids communication.email when payload contains a card number', async () => {
+    const engine = createEnforcementEngine(defaultRules);
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCardCtx('communication.email', 'user@example.com', `Please charge card ${CARD_NUMBER}`),
+    );
+    expect(result.effect).toBe('forbid');
+    expect(result.stage).toBe('stage2');
+  });
+
+  it('forbids communication.slack when payload contains a card number', async () => {
+    const engine = createEnforcementEngine(defaultRules);
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCardCtx('communication.slack', '#payments', `Card: ${CARD_NUMBER}`),
+    );
+    expect(result.effect).toBe('forbid');
+    expect(result.stage).toBe('stage2');
+  });
+
+  it('forbids communication.webhook when payload contains a card number', async () => {
+    const engine = createEnforcementEngine(defaultRules);
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCardCtx('communication.webhook', 'https://hook.example.com', `card_number=${CARD_NUMBER}`),
+    );
+    expect(result.effect).toBe('forbid');
+    expect(result.stage).toBe('stage2');
+  });
+
+  // ── Permit with clean payload ────────────────────────────────────────────
+
+  it('permits communication.email when payload contains no card data', async () => {
+    const engine = createEnforcementEngine(defaultRules);
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCardCtx('communication.email', 'user@example.com', CLEAN_PAYLOAD),
+    );
+    expect(result.effect).toBe('permit');
+  });
+
+  // ── Permit when no payload field is present ──────────────────────────────
+
+  it('permits communication.email when no payload metadata is present', async () => {
+    const engine = createEnforcementEngine(defaultRules);
+    const stage2 = createStage2(engine);
+    const result = await stage2(
+      makeCardCtx('communication.email', 'user@example.com', undefined),
+    );
+    expect(result.effect).toBe('permit');
+  });
+
+  // ── Combined: all three external_send channels forbid the same card string ─
+
+  it('all three external_send channels forbid the same card payload', async () => {
+    const engine = createEnforcementEngine(defaultRules);
+    const stage2 = createStage2(engine);
+    const payload = `Sending card ${CARD_NUMBER} to processor`;
+
+    const [emailResult, slackResult, webhookResult] = await Promise.all([
+      stage2(makeCardCtx('communication.email', 'user@example.com', payload)),
+      stage2(makeCardCtx('communication.slack', '#alerts', payload)),
+      stage2(makeCardCtx('communication.webhook', 'https://hook.example.com', payload)),
+    ]);
+
+    expect(emailResult.effect).toBe('forbid');
+    expect(slackResult.effect).toBe('forbid');
+    expect(webhookResult.effect).toBe('forbid');
   });
 });
 

@@ -269,6 +269,85 @@ describe('PolicyEngine', () => {
     });
   });
 
+  describe('evaluateByActionClass — action_class field matching', () => {
+    it('matches a rule by action_class field and returns forbid', () => {
+      const rule: Rule = { effect: 'forbid', action_class: 'filesystem.read', reason: 'reads_blocked' };
+      engine.addRule(rule);
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('reads_blocked');
+      expect(result.matchedRule).toBe(rule);
+    });
+
+    it('matches a rule by action_class field and returns permit', () => {
+      const rule: Rule = { effect: 'permit', action_class: 'filesystem.read', reason: 'reads_ok' };
+      engine.addRule(rule);
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('permit');
+      expect(result.reason).toBe('reads_ok');
+      expect(result.matchedRule).toBe(rule);
+    });
+
+    it('action_class forbid wins over resource-based permit', () => {
+      const forbidRule: Rule = { effect: 'forbid', action_class: 'filesystem.read', reason: 'ac_forbid' };
+      engine.addRule({ effect: 'permit', resource: 'file', match: '*' });
+      engine.addRule(forbidRule);
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('ac_forbid');
+      expect(result.matchedRule).toBe(forbidRule);
+    });
+
+    it('resource-based forbid wins over action_class permit', () => {
+      const resourceForbid: Rule = { effect: 'forbid', resource: 'file', match: '*', reason: 'res_forbid' };
+      engine.addRule({ effect: 'permit', action_class: 'filesystem.read', reason: 'ac_permit' });
+      engine.addRule(resourceForbid);
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('res_forbid');
+      expect(result.matchedRule).toBe(resourceForbid);
+    });
+
+    it('does not match action_class rule for a different action class', () => {
+      engine.addRule({ effect: 'forbid', action_class: 'filesystem.write', reason: 'writes_blocked' });
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({ effect: 'forbid', action_class: 'filesystem.write', reason: 'writes_blocked' });
+      // filesystem.read doesn't match filesystem.write rule
+      const result = strictEngine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toMatch(/implicit deny/i);
+      expect(result.matchedRule).toBeUndefined();
+    });
+
+    it('condition functions apply to action_class rules', () => {
+      engine.addRule({
+        effect: 'forbid',
+        action_class: 'filesystem.read',
+        reason: 'restricted',
+        condition: (c) => c.agentId === 'restricted-agent',
+      });
+      const restrictedCtx: RuleContext = { agentId: 'restricted-agent', channel: 'default' };
+      expect(engine.evaluateByActionClass('filesystem.read', '/tmp/x', restrictedCtx).effect).toBe('forbid');
+      // condition fails for normal agent → falls through to implicit permit
+      expect(engine.evaluateByActionClass('filesystem.read', '/tmp/x', ctx).effect).toBe('permit');
+    });
+
+    it('Cedar semantics: action_class forbid wins over action_class permit for same action_class', () => {
+      engine.addRule({ effect: 'permit', action_class: 'filesystem.read', reason: 'baseline_permit' });
+      engine.addRule({ effect: 'forbid', action_class: 'filesystem.read', reason: 'read_blocked' });
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('read_blocked');
+    });
+
+    it('action_class permit includes matchedRule reference', () => {
+      const rule: Rule = { effect: 'permit', action_class: 'payment.transfer', reason: 'approved' };
+      engine.addRule(rule);
+      const result = engine.evaluateByActionClass('payment.transfer', 'acct-123', ctx);
+      expect(result.matchedRule).toBe(rule);
+    });
+  });
+
   describe('evaluateByActionClass', () => {
     const actionClassCases: Array<[string, string]> = [
       ['filesystem.read',          'file'],
@@ -309,6 +388,176 @@ describe('PolicyEngine', () => {
       const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
       const result = strictEngine.evaluateByActionClass('filesystem.read', 'anything', ctx);
       expect(result.effect).toBe('forbid');
+    });
+  });
+
+  describe('evaluateByIntentGroup', () => {
+    it('returns permit with no-opinion reason when no rules have the given intent_group', () => {
+      engine.addRule({ effect: 'forbid', resource: 'tool', match: '*' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('permit');
+      expect(result.reason).toMatch(/no matching intent_group rule/i);
+      expect(result.matchedRule).toBeUndefined();
+    });
+
+    it('forbids when a rule with matching intent_group has effect forbid', () => {
+      engine.addRule({ effect: 'forbid', intent_group: 'destructive_fs', reason: 'no_delete_allowed' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('no_delete_allowed');
+    });
+
+    it('permits when a rule with matching intent_group has effect permit', () => {
+      engine.addRule({ effect: 'permit', intent_group: 'web_access', reason: 'web_allowed' });
+      const result = engine.evaluateByIntentGroup('web_access', ctx);
+      expect(result.effect).toBe('permit');
+      expect(result.reason).toBe('web_allowed');
+    });
+
+    it('Cedar semantics: forbid wins over permit for same intent_group', () => {
+      engine.addRule({ effect: 'permit', intent_group: 'destructive_fs', reason: 'baseline_permit' });
+      engine.addRule({ effect: 'forbid', intent_group: 'destructive_fs', reason: 'delete_blocked' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('delete_blocked');
+    });
+
+    it('ignores rules with a different intent_group', () => {
+      engine.addRule({ effect: 'forbid', intent_group: 'external_send', reason: 'comms_blocked' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('permit');
+    });
+
+    it('applies condition function to intent_group rules', () => {
+      engine.addRule({
+        effect: 'forbid',
+        intent_group: 'destructive_fs',
+        reason: 'restricted',
+        condition: (c) => c.agentId === 'restricted-agent',
+      });
+      const restrictedCtx: RuleContext = { agentId: 'restricted-agent', channel: 'default' };
+      expect(engine.evaluateByIntentGroup('destructive_fs', restrictedCtx).effect).toBe('forbid');
+      // non-matching condition → no opinion
+      expect(engine.evaluateByIntentGroup('destructive_fs', ctx).effect).toBe('permit');
+    });
+
+    it('includes matchedRule reference in the decision', () => {
+      const rule: Rule = { effect: 'forbid', intent_group: 'credential_access', reason: 'secrets_blocked' };
+      engine.addRule(rule);
+      const result = engine.evaluateByIntentGroup('credential_access', ctx);
+      expect(result.matchedRule).toBe(rule);
+    });
+
+    it('ignores rules without intent_group even when they match resource/name', () => {
+      engine.addRule({ effect: 'forbid', resource: 'tool', match: '*' });
+      const result = engine.evaluateByIntentGroup('destructive_fs', ctx);
+      expect(result.effect).toBe('permit');
+    });
+  });
+
+  describe('target matching — target_match regex and target_in array', () => {
+    it('TC-TM-01: target_match regex blocks matching email addresses', () => {
+      engine.addRule({ effect: 'permit', resource: 'external', match: '*' });
+      engine.addRule({
+        effect: 'forbid',
+        resource: 'external',
+        match: '*',
+        target_match: /^blocked@evil\.com$/,
+        reason: 'blocked_address',
+      });
+      // Matching address is forbidden
+      const blocked = engine.evaluate('external', 'blocked@evil.com', ctx);
+      expect(blocked.effect).toBe('forbid');
+      expect(blocked.reason).toBe('blocked_address');
+      // Non-matching address is permitted by the wildcard permit rule
+      expect(engine.evaluate('external', 'safe@acme.com', ctx).effect).toBe('permit');
+    });
+
+    it('TC-TM-02: target_in array blocks listed targets', () => {
+      engine.addRule({
+        effect: 'forbid',
+        action_class: 'communication.email',
+        target_in: ['spam@blocked.com', 'abuse@badactor.net'],
+        reason: 'blocked_address_list',
+      });
+      const r1 = engine.evaluateByActionClass('communication.email', 'spam@blocked.com', ctx);
+      expect(r1.effect).toBe('forbid');
+      expect(r1.reason).toBe('blocked_address_list');
+
+      const r2 = engine.evaluateByActionClass('communication.email', 'abuse@badactor.net', ctx);
+      expect(r2.effect).toBe('forbid');
+      expect(r2.reason).toBe('blocked_address_list');
+
+      // Target not in the list falls through to implicit permit
+      const r3 = engine.evaluateByActionClass('communication.email', 'good@trusted.com', ctx);
+      expect(r3.effect).toBe('permit');
+    });
+
+    it('target_match does not prevent non-matching targets from passing through', () => {
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({
+        effect: 'forbid',
+        resource: 'external',
+        match: '*',
+        target_match: /@evil\.com$/,
+        reason: 'evil_domain',
+      });
+      // Non-evil.com address: target_match skips this rule, falls to implicit deny
+      const result = strictEngine.evaluate('external', 'safe@acme.com', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.matchedRule).toBeUndefined(); // no matched rule — implicit deny
+      expect(result.reason).toMatch(/implicit deny/i);
+    });
+
+    it('target_in matching is case-insensitive', () => {
+      engine.addRule({
+        effect: 'forbid',
+        resource: 'external',
+        match: '*',
+        target_in: ['BLOCKED@EVIL.COM'],
+        reason: 'case_insensitive_block',
+      });
+      expect(engine.evaluate('external', 'blocked@evil.com', ctx).effect).toBe('forbid');
+      expect(engine.evaluate('external', 'BLOCKED@EVIL.COM', ctx).effect).toBe('forbid');
+    });
+
+    it('target_match works with action_class rules in evaluateByActionClass', () => {
+      engine.addRule({
+        effect: 'forbid',
+        action_class: 'communication.email',
+        target_match: /^specific@target\.com$/,
+        reason: 'targeted_block',
+      });
+      const blocked = engine.evaluateByActionClass('communication.email', 'specific@target.com', ctx);
+      expect(blocked.effect).toBe('forbid');
+      expect(blocked.reason).toBe('targeted_block');
+      // Other targets are not affected
+      const allowed = engine.evaluateByActionClass('communication.email', 'other@target.com', ctx);
+      expect(allowed.effect).toBe('permit');
+    });
+
+    it('target_match string permits exact-match target and blocks others', () => {
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({
+        effect: 'permit',
+        resource: 'external',
+        match: '*',
+        target_match: 'allowed@acme.com',
+      });
+      expect(strictEngine.evaluate('external', 'allowed@acme.com', ctx).effect).toBe('permit');
+      // Different address: target_match filters it out, falls to implicit deny
+      expect(strictEngine.evaluate('external', 'other@acme.com', ctx).effect).toBe('forbid');
+    });
+
+    it('target_in with empty array never matches', () => {
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({
+        effect: 'permit',
+        resource: 'external',
+        match: '*',
+        target_in: [],
+      });
+      expect(strictEngine.evaluate('external', 'anything@example.com', ctx).effect).toBe('forbid');
     });
   });
 
@@ -433,6 +682,68 @@ describe('PolicyEngine', () => {
       engine.addRule({ effect: 'permit', resource: 'tool', match: 'read_file' });
       const result = engine.evaluate('tool', 'read_file', ctx);
       expect(result.rateLimit).toBeUndefined();
+    });
+  });
+
+  describe('intent_group blocks action without action_class rule', () => {
+    it('evaluateByIntentGroup external_send forbids when intent_group rule is loaded', () => {
+      engine.addRule({ effect: 'forbid', intent_group: 'external_send', reason: 'no_external_comms' });
+      const result = engine.evaluateByIntentGroup('external_send', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('no_external_comms');
+    });
+
+    it('intent_group external_send blocks communication.slack even with no action_class rule', () => {
+      // Load only an intent_group rule — no action_class rule for communication.slack
+      engine.addRule({ effect: 'forbid', intent_group: 'external_send', reason: 'comms_blocked' });
+
+      // Without an action_class rule, evaluateByActionClass permits communication.slack
+      const actionClassResult = engine.evaluateByActionClass('communication.slack', '#general', ctx);
+      expect(actionClassResult.effect).toBe('permit');
+
+      // The intent_group rule blocks via evaluateByIntentGroup
+      const intentGroupResult = engine.evaluateByIntentGroup('external_send', ctx);
+      expect(intentGroupResult.effect).toBe('forbid');
+      expect(intentGroupResult.reason).toBe('comms_blocked');
+    });
+
+    it('intent_group rule blocks all external_send actions (email and slack)', () => {
+      engine.addRule({ effect: 'forbid', intent_group: 'external_send', reason: 'no_external_send' });
+      // Both communication.email and communication.slack share intent_group external_send
+      expect(engine.evaluateByIntentGroup('external_send', ctx).effect).toBe('forbid');
+    });
+
+    it('matched rule reference is set on the intent_group forbid decision', () => {
+      const rule: Rule = { effect: 'forbid', intent_group: 'external_send', reason: 'comms_blocked' };
+      engine.addRule(rule);
+      const result = engine.evaluateByIntentGroup('external_send', ctx);
+      expect(result.matchedRule).toBe(rule);
+    });
+  });
+
+  // Regression test for Issue #1: exec blocks were blocking everything.
+  // Confirms that common actions are permitted by default when no explicit rules apply.
+  describe('regression: default-permit for common actions (Issue #1)', () => {
+    it('permits filesystem.read when no rules exist', () => {
+      const result = engine.evaluateByActionClass('filesystem.read', '/home/user/file.txt', ctx);
+      expect(result.effect).toBe('permit');
+    });
+
+    it('permits network.request when no rules exist', () => {
+      const result = engine.evaluateByActionClass('network.request', 'https://example.com', ctx);
+      expect(result.effect).toBe('permit');
+    });
+
+    it('permits shell.exec when no rules exist', () => {
+      const result = engine.evaluateByActionClass('shell.exec', 'ls -la', ctx);
+      expect(result.effect).toBe('permit');
+    });
+
+    it('permits all three actions when unrelated forbid rules are loaded', () => {
+      engine.addRule({ effect: 'forbid', resource: 'payment', match: '*', reason: 'payments_blocked' });
+      expect(engine.evaluateByActionClass('filesystem.read', '/tmp/data', ctx).effect).toBe('permit');
+      expect(engine.evaluateByActionClass('network.request', 'https://api.example.com', ctx).effect).toBe('permit');
+      expect(engine.evaluateByActionClass('shell.exec', 'echo hello', ctx).effect).toBe('permit');
     });
   });
 });

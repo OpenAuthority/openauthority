@@ -46,6 +46,20 @@ export function createStage2(engine: EnforcementPolicyEngine): Stage2Fn {
         ctx.rule_context,
       );
 
+      // Cedar semantics: forbid from action_class evaluation wins immediately
+      if (result.effect === 'forbid') {
+        return { effect: 'forbid', reason: result.reason ?? 'forbid', stage: 'stage2' };
+      }
+
+      // Also evaluate intent_group rules if the action belongs to a group.
+      // Any forbid from intent_group rules wins (Cedar semantics).
+      if (ctx.intent_group !== undefined) {
+        const igResult = engine.evaluateByIntentGroup(ctx.intent_group, ctx.rule_context);
+        if (igResult.effect === 'forbid') {
+          return { effect: 'forbid', reason: igResult.reason ?? 'forbid', stage: 'stage2' };
+        }
+      }
+
       return {
         effect: result.effect,
         reason: result.reason ?? result.effect,
