@@ -261,9 +261,18 @@ export class PolicyEngine {
   }
 
   /**
-   * Maps an action class string to a Cedar resource type then delegates to
-   * {@link evaluate}. Use this when the caller works with semantic action
-   * classes (e.g. `'filesystem.read'`) rather than raw resource types.
+   * Maps an action class string to a Cedar resource type then evaluates all
+   * matching rules — both rules matched directly by `action_class` field and
+   * rules matched by the mapped `resource`/`match` pattern — applying Cedar
+   * forbid-wins semantics across both sets.
+   *
+   * Matching order (forbid-wins across all matched rules):
+   * 1. Rules with `rule.action_class === actionClass` are collected and checked
+   *    for forbids first (direct semantic match, highest specificity).
+   * 2. Resource/match-based rules are evaluated via {@link evaluate}; any
+   *    forbid from that evaluation wins next.
+   * 3. A permit from a direct action_class rule is returned before falling
+   *    through to the resource-based result.
    *
    * Action class prefix → Resource mapping:
    * - `filesystem.*`              → `'file'`
@@ -286,8 +295,45 @@ export class PolicyEngine {
     resourceName: string,
     context: RuleContext
   ): EvaluationDecision {
+    // Collect rules matched directly by action_class field
+    const actionClassRules: Rule[] = [];
+    for (const rule of this._rules) {
+      if (rule.action_class !== actionClass) continue;
+      if (rule.condition !== undefined && !rule.condition(context)) continue;
+      actionClassRules.push(rule);
+    }
+
+    // Cedar semantics: any direct action_class forbid wins immediately
+    for (const rule of actionClassRules) {
+      if (rule.effect === 'forbid') {
+        return {
+          effect: 'forbid',
+          ...(rule.reason !== undefined ? { reason: rule.reason } : {}),
+          matchedRule: rule,
+        };
+      }
+    }
+
+    // Evaluate resource/match rules via existing evaluate() (preserves rate limiting)
     const resource = PolicyEngine.mapActionClassToResource(actionClass);
-    return this.evaluate(resource, resourceName, context);
+    const resourceResult = this.evaluate(resource, resourceName, context);
+
+    // Resource-based forbid wins over any action_class permit
+    if (resourceResult.effect === 'forbid') return resourceResult;
+
+    // First matching action_class permit takes precedence over implicit resource result
+    for (const rule of actionClassRules) {
+      if (rule.effect === 'permit') {
+        return {
+          effect: 'permit',
+          ...(rule.reason !== undefined ? { reason: rule.reason } : {}),
+          matchedRule: rule,
+        };
+      }
+    }
+
+    // Fall through to resource result (explicit match or implicit default)
+    return resourceResult;
   }
 
   /**

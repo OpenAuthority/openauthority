@@ -269,6 +269,85 @@ describe('PolicyEngine', () => {
     });
   });
 
+  describe('evaluateByActionClass — action_class field matching', () => {
+    it('matches a rule by action_class field and returns forbid', () => {
+      const rule: Rule = { effect: 'forbid', action_class: 'filesystem.read', reason: 'reads_blocked' };
+      engine.addRule(rule);
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('reads_blocked');
+      expect(result.matchedRule).toBe(rule);
+    });
+
+    it('matches a rule by action_class field and returns permit', () => {
+      const rule: Rule = { effect: 'permit', action_class: 'filesystem.read', reason: 'reads_ok' };
+      engine.addRule(rule);
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('permit');
+      expect(result.reason).toBe('reads_ok');
+      expect(result.matchedRule).toBe(rule);
+    });
+
+    it('action_class forbid wins over resource-based permit', () => {
+      const forbidRule: Rule = { effect: 'forbid', action_class: 'filesystem.read', reason: 'ac_forbid' };
+      engine.addRule({ effect: 'permit', resource: 'file', match: '*' });
+      engine.addRule(forbidRule);
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('ac_forbid');
+      expect(result.matchedRule).toBe(forbidRule);
+    });
+
+    it('resource-based forbid wins over action_class permit', () => {
+      const resourceForbid: Rule = { effect: 'forbid', resource: 'file', match: '*', reason: 'res_forbid' };
+      engine.addRule({ effect: 'permit', action_class: 'filesystem.read', reason: 'ac_permit' });
+      engine.addRule(resourceForbid);
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('res_forbid');
+      expect(result.matchedRule).toBe(resourceForbid);
+    });
+
+    it('does not match action_class rule for a different action class', () => {
+      engine.addRule({ effect: 'forbid', action_class: 'filesystem.write', reason: 'writes_blocked' });
+      const strictEngine = new PolicyEngine({ defaultEffect: 'forbid' });
+      strictEngine.addRule({ effect: 'forbid', action_class: 'filesystem.write', reason: 'writes_blocked' });
+      // filesystem.read doesn't match filesystem.write rule
+      const result = strictEngine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toMatch(/implicit deny/i);
+      expect(result.matchedRule).toBeUndefined();
+    });
+
+    it('condition functions apply to action_class rules', () => {
+      engine.addRule({
+        effect: 'forbid',
+        action_class: 'filesystem.read',
+        reason: 'restricted',
+        condition: (c) => c.agentId === 'restricted-agent',
+      });
+      const restrictedCtx: RuleContext = { agentId: 'restricted-agent', channel: 'default' };
+      expect(engine.evaluateByActionClass('filesystem.read', '/tmp/x', restrictedCtx).effect).toBe('forbid');
+      // condition fails for normal agent → falls through to implicit permit
+      expect(engine.evaluateByActionClass('filesystem.read', '/tmp/x', ctx).effect).toBe('permit');
+    });
+
+    it('Cedar semantics: action_class forbid wins over action_class permit for same action_class', () => {
+      engine.addRule({ effect: 'permit', action_class: 'filesystem.read', reason: 'baseline_permit' });
+      engine.addRule({ effect: 'forbid', action_class: 'filesystem.read', reason: 'read_blocked' });
+      const result = engine.evaluateByActionClass('filesystem.read', '/tmp/file', ctx);
+      expect(result.effect).toBe('forbid');
+      expect(result.reason).toBe('read_blocked');
+    });
+
+    it('action_class permit includes matchedRule reference', () => {
+      const rule: Rule = { effect: 'permit', action_class: 'payment.transfer', reason: 'approved' };
+      engine.addRule(rule);
+      const result = engine.evaluateByActionClass('payment.transfer', 'acct-123', ctx);
+      expect(result.matchedRule).toBe(rule);
+    });
+  });
+
   describe('evaluateByActionClass', () => {
     const actionClassCases: Array<[string, string]> = [
       ['filesystem.read',          'file'],
