@@ -13,7 +13,7 @@ This guide walks through installing and registering the Clawthority plugin for O
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/Clawthority/clawthority ~/.openclaw/plugins/clawthority
+git clone https://github.com/OpenAuthority/clawthority ~/.openclaw/plugins/clawthority
 cd ~/.openclaw/plugins/clawthority
 ```
 
