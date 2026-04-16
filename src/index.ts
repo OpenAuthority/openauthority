@@ -17,7 +17,9 @@ export type { RegisteredAgent, IdentityVerificationResult } from "./identity.js"
 export { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 export type { EvaluationDecision, EvaluationEffect } from "./policy/engine.js";
 export type { Rule, RuleContext, Resource, Effect, RateLimit } from "./policy/types.js";
-export { default as defaultRules, mergeRules } from "./policy/rules.js";
+export { default as defaultRules, mergeRules, OPEN_MODE_RULES } from "./policy/rules.js";
+export { resolveMode, modeToDefaultEffect } from "./policy/mode.js";
+export type { ClawMode } from "./policy/mode.js";
 
 // ─── Phase 2: Coverage tracking re-exports ───────────────────────────────────
 export { CoverageMap } from "./policy/coverage.js";
@@ -126,7 +128,8 @@ import { JsonlAuditLogger } from "./audit.js";
 import type { HitlDecisionEntry } from "./audit.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
-import defaultRules from "./policy/rules.js";
+import defaultRules, { OPEN_MODE_RULES } from "./policy/rules.js";
+import { resolveMode, modeToDefaultEffect, type ClawMode } from "./policy/mode.js";
 import { startRulesWatcher, type WatcherHandle } from "./watcher.js";
 import { CoverageMap } from "./policy/coverage.js";
 import { checkAction } from "./hitl/matcher.js";
@@ -314,17 +317,47 @@ function detectPromptInjection(messages?: unknown[]): boolean {
   return false;
 }
 
+// ─── Mode resolution ──────────────────────────────────────────────────────────
+
+/**
+ * Install mode — controls the policy engine's implicit decision when no rule
+ * matches and which baseline rule set is loaded.
+ *
+ * - `open`    — implicit permit. Ship {@link OPEN_MODE_RULES} (critical-forbid
+ *               subset: shell.exec, code.execute, payment.initiate,
+ *               credential.read/write, unknown_sensitive_action). User adds
+ *               forbid rules to lock things down.
+ * - `closed`  — implicit deny. Ship the full {@link defaultRules}. User adds
+ *               permit rules to open things up.
+ *
+ * Read once at module load from `CLAWTHORITY_MODE` env var. Default is `open`
+ * so a fresh install works out-of-the-box without every tool call hitting an
+ * implicit deny. Change requires a plugin restart.
+ */
+const MODE: ClawMode = resolveMode();
+const DEFAULT_EFFECT: 'permit' | 'forbid' = modeToDefaultEffect(MODE);
+const ACTIVE_RULES: Rule[] = MODE === 'open' ? OPEN_MODE_RULES : defaultRules;
+
+console.log(
+  `[clawthority] mode: ${MODE.toUpperCase()} (${
+    MODE === 'open'
+      ? 'implicit permit; critical forbids enforced'
+      : 'implicit deny; explicit permits required'
+  })`
+);
+
 // ─── Singleton instances ──────────────────────────────────────────────────────
 
 /** Mutable container for the Cedar-style engine used by lifecycle hooks.
  *  Hot reload swaps `.current` in-place so all hook handlers pick up new rules
  *  without requiring a Gateway restart.
- *  Uses defaultEffect:'forbid' (fail-closed) so unrecognised tools/channels are
- *  blocked unless an explicit permit rule covers them. */
+ *  `defaultEffect` is driven by the resolved install mode — `forbid` in closed
+ *  mode (fail-closed), `permit` in open mode (fail-open with a critical-forbid
+ *  safety net). */
 const cedarEngineRef: { current: CedarPolicyEngine } = {
-  current: new CedarPolicyEngine({ defaultEffect: 'forbid' }),
+  current: new CedarPolicyEngine({ defaultEffect: DEFAULT_EFFECT }),
 };
-cedarEngineRef.current.addRules(defaultRules);
+cedarEngineRef.current.addRules(ACTIVE_RULES);
 
 /**
  * Phase 2: CoverageMap tracks every (resource, name) pair evaluated by the
@@ -334,8 +367,8 @@ cedarEngineRef.current.addRules(defaultRules);
 export const coverageMap = new CoverageMap();
 
 // Log compiled rules at startup
-console.log(`[clawthority] compiled rules (${defaultRules.length}):`);
-for (const r of defaultRules) {
+console.log(`[clawthority] compiled rules (${ACTIVE_RULES.length}):`);
+for (const r of ACTIVE_RULES) {
   // Rules are either Cedar-style (resource + match) or Stage-2 (action_class).
   const target = r.action_class
     ? `action:${r.action_class}`
@@ -986,7 +1019,7 @@ const plugin: OpenclawPlugin = {
     console.log(`│  root:       ${v.pluginRoot}`.padEnd(63) + "│");
     console.log("└──────────────────────────────────────────────────────────────┘");
 
-    rulesWatcher = startRulesWatcher(cedarEngineRef, 300, undefined, { defaultEffect: 'forbid' }, defaultRules, coverageMap);
+    rulesWatcher = startRulesWatcher(cedarEngineRef, 300, undefined, { defaultEffect: DEFAULT_EFFECT }, ACTIVE_RULES, coverageMap);
 
     // Load user-defined JSON rules from data/rules.json into the dedicated
     // JSON Cedar engine. Async but errors are swallowed so activation is
@@ -1019,6 +1052,11 @@ const plugin: OpenclawPlugin = {
     for (const h of disabledHooks) {
       console.log(`│    ✗ ${h} (disabled)`.padEnd(63) + "│");
     }
+    console.log("├──────────────────────────────────────────────────────────────┤");
+    const modeLabel = MODE === 'open'
+      ? 'OPEN   (implicit permit; critical forbids enforced)'
+      : 'CLOSED (implicit deny; explicit permits required)';
+    console.log(`│  MODE: ${modeLabel.padEnd(54)}│`);
     console.log("├──────────────────────────────────────────────────────────────┤");
     console.log(`│  POLICY RULES LOADED: ${String(rules.length).padEnd(38)}│`);
     for (const [resource, resourceRules] of Object.entries(rulesByResource)) {
