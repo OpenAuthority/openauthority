@@ -752,12 +752,25 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source
   }
 
   // ── 1. Cedar engine (TypeScript rules, hot-reloaded) ──────────────────────
+  // Queries by the normalised action_class so the action_class-based rules
+  // in defaultRules / OPEN_MODE_RULES actually fire. The base engine's
+  // evaluateByActionClass() checks action_class forbids first, then
+  // delegates to .evaluate(resource, target, ctx) via the action-class →
+  // resource prefix map — so any resource/match rules continue to match as
+  // before, and the configured defaultEffect still applies when nothing
+  // matches.
   try {
-    const decision = cedarEngineRef.current.evaluate("tool", toolName, ruleContext);
+    const decision = cedarEngineRef.current.evaluateByActionClass(
+      normalizedAction.action_class,
+      normalizedAction.target,
+      ruleContext,
+    );
     console.log(`[clawthority] │ [cedar] matched: ${formatMatchedRule(decision.matchedRule)}`);
     if (decision.matchedRule?.reason) console.log(`[clawthority] │ [cedar] reason: ${decision.matchedRule.reason}`);
     if (decision.rateLimit) console.log(`[clawthority] │ [cedar] rate-limit: ${decision.rateLimit.currentCount}/${decision.rateLimit.maxCalls} per ${decision.rateLimit.windowSeconds}s${decision.rateLimit.limited ? " [EXCEEDED]" : ""}`);
     // Phase 2: record in coverage map (rate-limited is a specialised forbid)
+    // Coverage is keyed by (resource, name) for dashboard continuity; a tool
+    // call is still the unit of interest regardless of which rule kind matched.
     const covState = decision.rateLimit?.limited ? 'rate-limited' : decision.effect === 'permit' ? 'permit' : 'forbid';
     coverageMap.record('tool', toolName, covState, decision.matchedRule);
     if (decision.effect === "forbid") {
