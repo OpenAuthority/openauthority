@@ -1,5 +1,5 @@
 /**
- * Destructive filesystem aliases e2e tests — Open Authority T14
+ * Destructive filesystem aliases e2e tests — Clawthority T14
  *
  * Proves that every alias added to filesystem.delete maps to the destructive_fs
  * intent group and triggers HITL (per_request) + forbid from a destructive_fs

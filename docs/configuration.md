@@ -1,6 +1,6 @@
 # Configuration Reference
 
-Complete configuration reference for deploying and operating the OpenAuthority plugin.
+Complete configuration reference for deploying and operating the Clawthority plugin.
 
 ---
 
@@ -25,15 +25,15 @@ Complete configuration reference for deploying and operating the OpenAuthority p
 
 ## Plugin Registration
 
-OpenAuthority is registered as an OpenClaw plugin in `~/.openclaw/config.json`:
+Clawthority is registered as an OpenClaw plugin in `~/.openclaw/config.json`:
 
 ```json
 {
-  "plugins": ["openauthority"]
+  "plugins": ["clawthority"]
 }
 ```
 
-OpenClaw resolves the plugin by looking for a directory named `openauthority` inside `~/.openclaw/plugins/` and loading its `dist/index.js` entry point as defined in `openclaw.plugin.json`.
+OpenClaw resolves the plugin by looking for a directory named `clawthority` inside `~/.openclaw/plugins/` and loading its `dist/index.js` entry point as defined in `openclaw.plugin.json`.
 
 ---
 
@@ -42,7 +42,7 @@ OpenClaw resolves the plugin by looking for a directory named `openauthority` in
 ### Install path
 
 ```
-~/.openclaw/plugins/openauthority/       ← plugin root
+~/.openclaw/plugins/clawthority/       ← plugin root
 ├── openclaw.plugin.json                 ← manifest (read by OpenClaw)
 ├── dist/                                ← compiled output (must exist before activation)
 │   ├── index.js                         ← plugin entry point
@@ -58,7 +58,7 @@ OpenClaw resolves the plugin by looking for a directory named `openauthority` in
 ### Building the bundle
 
 ```bash
-cd ~/.openclaw/plugins/openauthority
+cd ~/.openclaw/plugins/clawthority
 npm install
 npm run build        # outputs to dist/
 ```
@@ -80,8 +80,8 @@ The server creates `data/` automatically if it does not exist. Override both pat
 
 ```bash
 # Production: store data outside the plugin directory
-export RULES_FILE=/var/openauthority/rules.json
-export AUDIT_LOG_FILE=/var/log/openauthority/audit.jsonl
+export RULES_FILE=/var/clawthority/rules.json
+export AUDIT_LOG_FILE=/var/log/clawthority/audit.jsonl
 ```
 
 ---
@@ -221,7 +221,7 @@ When a rate limit is exceeded, the request is forbidden regardless of the rule's
 
 ## HITL Policy File
 
-Create `hitl-policy.yaml` in the plugin root (`~/.openclaw/plugins/openauthority/`) to enable Human-in-the-Loop approval flows. The file is hot-reloaded — changes apply immediately without restart.
+Create `hitl-policy.yaml` in the plugin root (`~/.openclaw/plugins/clawthority/`) to enable Human-in-the-Loop approval flows. The file is hot-reloaded — changes apply immediately without restart.
 
 See [Human-in-the-Loop](human-in-the-loop.md) for the complete guide.
 
@@ -354,7 +354,7 @@ Slack approval uses the Slack Web API for sending messages and an HTTP interacti
 ### Step 1 — Create a Slack App
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) and click **Create New App**
-2. Choose **From scratch**, give it a name (e.g., `OpenAuthority HITL`), and select your workspace
+2. Choose **From scratch**, give it a name (e.g., `Clawthority HITL`), and select your workspace
 
 ### Step 2 — Configure bot scopes
 
@@ -678,7 +678,7 @@ Minimal setup for local development. Uses defaults wherever possible.
 **`~/.openclaw/config.json`**
 ```json
 {
-  "plugins": ["openauthority"]
+  "plugins": ["clawthority"]
 }
 ```
 
@@ -733,11 +733,11 @@ Hardened setup for a production deployment. All credentials are injected via env
 **`~/.openclaw/config.json`**
 ```json
 {
-  "plugins": ["openauthority"]
+  "plugins": ["clawthority"]
 }
 ```
 
-**`data/rules.json`** (stored at `/var/openauthority/rules.json`)
+**`data/rules.json`** (stored at `/var/clawthority/rules.json`)
 ```json
 [
   {
@@ -855,8 +855,8 @@ policies:
 
 **Environment (production — stored in secret manager or `EnvironmentFile`)**
 ```bash
-RULES_FILE=/var/openauthority/rules.json
-AUDIT_LOG_FILE=/var/log/openauthority/audit.jsonl
+RULES_FILE=/var/clawthority/rules.json
+AUDIT_LOG_FILE=/var/log/clawthority/audit.jsonl
 PORT=7331
 
 TELEGRAM_BOT_TOKEN=<secret>

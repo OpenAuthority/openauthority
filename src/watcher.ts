@@ -142,11 +142,11 @@ export interface WatcherHandle {
 /** Log all loaded rules to the console for visibility at startup / reload. */
 function logRules(rules: Rule[], source: string): void {
   if (rules.length === 0) return;
-  console.log(`[openauthority] ${source} rules (${rules.length}):`);
+  console.log(`[clawthority] ${source} rules (${rules.length}):`);
   for (const r of rules) {
     const matchStr = r.match instanceof RegExp ? r.match.toString() : r.match;
     const reason = r.reason ? ` — ${r.reason}` : '';
-    console.log(`[openauthority]   ${r.effect.toUpperCase().padEnd(6)} ${r.resource}:${matchStr}${reason}`);
+    console.log(`[clawthority]   ${r.effect.toUpperCase().padEnd(6)} ${r.resource}:${matchStr}${reason}`);
   }
 }
 

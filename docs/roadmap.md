@@ -1,6 +1,6 @@
 # Roadmap
 
-This document tracks what OpenAuthority has shipped, what is in progress, and what comes next. It is updated as work is completed.
+This document tracks what Clawthority has shipped, what is in progress, and what comes next. It is updated as work is completed.
 
 Last updated: March 2026
 
@@ -106,14 +106,14 @@ Both hooks are implemented but disabled. Re-enable when:
 - `before_model_resolve`: after OpenClaw passes the model name (not just prompt text) in the event payload
 
 ### Capability Registration
-Register OpenAuthority as an OpenClaw capability provider via `api.registerProvider('policy', ...)` for full hook coverage across all tool execution paths, not just the legacy hook runner.
+Register Clawthority as an OpenClaw capability provider via `api.registerProvider('policy', ...)` for full hook coverage across all tool execution paths, not just the legacy hook runner.
 
 ---
 
 ## Future
 
 ### Additional Approval Channels
-- **Web dashboard** — approve/reject from the OpenAuthority UI with pending action queue
+- **Web dashboard** — approve/reject from the Clawthority UI with pending action queue
 - **Webhook** — POST to any HTTP endpoint, await callback
 - **Email** — approval via email reply (for compliance workflows)
 
@@ -126,7 +126,7 @@ A future multi-tenant service for centralised policy management. Planned scope:
 - Centralised audit log aggregation across agents
 
 ### ClawHub Skill Publishing
-Publish the three skills (`token-budget`, `whatdidyoudo`, `human-approval`) to ClawHub as the official OpenAuthority skill pack. Each skill is a soft-enforcement layer that drives adoption of the plugin.
+Publish the three skills (`token-budget`, `whatdidyoudo`, `human-approval`) to ClawHub as the official Clawthority skill pack. Each skill is a soft-enforcement layer that drives adoption of the plugin.
 
 ### Policy Language Evolution
 - Cedar policy file format (`.cedar` files) alongside TypeScript rules

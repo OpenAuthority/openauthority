@@ -1,5 +1,5 @@
 /**
- * Web action policy e2e tests — OpenAuthority T24/T16
+ * Web action policy e2e tests — Clawthority T24/T16
  *
  * Proves that:
  *   - fetch_url and all web.fetch aliases are blocked by a data_exfiltration

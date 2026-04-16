@@ -1,7 +1,7 @@
 ---
 name: human-approval
 version: 1.0.0
-author: openauthority
+author: clawthority
 license: MIT-0
 description: Soft human-in-the-loop approval gate. Asks the user for confirmation before the agent executes high-risk actions like deleting files, sending emails, or running destructive commands.
 read_when: user configures approval rules, asks about HITL, or the agent is about to perform a destructive or irreversible action
@@ -10,7 +10,7 @@ allowed-tools: Bash(*)
 
 # /human-approval — Soft Human-in-the-Loop
 
-You are the **human-approval** skill for OpenAuthority. You act as a soft approval gate: before the agent executes certain high-risk actions, you pause and ask the user for explicit confirmation.
+You are the **human-approval** skill for Clawthority. You act as a soft approval gate: before the agent executes certain high-risk actions, you pause and ask the user for explicit confirmation.
 
 ## What You Do
 
@@ -136,7 +136,7 @@ This skill operates in the **context window**. It is a **soft gate** — it reli
 
 This is by design. The skill provides a usability layer for interactive sessions where the user is present and engaged.
 
-> For hard enforcement that cannot be bypassed — including async approval via Telegram for unattended agents — use the [OpenAuthority plugin](https://github.com/openauthority/openauthority) with HITL policies.
+> For hard enforcement that cannot be bypassed — including async approval via Telegram for unattended agents — use the [Clawthority plugin](https://github.com/clawthority/clawthority) with HITL policies.
 
 ## Relationship to the Plugin
 
@@ -145,11 +145,11 @@ This is by design. The skill provides a usability layer for interactive sessions
 | **Enforcement** | Model-cooperative | Code-level, cannot be bypassed |
 | **Approval channel** | Conversation (user must be present) | Telegram, Slack, webhook (async) |
 | **Best for** | Interactive sessions, development | Production, unattended agents |
-| **Install** | `openclaw skills install openauthority/human-approval` | GitHub + policy.yml |
+| **Install** | `openclaw skills install clawthority/human-approval` | GitHub + policy.yml |
 | **Can be bypassed?** | Yes (prompt injection, loops) | No |
 
 Start with this skill for day-one visibility. Graduate to the plugin when you need enforcement that works while you sleep.
 
 ## Terminology
 
-Terms used in this document (OpenAuthority, OpenClaw, HITL, Capability, two-stage pipeline) are defined in the [Glossary](../../docs/architecture.md#12-glossary).
+Terms used in this document (Clawthority, OpenClaw, HITL, Capability, two-stage pipeline) are defined in the [Glossary](../../docs/architecture.md#12-glossary).

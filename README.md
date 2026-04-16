@@ -1,8 +1,8 @@
-# OpenAuthority
+# Clawthority
 
 **A semantic authorization runtime for AI agents. Define what your agent can do, enforce it at the boundary, and keep a human in the loop for what matters.**
 
-OpenAuthority is a policy engine plugin for [OpenClaw](https://github.com/openclaw/openclaw) that sits between your AI agent and every tool it calls. It evaluates rules before execution happens — not by asking the model to comply, but by intercepting the call at the code boundary. If policy says no, the call is never placed.
+Clawthority is a policy engine plugin for [OpenClaw](https://github.com/openclaw/openclaw) that sits between your AI agent and every tool it calls. It evaluates rules before execution happens — not by asking the model to comply, but by intercepting the call at the code boundary. If policy says no, the call is never placed.
 
 ## What's new in v0.1
 
@@ -29,7 +29,7 @@ v0.1 is a ground-up restructure around a **two-stage enforcement pipeline** and 
 ## How it works
 
 ```
-Agent picks a tool → OpenAuthority intercepts
+Agent picks a tool → Clawthority intercepts
       │
       │  normalize_action(toolName, params) → { action_class, target, payload_hash }
       │  buildEnvelope(...)                  → ExecutionEnvelope
@@ -113,15 +113,15 @@ Details: [docs/human-in-the-loop.md](docs/human-in-the-loop.md).
 ### Install
 
 ```bash
-git clone https://github.com/OpenAuthority/openauthority ~/.openclaw/plugins/openauthority
-cd ~/.openclaw/plugins/openauthority
+git clone https://github.com/Clawthority/clawthority ~/.openclaw/plugins/clawthority
+cd ~/.openclaw/plugins/clawthority
 npm install && npm run build
 ```
 
 Register in `~/.openclaw/config.json`:
 
 ```json
-{ "plugins": ["openauthority"] }
+{ "plugins": ["clawthority"] }
 ```
 
 ### Configure
@@ -160,7 +160,7 @@ Rules live in `data/bundles/active/bundle.json`:
 }
 ```
 
-The adapter watches the bundle directory, validates version monotonicity and checksum, and hot-reloads on change. In production, set the `active/` directory read-only for the OpenAuthority process user; only your deployment pipeline should have write access.
+The adapter watches the bundle directory, validates version monotonicity and checksum, and hot-reloads on change. In production, set the `active/` directory read-only for the Clawthority process user; only your deployment pipeline should have write access.
 
 ## Hooks
 

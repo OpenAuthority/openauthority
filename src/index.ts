@@ -334,14 +334,14 @@ cedarEngineRef.current.addRules(defaultRules);
 export const coverageMap = new CoverageMap();
 
 // Log compiled rules at startup
-console.log(`[openauthority] compiled rules (${defaultRules.length}):`);
+console.log(`[clawthority] compiled rules (${defaultRules.length}):`);
 for (const r of defaultRules) {
   // Rules are either Cedar-style (resource + match) or Stage-2 (action_class).
   const target = r.action_class
     ? `action:${r.action_class}`
     : `${r.resource ?? '?'}:${r.match instanceof RegExp ? r.match.toString() : (r.match ?? '*')}`;
   const reason = r.reason ? ` — ${r.reason}` : '';
-  console.log(`[openauthority]   ${r.effect.toUpperCase().padEnd(6)} ${target}${reason}`);
+  console.log(`[clawthority]   ${r.effect.toUpperCase().padEnd(6)} ${target}${reason}`);
 }
 
 /**
@@ -388,7 +388,7 @@ async function loadJsonRules(): Promise<void> {
     } catch (readErr: unknown) {
       const code = (readErr as NodeJS.ErrnoException).code;
       if (code === "ENOENT") {
-        console.log("[plugin:openauthority] no data/rules.json found — skipping JSON rule load");
+        console.log("[plugin:clawthority] no data/rules.json found — skipping JSON rule load");
         return;
       }
       throw readErr;
@@ -409,7 +409,7 @@ async function loadJsonRules(): Promise<void> {
           match = new RegExp(rec.match);
         } catch {
           console.warn(
-            `[plugin:openauthority] data/rules.json rule[${i}] has invalid regex "${rec.match}" — using exact match`
+            `[plugin:clawthority] data/rules.json rule[${i}] has invalid regex "${rec.match}" — using exact match`
           );
         }
       } else {
@@ -429,9 +429,9 @@ async function loadJsonRules(): Promise<void> {
     engine.addRules(cedarRules);
     jsonRulesEngineRef.current = engine;
 
-    console.log(`[plugin:openauthority] loaded ${cedarRules.length} rule(s) from data/rules.json`);
+    console.log(`[plugin:clawthority] loaded ${cedarRules.length} rule(s) from data/rules.json`);
   } catch (err) {
-    console.error("[plugin:openauthority] failed to load data/rules.json — JSON rules will not be enforced:", err);
+    console.error("[plugin:clawthority] failed to load data/rules.json — JSON rules will not be enforced:", err);
   }
 }
 
@@ -493,11 +493,11 @@ async function dispatchHitlChannel(
   if (channel === 'telegram') {
     const telegramConfig = resolveTelegramConfig(hitlConfigRef.current?.telegram);
     if (!telegramConfig) {
-      console.log(`[openauthority] │ [hitl] telegram not configured — applying fallback: ${policy.approval.fallback}`);
+      console.log(`[clawthority] │ [hitl] telegram not configured — applying fallback: ${policy.approval.fallback}`);
       await logHitlDecision(policy.approval.fallback === 'deny' ? 'fallback-deny' : 'fallback-auto-approve', '', toolName, auditAgent, auditChannel, policy.name, policy.approval.timeout, identity.verified);
       if (policy.approval.fallback === 'deny') {
-        console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/telegram-not-configured)`);
-        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (hitl/telegram-not-configured)`);
+        console.log(`[clawthority] └──────────────────────────────────────────────────────`);
         return { block: true, blockReason: 'HITL approval required but Telegram not configured' };
       }
       return;
@@ -508,11 +508,11 @@ async function dispatchHitlChannel(
 
     if (!sent) {
       approvalManager.cancel(token);
-      console.log(`[openauthority] │ [hitl] telegram unreachable — applying fallback: ${policy.approval.fallback}`);
+      console.log(`[clawthority] │ [hitl] telegram unreachable — applying fallback: ${policy.approval.fallback}`);
       await logHitlDecision('telegram-unreachable', token, toolName, auditAgent, auditChannel, policy.name, policy.approval.timeout, identity.verified);
       if (policy.approval.fallback === 'deny') {
-        console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/telegram-unreachable)`);
-        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (hitl/telegram-unreachable)`);
+        console.log(`[clawthority] └──────────────────────────────────────────────────────`);
         return { block: true, blockReason: 'HITL: Telegram unreachable — fail closed' };
       }
       return;
@@ -526,11 +526,11 @@ async function dispatchHitlChannel(
   if (channel === 'slack') {
     const slackConfig = resolveSlackConfig(hitlConfigRef.current?.slack);
     if (!slackConfig) {
-      console.log(`[openauthority] │ [hitl] slack not configured — applying fallback: ${policy.approval.fallback}`);
+      console.log(`[clawthority] │ [hitl] slack not configured — applying fallback: ${policy.approval.fallback}`);
       await logHitlDecision(policy.approval.fallback === 'deny' ? 'fallback-deny' : 'fallback-auto-approve', '', toolName, auditAgent, auditChannel, policy.name, policy.approval.timeout, identity.verified);
       if (policy.approval.fallback === 'deny') {
-        console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/slack-not-configured)`);
-        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (hitl/slack-not-configured)`);
+        console.log(`[clawthority] └──────────────────────────────────────────────────────`);
         return { block: true, blockReason: 'HITL approval required but Slack not configured' };
       }
       return;
@@ -541,11 +541,11 @@ async function dispatchHitlChannel(
 
     if (!result.ok) {
       approvalManager.cancel(token);
-      console.log(`[openauthority] │ [hitl] slack unreachable — applying fallback: ${policy.approval.fallback}`);
+      console.log(`[clawthority] │ [hitl] slack unreachable — applying fallback: ${policy.approval.fallback}`);
       await logHitlDecision('slack-unreachable', token, toolName, auditAgent, auditChannel, policy.name, policy.approval.timeout, identity.verified);
       if (policy.approval.fallback === 'deny') {
-        console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/slack-unreachable)`);
-        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (hitl/slack-unreachable)`);
+        console.log(`[clawthority] └──────────────────────────────────────────────────────`);
         return { block: true, blockReason: 'HITL: Slack unreachable — fail closed' };
       }
       return;
@@ -579,35 +579,35 @@ async function resolveHitlDecision(
   identity: ResolvedIdentity,
   sendConfirmationFn: (token: string, decision: string) => void,
 ): Promise<BeforeToolCallResult | void> {
-  console.log(`[openauthority] │ [hitl] awaiting operator response for token=${token} (timeout=${policy.approval.timeout}s)`);
+  console.log(`[clawthority] │ [hitl] awaiting operator response for token=${token} (timeout=${policy.approval.timeout}s)`);
   const decision = await promise;
   const auditAgent = identity.auditAgentId;
   const auditChannel = identity.auditChannel;
 
   if (decision === 'approved') {
-    console.log(`[openauthority] │ [hitl] ✓ APPROVED (token=${token})`);
+    console.log(`[clawthority] │ [hitl] ✓ APPROVED (token=${token})`);
     await logHitlDecision('approved', token, toolName, auditAgent, auditChannel, policy.name, policy.approval.timeout, identity.verified);
     sendConfirmationFn(token, 'approved');
     return;
   }
 
   if (decision === 'denied') {
-    console.log(`[openauthority] │ [hitl] ✕ DENIED (token=${token})`);
+    console.log(`[clawthority] │ [hitl] ✕ DENIED (token=${token})`);
     await logHitlDecision('denied', token, toolName, auditAgent, auditChannel, policy.name, policy.approval.timeout, identity.verified);
     sendConfirmationFn(token, 'denied');
-    console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/denied)`);
-    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+    console.log(`[clawthority] │ DECISION: ✕ BLOCKED (hitl/denied)`);
+    console.log(`[clawthority] └──────────────────────────────────────────────────────`);
     return { block: true, blockReason: 'HITL: Operator denied the tool call' };
   }
 
   // expired
-  console.log(`[openauthority] │ [hitl] ⏱ EXPIRED (token=${token}) — fallback: ${policy.approval.fallback}`);
+  console.log(`[clawthority] │ [hitl] ⏱ EXPIRED (token=${token}) — fallback: ${policy.approval.fallback}`);
   const auditDecision = policy.approval.fallback === 'deny' ? 'fallback-deny' as const : 'fallback-auto-approve' as const;
   await logHitlDecision(auditDecision, token, toolName, auditAgent, auditChannel, policy.name, policy.approval.timeout, identity.verified);
   if (policy.approval.fallback === 'deny') {
     sendConfirmationFn(token, 'expired (denied)');
-    console.log(`[openauthority] │ DECISION: ✕ BLOCKED (hitl/expired-deny)`);
-    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+    console.log(`[clawthority] │ DECISION: ✕ BLOCKED (hitl/expired-deny)`);
+    console.log(`[clawthority] └──────────────────────────────────────────────────────`);
     return { block: true, blockReason: 'HITL: Approval timed out — denied by policy fallback' };
   }
   sendConfirmationFn(token, 'expired (auto-approved)');
@@ -655,8 +655,8 @@ function determineSourceTrustLevel(source?: string): 'user' | 'agent' | 'untrust
 }
 
 const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source }, ctx) => {
-  console.log(`[openauthority] ┌─ before_tool_call ──────────────────────────────────`);
-  console.log(`[openauthority] │ tool=${toolName}  agent=${ctx.agentId ?? "unknown"}  channel=${ctx.channelId ?? "unknown"}`);
+  console.log(`[clawthority] ┌─ before_tool_call ──────────────────────────────────`);
+  console.log(`[clawthority] │ tool=${toolName}  agent=${ctx.agentId ?? "unknown"}  channel=${ctx.channelId ?? "unknown"}`);
 
   // ── Budget tracking — log every hook event to data/budget.jsonl ───────────
   if (budgetTracker !== null) {
@@ -677,7 +677,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source
   // reference them.
   const identity = resolveIdentity(ctx.agentId, ctx.channelId);
   if (!identity.verified) {
-    console.log(`[openauthority] │ [identity] ⚠ UNVERIFIED — claim agent=${identity.agentId} channel=${identity.channel}`);
+    console.log(`[clawthority] │ [identity] ⚠ UNVERIFIED — claim agent=${identity.agentId} channel=${identity.channel}`);
   }
   const ruleContext: RuleContext = defaultAgentIdentityRegistry.buildRuleContext(
     identity.agentId,
@@ -690,7 +690,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source
     : {};
   const sourceTrustLevel = determineSourceTrustLevel(source);
   const normalizedAction = normalize_action(toolName, normalizedParams);
-  console.log(`[openauthority] │ [trust] source=${source ?? "undefined"} → trustLevel=${sourceTrustLevel}  actionClass=${normalizedAction.action_class}  risk=${normalizedAction.risk}`);
+  console.log(`[clawthority] │ [trust] source=${source ?? "undefined"} → trustLevel=${sourceTrustLevel}  actionClass=${normalizedAction.action_class}  risk=${normalizedAction.risk}`);
 
   // Build envelope to propagate trust context for audit and pipeline tracing.
   const _envelope = buildEnvelope(
@@ -713,30 +713,30 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source
   // Untrusted sources (external content: web, file, email, etc.) are blocked
   // from triggering high/critical-risk actions.
   if (sourceTrustLevel === 'untrusted' && (normalizedAction.risk === 'high' || normalizedAction.risk === 'critical')) {
-    console.log(`[openauthority] │ DECISION: ✕ BLOCKED (stage1/untrusted_source_high_risk) — actionClass=${normalizedAction.action_class} risk=${normalizedAction.risk}`);
-    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+    console.log(`[clawthority] │ DECISION: ✕ BLOCKED (stage1/untrusted_source_high_risk) — actionClass=${normalizedAction.action_class} risk=${normalizedAction.risk}`);
+    console.log(`[clawthority] └──────────────────────────────────────────────────────`);
     return { block: true, blockReason: 'untrusted_source_high_risk' };
   }
 
   // ── 1. Cedar engine (TypeScript rules, hot-reloaded) ──────────────────────
   try {
     const decision = cedarEngineRef.current.evaluate("tool", toolName, ruleContext);
-    console.log(`[openauthority] │ [cedar] matched: ${formatMatchedRule(decision.matchedRule)}`);
-    if (decision.matchedRule?.reason) console.log(`[openauthority] │ [cedar] reason: ${decision.matchedRule.reason}`);
-    if (decision.rateLimit) console.log(`[openauthority] │ [cedar] rate-limit: ${decision.rateLimit.currentCount}/${decision.rateLimit.maxCalls} per ${decision.rateLimit.windowSeconds}s${decision.rateLimit.limited ? " [EXCEEDED]" : ""}`);
+    console.log(`[clawthority] │ [cedar] matched: ${formatMatchedRule(decision.matchedRule)}`);
+    if (decision.matchedRule?.reason) console.log(`[clawthority] │ [cedar] reason: ${decision.matchedRule.reason}`);
+    if (decision.rateLimit) console.log(`[clawthority] │ [cedar] rate-limit: ${decision.rateLimit.currentCount}/${decision.rateLimit.maxCalls} per ${decision.rateLimit.windowSeconds}s${decision.rateLimit.limited ? " [EXCEEDED]" : ""}`);
     // Phase 2: record in coverage map (rate-limited is a specialised forbid)
     const covState = decision.rateLimit?.limited ? 'rate-limited' : decision.effect === 'permit' ? 'permit' : 'forbid';
     coverageMap.record('tool', toolName, covState, decision.matchedRule);
     if (decision.effect === "forbid") {
       const blockReason = decision.reason ?? "Tool call denied by Cedar policy";
-      console.log(`[openauthority] │ DECISION: ✕ BLOCKED (cedar/${decision.effect}) — ${blockReason}`);
-      console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+      console.log(`[clawthority] │ DECISION: ✕ BLOCKED (cedar/${decision.effect}) — ${blockReason}`);
+      console.log(`[clawthority] └──────────────────────────────────────────────────────`);
       return { block: true, blockReason };
     }
-    console.log(`[openauthority] │ [cedar] ✓ passed`);
+    console.log(`[clawthority] │ [cedar] ✓ passed`);
   } catch (err) {
-    console.error(`[openauthority] │ [cedar] ✕ ERROR — fail closed`, err);
-    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+    console.error(`[clawthority] │ [cedar] ✕ ERROR — fail closed`, err);
+    console.log(`[clawthority] └──────────────────────────────────────────────────────`);
     return { block: true, blockReason: "Cedar policy evaluation error — fail closed" };
   }
 
@@ -744,26 +744,26 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source
   if (jsonRulesEngineRef.current !== null) {
     try {
       const jsonDecision = jsonRulesEngineRef.current.evaluate("tool", toolName, ruleContext);
-      console.log(`[openauthority] │ [json-rules] matched: ${formatMatchedRule(jsonDecision.matchedRule)}`);
-      if (jsonDecision.matchedRule?.reason) console.log(`[openauthority] │ [json-rules] reason: ${jsonDecision.matchedRule.reason}`);
+      console.log(`[clawthority] │ [json-rules] matched: ${formatMatchedRule(jsonDecision.matchedRule)}`);
+      if (jsonDecision.matchedRule?.reason) console.log(`[clawthority] │ [json-rules] reason: ${jsonDecision.matchedRule.reason}`);
       if (jsonDecision.effect === "forbid") {
         const blockReason = jsonDecision.reason ?? "Tool call denied by JSON rule";
-        console.log(`[openauthority] │ DECISION: ✕ BLOCKED (json-rules/${jsonDecision.effect}) — ${blockReason}`);
-        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (json-rules/${jsonDecision.effect}) — ${blockReason}`);
+        console.log(`[clawthority] └──────────────────────────────────────────────────────`);
         return { block: true, blockReason };
       }
-      console.log(`[openauthority] │ [json-rules] ✓ passed`);
+      console.log(`[clawthority] │ [json-rules] ✓ passed`);
     } catch (err) {
-      console.error(`[openauthority] │ [json-rules] ✕ ERROR — fail closed`, err);
-      console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+      console.error(`[clawthority] │ [json-rules] ✕ ERROR — fail closed`, err);
+      console.log(`[clawthority] └──────────────────────────────────────────────────────`);
       return { block: true, blockReason: "JSON rule evaluation error — fail closed" };
     }
   }
 
   // ── Fast path: no HITL — return synchronously ─────────────────────────────
   if (hitlConfigRef.current === null) {
-    console.log(`[openauthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
-    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+    console.log(`[clawthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
+    console.log(`[clawthority] └──────────────────────────────────────────────────────`);
     return;
   }
 
@@ -776,23 +776,23 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source
 
         if (hitlResult.requiresApproval && hitlResult.matchedPolicy) {
           const policy = hitlResult.matchedPolicy;
-          console.log(`[openauthority] │ [hitl] matched policy "${policy.name}" — requesting approval via ${policy.approval.channel}`);
+          console.log(`[clawthority] │ [hitl] matched policy "${policy.name}" — requesting approval via ${policy.approval.channel}`);
 
           // ── Dispatch to channel-specific adapter ──────────────────────────
           const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity);
           if (hitlChannelResult) return hitlChannelResult;
         } else {
-          console.log(`[openauthority] │ [hitl] ✓ no matching HITL policy`);
+          console.log(`[clawthority] │ [hitl] ✓ no matching HITL policy`);
         }
       } catch (err) {
-        console.error(`[openauthority] │ [hitl] ✕ ERROR — fail closed`, err);
-        console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+        console.error(`[clawthority] │ [hitl] ✕ ERROR — fail closed`, err);
+        console.log(`[clawthority] └──────────────────────────────────────────────────────`);
         return { block: true, blockReason: 'HITL evaluation error — fail closed' };
       }
     }
 
-    console.log(`[openauthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
-    console.log(`[openauthority] └──────────────────────────────────────────────────────`);
+    console.log(`[clawthority] │ DECISION: ✓ ALLOWED (all engines passed)`);
+    console.log(`[clawthority] └──────────────────────────────────────────────────────`);
     return;
   })();
 };
@@ -807,13 +807,13 @@ const beforeToolCallHandler: BeforeToolCallHandler = ({ toolName, params, source
  * 2. Evaluates prompt rules and can prepend policy context.
  */
 const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages, source }, ctx) => {
-  console.log(`[openauthority] ▶ before_prompt_build ENTER agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"} source=${source ?? "unknown"} messageCount=${messages?.length ?? 0} promptLen=${prompt?.length ?? 0}`);
+  console.log(`[clawthority] ▶ before_prompt_build ENTER agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"} source=${source ?? "unknown"} messageCount=${messages?.length ?? 0} promptLen=${prompt?.length ?? 0}`);
   try {
     // Only check non-user sources for prompt injection
     if (source !== 'user' && detectPromptInjection(messages)) {
       const blockReason = `Prompt injection detected from source '${source ?? "unknown"}'`;
-      console.log(`[openauthority] ⚠ before_prompt_build INJECTION BLOCKED source=${source ?? "unknown"} agentId=${ctx.agentId ?? "unknown"}`);
-      console.log(`[openauthority] ◀ before_prompt_build EXIT  → block (injection)`);
+      console.log(`[clawthority] ⚠ before_prompt_build INJECTION BLOCKED source=${source ?? "unknown"} agentId=${ctx.agentId ?? "unknown"}`);
+      console.log(`[clawthority] ◀ before_prompt_build EXIT  → block (injection)`);
       return { block: true, blockReason };
     }
 
@@ -827,19 +827,19 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages, 
     const decision = cedarEngineRef.current.evaluate("prompt", prompt, ruleContext);
     if (decision.effect === "forbid") {
       const reason = decision.reason ?? "This prompt type is restricted by policy";
-      console.log(`[openauthority] ⚠ before_prompt_build POLICY VIOLATION: ${reason}`);
-      console.log(`[openauthority] ◀ before_prompt_build EXIT  → prependContext (policy warning)`);
+      console.log(`[clawthority] ⚠ before_prompt_build POLICY VIOLATION: ${reason}`);
+      console.log(`[clawthority] ◀ before_prompt_build EXIT  → prependContext (policy warning)`);
       return {
         prependContext: `[POLICY WARNING] ${reason}.`,
       };
     }
 
-    console.log(`[openauthority] ✓ before_prompt_build OK — no injection detected`);
-    console.log(`[openauthority] ◀ before_prompt_build EXIT  → no modification`);
+    console.log(`[clawthority] ✓ before_prompt_build OK — no injection detected`);
+    console.log(`[clawthority] ◀ before_prompt_build EXIT  → no modification`);
     return;
   } catch (err) {
-    console.error(`[openauthority] ✕ before_prompt_build ERROR`, err);
-    console.log(`[openauthority] ◀ before_prompt_build EXIT  → no modification (error)`);
+    console.error(`[clawthority] ✕ before_prompt_build ERROR`, err);
+    console.log(`[clawthority] ◀ before_prompt_build EXIT  → no modification (error)`);
     return;
   }
 };
@@ -852,7 +852,7 @@ const beforePromptBuildHandler: BeforePromptBuildHandler = ({ prompt, messages, 
  * model is forbidden by policy.
  */
 const beforeModelResolveHandler: BeforeModelResolveHandler = ({ prompt }, ctx) => {
-  console.log(`[openauthority] ▶ before_model_resolve ENTER agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"} promptLen=${prompt?.length ?? 0}`);
+  console.log(`[clawthority] ▶ before_model_resolve ENTER agentId=${ctx.agentId ?? "unknown"} channelId=${ctx.channelId ?? "unknown"} promptLen=${prompt?.length ?? 0}`);
 
   // NOTE: The before_model_resolve event only provides `prompt` (the full prompt
   // text), NOT the model name. Evaluating the prompt text against model rules
@@ -862,8 +862,8 @@ const beforeModelResolveHandler: BeforeModelResolveHandler = ({ prompt }, ctx) =
   // This hook will be useful once openclaw passes the model name in the event.
   // For now, pass through without interference.
 
-  console.log(`[openauthority] ✓ before_model_resolve OK — passthrough (no model name in event)`);
-  console.log(`[openauthority] ◀ before_model_resolve EXIT  → no override`);
+  console.log(`[clawthority] ✓ before_model_resolve OK — passthrough (no model name in event)`);
+  console.log(`[clawthority] ◀ before_model_resolve EXIT  → no override`);
   return;
 };
 
@@ -879,7 +879,7 @@ interface VersionInfo {
 
 /**
  * Collect best-effort version info for the activation banner so the operator
- * can confirm at a glance which build of openauthority is running.
+ * can confirm at a glance which build of clawthority is running.
  */
 function getVersionInfo(): VersionInfo {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -936,7 +936,7 @@ function isInstalled(): boolean {
 }
 
 const plugin: OpenclawPlugin = {
-  name: "openauthority",
+  name: "clawthority",
   // Single source of truth: package.json (read by getVersionInfo at activation).
   version: getVersionInfo().version,
 
@@ -947,7 +947,7 @@ const plugin: OpenclawPlugin = {
     // before plugin setup finishes. Set OPENAUTH_FORCE_ACTIVE=1 to bypass
     // this gate in development or CI environments.
     if (!isInstalled()) {
-      console.log("[plugin:openauthority] install incomplete — policy activation deferred (data/.installed not found; set OPENAUTH_FORCE_ACTIVE=1 to override)");
+      console.log("[plugin:clawthority] install incomplete — policy activation deferred (data/.installed not found; set OPENAUTH_FORCE_ACTIVE=1 to override)");
       return;
     }
 
@@ -957,13 +957,13 @@ const plugin: OpenclawPlugin = {
     // The global hook runner is overwritten on each loadOpenClawPlugins call,
     // so we must register into every registry to ensure the hook is present
     // in whichever registry ends up as the active one.
-    ctx.on("before_tool_call", beforeToolCallHandler, { name: "openauthority:before_tool_call" });
-    ctx.on("before_prompt_build", beforePromptBuildHandler, { name: "openauthority:before_prompt_build" });
-    ctx.on("before_model_resolve", beforeModelResolveHandler, { name: "openauthority:before_model_resolve" });
+    ctx.on("before_tool_call", beforeToolCallHandler, { name: "clawthority:before_tool_call" });
+    ctx.on("before_prompt_build", beforePromptBuildHandler, { name: "clawthority:before_prompt_build" });
+    ctx.on("before_model_resolve", beforeModelResolveHandler, { name: "clawthority:before_model_resolve" });
 
     // ── Guard: side effects (watchers, engines) only once ────────────────────
     if (activated) {
-      console.log("[plugin:openauthority] hooks re-registered into new registry — skipping side effects");
+      console.log("[plugin:clawthority] hooks re-registered into new registry — skipping side effects");
       return;
     }
     activated = true;
@@ -972,13 +972,13 @@ const plugin: OpenclawPlugin = {
     const moduleDir = dirname(fileURLToPath(import.meta.url));
     const pluginRoot = resolve(moduleDir, "..");
     budgetTracker = createBudgetTracker(pluginRoot);
-    console.log(`[plugin:openauthority] budget tracker active — session=${budgetTracker.sessionId}  dailyLimit=${budgetTracker.dailyTokenLimit}  warnAt=${budgetTracker.warnAt}`);
+    console.log(`[plugin:clawthority] budget tracker active — session=${budgetTracker.sessionId}  dailyLimit=${budgetTracker.dailyTokenLimit}  warnAt=${budgetTracker.warnAt}`);
 
     // ── Version banner: confirm at a glance which build is running ──────────
     const v = getVersionInfo();
     const dirtyTag = v.commitDirty ? " (dirty)" : "";
     console.log("┌──────────────────────────────────────────────────────────────┐");
-    console.log("│  [plugin:openauthority] VERSION                              │");
+    console.log("│  [plugin:clawthority] VERSION                              │");
     console.log("├──────────────────────────────────────────────────────────────┤");
     console.log(`│  version:    ${v.version}${dirtyTag}`.padEnd(63) + "│");
     console.log(`│  commit:     ${v.commit}${dirtyTag}`.padEnd(63) + "│");
@@ -992,7 +992,7 @@ const plugin: OpenclawPlugin = {
     // JSON Cedar engine. Async but errors are swallowed so activation is
     // never blocked by a missing or malformed rules file.
     loadJsonRules().catch((err) =>
-      console.error("[plugin:openauthority] unexpected error in loadJsonRules:", err)
+      console.error("[plugin:clawthority] unexpected error in loadJsonRules:", err)
     );
 
     // ── Diagnostic: log registered hooks and loaded rules ────────────────────
@@ -1010,7 +1010,7 @@ const plugin: OpenclawPlugin = {
       rulesByResource[key].push(r);
     }
     console.log("┌──────────────────────────────────────────────────────────────┐");
-    console.log("│  [plugin:openauthority] ACTIVATION SUMMARY                  │");
+    console.log("│  [plugin:clawthority] ACTIVATION SUMMARY                  │");
     console.log("├──────────────────────────────────────────────────────────────┤");
     console.log("│  HOOKS REGISTERED (via ctx.on):                              │");
     for (const h of registeredHooks) {
@@ -1094,7 +1094,7 @@ const plugin: OpenclawPlugin = {
       }
 
       const listenerInfo = listeners.length > 0 ? `, listeners: ${listeners.join(', ')}` : ' (no channel listeners configured)';
-      console.log(`[plugin:openauthority] HITL loaded: ${hitlConfig.policies.length} polic${hitlConfig.policies.length !== 1 ? 'ies' : 'y'}${listenerInfo}`);
+      console.log(`[plugin:clawthority] HITL loaded: ${hitlConfig.policies.length} polic${hitlConfig.policies.length !== 1 ? 'ies' : 'y'}${listenerInfo}`);
     } catch (err) {
       // HITL is optional — failing to load doesn't prevent activation.
       // parseHitlPolicyFile wraps the underlying fs error in `cause`, so
@@ -1102,13 +1102,13 @@ const plugin: OpenclawPlugin = {
       const directCode = (err as NodeJS.ErrnoException)?.code;
       const causeCode = ((err as { cause?: NodeJS.ErrnoException })?.cause)?.code;
       if (directCode === 'ENOENT' || causeCode === 'ENOENT') {
-        console.log("[plugin:openauthority] no hitl-policy.yaml found — HITL disabled");
+        console.log("[plugin:clawthority] no hitl-policy.yaml found — HITL disabled");
       } else {
-        console.warn("[plugin:openauthority] HITL policy not loaded (invalid config):", err);
+        console.warn("[plugin:clawthority] HITL policy not loaded (invalid config):", err);
       }
     }
 
-    console.log("[plugin:openauthority] activated – lifecycle hooks registered");
+    console.log("[plugin:clawthority] activated – lifecycle hooks registered");
   },
 
   async deactivate() {
@@ -1136,7 +1136,7 @@ const plugin: OpenclawPlugin = {
       rulesWatcher = null;
     }
     activated = false;
-    console.log("[plugin:openauthority] deactivated");
+    console.log("[plugin:clawthority] deactivated");
   },
 };
 

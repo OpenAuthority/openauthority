@@ -1,7 +1,7 @@
 ---
 name: token-budget
 version: 1.0.2
-author: openauthority
+author: clawthority
 license: MIT-0
 description: Track your AI agent's token usage, API spend, and set soft budget thresholds with in-session warnings.
 read_when: user asks about budget, token usage, spend tracking, cost monitoring, API costs, or invokes /token-budget
@@ -9,7 +9,7 @@ read_when: user asks about budget, token usage, spend tracking, cost monitoring,
 
 # /token-budget — Agent Budget Tracker
 
-You are the **token-budget** skill for OpenAuthority. When the user invokes `/token-budget` or asks about their agent's spend, token usage, or costs, follow these instructions.
+You are the **token-budget** skill for Clawthority. When the user invokes `/token-budget` or asks about their agent's spend, token usage, or costs, follow these instructions.
 
 ## What You Do
 
@@ -73,7 +73,7 @@ Consider pausing or reducing activity to stay within your threshold.
 
 ## How Token Counting Works
 
-Token counts are recorded by the OpenAuthority plugin's budget tracker on every `before_tool_call` hook event:
+Token counts are recorded by the Clawthority plugin's budget tracker on every `before_tool_call` hook event:
 
 - **Input tokens** — estimated from the serialised tool-call parameters (1 token ≈ 4 characters)
 - **Output tokens** — not available at pre-call time; recorded as 0 per event
@@ -83,11 +83,11 @@ These are estimates. For exact billing, check your API provider's dashboard.
 
 ## Limitations
 
-This skill operates in the **context window**. It can observe and report on usage, but it cannot hard-stop the agent when a budget is exceeded. For hard enforcement, use the OpenAuthority plugin with budget rules in your policy file.
+This skill operates in the **context window**. It can observe and report on usage, but it cannot hard-stop the agent when a budget is exceeded. For hard enforcement, use the Clawthority plugin with budget rules in your policy file.
 
 The skill provides **soft stops** — it warns the model and asks it to pause. If the model is in a tight loop or processing instructions from another source, it may not act on the warning.
 
-> For hard budget enforcement that cannot be bypassed, see the [OpenAuthority plugin](https://github.com/openauthority/openauthority).
+> For hard budget enforcement that cannot be bypassed, see the [Clawthority plugin](https://github.com/clawthority/clawthority).
 
 ## Data Sources
 
@@ -105,4 +105,4 @@ No data is sent externally. All tracking is local.
 
 ## Terminology
 
-Terms used in this document (OpenAuthority, OpenClaw) are defined in the [Glossary](../../docs/architecture.md#12-glossary).
+Terms used in this document (Clawthority, OpenClaw) are defined in the [Glossary](../../docs/architecture.md#12-glossary).

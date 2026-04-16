@@ -8,17 +8,17 @@ This guide covers common issues and how to resolve them.
 
 ### Plugin not loading
 
-**Symptom:** openclaw starts without logging `[openauthority] Plugin activated`.
+**Symptom:** openclaw starts without logging `[clawthority] Plugin activated`.
 
 **Checks:**
 
 1. Confirm the plugin is registered in `~/.openclaw/config.json`:
    ```json
-   { "plugins": ["openauthority"] }
+   { "plugins": ["clawthority"] }
    ```
 2. Confirm the build output exists:
    ```bash
-   ls ~/.openclaw/plugins/openauthority/dist/index.js
+   ls ~/.openclaw/plugins/clawthority/dist/index.js
    ```
    If missing, run `npm run build` inside the plugin directory.
 3. Check that `package.json` has `"main": "dist/index.js"`.
@@ -54,11 +54,11 @@ This guide covers common issues and how to resolve them.
 
 **Checks:**
 
-1. Confirm the watcher started — look for `[openauthority] Watching src/policy/rules/` in the openclaw log.
+1. Confirm the watcher started — look for `[clawthority] Watching src/policy/rules/` in the openclaw log.
 2. The watcher debounces by 300 ms. Wait a moment after saving.
 3. Check the log for a reload error:
    ```
-   [openauthority] Failed to reload rules: SyntaxError: ...
+   [clawthority] Failed to reload rules: SyntaxError: ...
    ```
    If present, fix the syntax error in your rules file and save again.
 4. Ensure the file being edited is the one being watched. The watcher resolves the path relative to the plugin install directory.
@@ -171,7 +171,7 @@ Or call `engine.cleanup()` periodically in your application.
 Set `RULES_FILE` to an absolute path:
 
 ```bash
-RULES_FILE=/var/openauthority/rules.json npm start
+RULES_FILE=/var/clawthority/rules.json npm start
 ```
 
 Verify the file exists and is readable:
@@ -201,7 +201,7 @@ This is expected behavior. The client reconnects and continues receiving events.
 **Checks:**
 
 1. Confirm the `AUDIT_LOG_FILE` (or `auditLogFile` in `openclaw.plugin.json`) path is set correctly and the file exists.
-2. Audit entries are written by `JsonlAuditLogger` in the enforcement pipeline. Confirm the plugin is actively processing tool calls (check that `[openauthority] Plugin activated` appeared in the openclaw log).
+2. Audit entries are written by `JsonlAuditLogger` in the enforcement pipeline. Confirm the plugin is actively processing tool calls (check that `[clawthority] Plugin activated` appeared in the openclaw log).
 3. Entries can also be posted directly via `POST /api/audit` for testing. The SSE stream only broadcasts entries recorded after the stream connects — historical entries are served by `GET /api/audit`.
 
 ---

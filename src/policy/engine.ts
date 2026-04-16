@@ -1,5 +1,5 @@
 /**
- * Cedar-style policy engine for OpenAuthority.
+ * Cedar-style policy engine for Clawthority.
  *
  * Evaluates access control rules against a `(resource, name, context)` triple
  * using Cedar semantics: an explicit `forbid` rule always wins over any number

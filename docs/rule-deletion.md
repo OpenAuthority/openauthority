@@ -1,6 +1,6 @@
 # Rule Deletion Guide
 
-How to remove rules from the active policy bundle in OpenAuthority.
+How to remove rules from the active policy bundle in Clawthority.
 
 ---
 
@@ -17,7 +17,7 @@ How to remove rules from the active policy bundle in OpenAuthority.
 
 ## Overview
 
-Rules in OpenAuthority are stored in a versioned JSON bundle at `data/bundles/active/bundle.json`. Deleting a rule requires three steps:
+Rules in Clawthority are stored in a versioned JSON bundle at `data/bundles/active/bundle.json`. Deleting a rule requires three steps:
 
 1. Remove the rule object from the `rules` array.
 2. Increment the bundle `version`.
@@ -32,7 +32,7 @@ The adapter hot-reloads the bundle within ~500 ms. No restart is needed.
 ## Policy Bundle Structure
 
 ```
-~/.openclaw/plugins/openauthority/
+~/.openclaw/plugins/clawthority/
 └── data/
     └── bundles/
         ├── active/
@@ -76,7 +76,7 @@ Each entry in `rules` supports:
 
 ```json
 {
-  "bundlePath": "/var/openauthority/bundles/active"
+  "bundlePath": "/var/clawthority/bundles/active"
 }
 ```
 
@@ -167,13 +167,13 @@ Copy the printed hex string and set it as the `checksum` field in `bundle.json`.
 Save the file. The `FileAuthorityAdapter` detects the change and reloads within ~500 ms. Check the OpenClaw log for:
 
 ```
-[openauthority] Bundle reloaded (version 2, 11 rules)
+[clawthority] Bundle reloaded (version 2, 11 rules)
 ```
 
 If the bundle is rejected, the log shows:
 
 ```
-[openauthority] Bundle reload failed: <reason>
+[clawthority] Bundle reload failed: <reason>
 ```
 
 The previously loaded bundle stays active until a valid bundle is accepted.
