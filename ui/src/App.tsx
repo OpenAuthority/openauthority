@@ -182,7 +182,7 @@ export default function App() {
   return (
     <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
       <h1 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.25rem' }}>
-        OpenAuthority — Policy Rules
+        Clawthority — Policy Rules
       </h1>
       <p style={{ color: '#6b7280', fontSize: '0.875rem', marginBottom: '1.5rem' }}>
         Click Delete on any rule to see the deletion confirmation modal.

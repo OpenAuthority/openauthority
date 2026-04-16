@@ -12,4 +12,4 @@ const markerPath = resolve(dataDir, ".installed");
 
 mkdirSync(dataDir, { recursive: true });
 writeFileSync(markerPath, new Date().toISOString() + "\n");
-console.log("[openauthority] install complete — data/.installed written");
+console.log("[clawthority] install complete — data/.installed written");

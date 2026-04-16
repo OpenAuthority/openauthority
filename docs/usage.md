@@ -4,7 +4,7 @@ This document covers common policy patterns, usage examples for both rule styles
 
 ## Policy Engine
 
-Open Authority uses a Cedar-style policy engine with **forbid-wins** semantics. Rules are evaluated against normalised action contexts — either by action class (semantic matching) or by resource type (structural matching). A single `forbid` rule overrides any number of `permit` rules.
+Clawthority uses a Cedar-style policy engine with **forbid-wins** semantics. Rules are evaluated against normalised action contexts — either by action class (semantic matching) or by resource type (structural matching). A single `forbid` rule overrides any number of `permit` rules.
 
 Rules are loaded from two sources:
 
@@ -209,7 +209,7 @@ The enforcement pipeline writes every policy decision to a JSONL audit log via `
 ```typescript
 import { JsonlAuditLogger } from "./audit.js";
 
-const auditLogger = new JsonlAuditLogger("/var/log/openauthority/audit.jsonl");
+const auditLogger = new JsonlAuditLogger("/var/log/clawthority/audit.jsonl");
 ```
 
 Configure the audit log path in `openclaw.plugin.json` or via the `AUDIT_LOG_FILE` environment variable. Each line in the file is a JSON object containing the `ExecutionEnvelope`, `CeeDecision`, timestamp, and trace ID.

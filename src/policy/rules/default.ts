@@ -2,7 +2,7 @@ import type { Rule } from '../types.js';
 import { detectSensitiveData } from '../../enforcement/pii-classifier.js';
 
 /**
- * Baseline action-class policy rules for the Open Authority openclaw plugin.
+ * Baseline action-class policy rules for the Clawthority openclaw plugin.
  *
  * Rules are evaluated by Stage 2 using action_class semantics.  Priority
  * determines evaluation order — lower numbers are evaluated first.

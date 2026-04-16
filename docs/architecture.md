@@ -1,6 +1,6 @@
 # Architecture
 
-This document describes the design of the OpenAuthority policy engine plugin for OpenClaw, the decisions behind the architecture, and how components fit together.
+This document describes the design of the Clawthority policy engine plugin for OpenClaw, the decisions behind the architecture, and how components fit together.
 
 ---
 
@@ -28,7 +28,7 @@ This document describes the design of the OpenAuthority policy engine plugin for
 │                          OpenClaw Gateway                            │
 │                                                                      │
 │  ┌──────────────┐  hook events  ┌──────────────────────────────────┐ │
-│  │  Agent /     │ ────────────► │  OpenAuthority Plugin            │ │
+│  │  Agent /     │ ────────────► │  Clawthority Plugin              │ │
 │  │  Gateway     │ ◄──────────── │  (index.ts)                      │ │
 │  └──────────────┘  permit /     └────────────────┬─────────────────┘ │
 │                    forbid /                      │                   │
@@ -50,15 +50,15 @@ This document describes the design of the OpenAuthority policy engine plugin for
              │  │                    Stage 2 (CEE)                │   │
              │  │                         │                       │   │
              │  │                         ▼                       │   │
-             │  │                  CeeDecision / StructuredDecision│   │
+             │  │                CeeDecision / StructuredDecision │   │
              │  └─────────────────────────────────────────────────┘   │
              │                                                        │
-             │  ┌───────────────────┐   ┌───────────────────────┐    │
-             │  │  IAuthorityAdapter│   │  HITL Approval System │    │
-             │  │  (file / Firma)   │   │  (hitl/)              │    │
-             │  └───────────────────┘   └────────────┬──────────┘    │
-             │                                       │               │
-             └───────────────────────────────────────┼───────────────┘
+             │  ┌───────────────────┐   ┌───────────────────────┐     │
+             │  │  IAuthorityAdapter│   │  HITL Approval System │     │
+             │  │  (file / Firma)   │   │  (hitl/)              │     │
+             │  └───────────────────┘   └────────────┬──────────┘     │
+             │                                       │                │
+             └───────────────────────────────────────┼────────────────┘
                                                      │
                ┌─────────────────────────┐  ┌────────▼──────────────┐
                │  Dashboard (Express +   │  │  Approval Channels    │
@@ -585,7 +585,7 @@ Rate limits only reduce the scope of `permit`; they can never override a `forbid
 
 ### 9.1 What Is Enforced
 
-OpenAuthority enforces the following:
+Clawthority enforces the following:
 
 - **Action-level authorization** — every tool call is classified and evaluated against Cedar rules before the tool executes.
 - **Capability binding** — HITL approvals are cryptographically bound to the exact tool call parameters approved; a changed payload fails Stage 1.
@@ -596,22 +596,22 @@ OpenAuthority enforces the following:
 
 ### 9.2 What Is Not Enforced
 
-The following are **not** enforced by OpenAuthority and must be addressed at other layers:
+The following are **not** enforced by Clawthority and must be addressed at other layers:
 
-- **Tool output inspection** — OpenAuthority intercepts tool call *invocations*, not responses. If a permitted tool returns sensitive data, that data is not inspected.
+- **Tool output inspection** — Clawthority intercepts tool call *invocations*, not responses. If a permitted tool returns sensitive data, that data is not inspected.
 - **Prompt content enforcement** — The `before_prompt_build` hook performs lightweight injection detection (regex patterns) but does not enforce semantic constraints on prompt content. It is disabled by default pending false-positive tuning.
 - **Cross-session capability reuse** — Capability tokens are stored in memory for the lifetime of the adapter instance. Restarting the process clears all issued capabilities; there is no persistent revocation log in the file adapter.
 - **Multi-agent coordination** — When multiple agent instances share a session, capability consumption tracking is per-process. An approval consumed by one agent instance is not visible to another process.
 - **Nested tool calls** — Tool calls made by tools (e.g. a code execution tool that itself invokes an HTTP request) are not intercepted; only the outermost tool call at the OpenClaw hook boundary is evaluated.
-- **Cryptographic non-repudiation** — The audit log and provenance fields are append-only but not cryptographically signed. Log tampering is not detectable by OpenAuthority itself.
-- **Policy correctness** — OpenAuthority enforces the configured policies faithfully but does not validate that the policies themselves are semantically correct or complete. A misconfigured `permit`-default engine will allow actions that were intended to be blocked.
+- **Cryptographic non-repudiation** — The audit log and provenance fields are append-only but not cryptographically signed. Log tampering is not detectable by Clawthority itself.
+- **Policy correctness** — Clawthority enforces the configured policies faithfully but does not validate that the policies themselves are semantically correct or complete. A misconfigured `permit`-default engine will allow actions that were intended to be blocked.
 - **Real-time revocation in the file adapter** — `FileAuthorityAdapter.watchRevocations()` yields nothing. Capabilities issued with the file adapter cannot be revoked until the process restarts.
 
 ---
 
 ## 10. OpenClaw Hook Integration
 
-OpenAuthority integrates with OpenClaw via three hook points. Only `before_tool_call` can block execution.
+Clawthority integrates with OpenClaw via three hook points. Only `before_tool_call` can block execution.
 
 ### Hook Summary
 
@@ -757,11 +757,11 @@ The semantic description of a tool call action embedded inside an `ExecutionEnve
 **NormalizedAction**
 The result of running a raw tool name through `normalize_action()`. Contains `{ action_class, risk, hitl_mode, target }`. Produced before the enforcement pipeline runs. See §4.
 
-**OpenAuthority**
-This plugin. A policy enforcement engine for OpenClaw that intercepts agent tool calls via hooks, classifies them, runs them through a two-stage authorization pipeline, and blocks execution on `forbid` decisions. The repository is `openauthority/openauthority`.
+**Clawthority**
+This plugin. A policy enforcement engine for OpenClaw that intercepts agent tool calls via hooks, classifies them, runs them through a two-stage authorization pipeline, and blocks execution on `forbid` decisions. The repository is `clawthority/clawthority`.
 
 **OpenClaw**
-The AI agent gateway and runtime that OpenAuthority is installed into as a plugin. OpenClaw fires hook events (`before_tool_call`, `before_prompt_build`, `before_model_resolve`) at defined points in the agent execution lifecycle. Only `before_tool_call` can block execution. See §10.
+The AI agent gateway and runtime that Clawthority is installed into as a plugin. OpenClaw fires hook events (`before_tool_call`, `before_prompt_build`, `before_model_resolve`) at defined points in the agent execution lifecycle. Only `before_tool_call` can block execution. See §10.
 
 **payload binding**
 The SHA-256 commitment that ties a `Capability` to the exact tool call parameters at approval time: `SHA-256("${action_class}|${target}|${payload_hash}")`. Stage 1 Check 4 recomputes this hash and compares it to the stored `binding`; a mismatch blocks execution. See §3.

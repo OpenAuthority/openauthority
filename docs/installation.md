@@ -1,6 +1,6 @@
 # Installation Guide
 
-This guide walks through installing and registering the OpenAuthority plugin for OpenClaw, configuring the HITL approval flow, and setting up the UI dashboard.
+This guide walks through installing and registering the Clawthority plugin for OpenClaw, configuring the HITL approval flow, and setting up the UI dashboard.
 
 ## Prerequisites
 
@@ -13,8 +13,8 @@ This guide walks through installing and registering the OpenAuthority plugin for
 ### 1. Clone the repository
 
 ```bash
-git clone https://github.com/OpenAuthority/openauthority ~/.openclaw/plugins/openauthority
-cd ~/.openclaw/plugins/openauthority
+git clone https://github.com/Clawthority/clawthority ~/.openclaw/plugins/clawthority
+cd ~/.openclaw/plugins/clawthority
 ```
 
 ### 2. Install dependencies
@@ -37,7 +37,7 @@ Add the plugin to your OpenClaw configuration file at `~/.openclaw/config.json`:
 
 ```json
 {
-  "plugins": ["openauthority"]
+  "plugins": ["clawthority"]
 }
 ```
 
@@ -48,7 +48,7 @@ OpenClaw will load `dist/index.js` as the plugin entry point on next start.
 Restart OpenClaw and check the logs for a line like:
 
 ```
-[openauthority] Plugin activated. Watching rules for changes.
+[clawthority] Plugin activated. Watching rules for changes.
 ```
 
 ---
@@ -93,7 +93,7 @@ The `channel` field determines where approval requests are sent. Supported chann
 When the plugin starts, it will log the loaded HITL policies:
 
 ```
-[openauthority] HITL policies loaded: 1 policy, 3 action patterns
+[clawthority] HITL policies loaded: 1 policy, 3 action patterns
 ```
 
 The policy file is hot-reloaded --- edit it while the plugin is running and changes take effect immediately.
@@ -110,18 +110,18 @@ The dashboard is an optional Express + React application for managing rules and 
 
 ```bash
 # Server dependencies
-cd ~/.openclaw/plugins/openauthority/ui
+cd ~/.openclaw/plugins/clawthority/ui
 npm install
 
 # Client dependencies
-cd ~/.openclaw/plugins/openauthority/ui/client
+cd ~/.openclaw/plugins/clawthority/ui/client
 npm install
 ```
 
 ### 2. Build the client
 
 ```bash
-cd ~/.openclaw/plugins/openauthority/ui/client
+cd ~/.openclaw/plugins/clawthority/ui/client
 npm run build
 ```
 
@@ -130,7 +130,7 @@ This compiles the React app to `ui/client/dist/`, which the server serves as sta
 ### 3. Start the dashboard server
 
 ```bash
-cd ~/.openclaw/plugins/openauthority/ui
+cd ~/.openclaw/plugins/clawthority/ui
 npm start
 ```
 
@@ -147,7 +147,7 @@ The server listens on **port 7331** by default. Open `http://localhost:7331` in 
 Example with custom paths:
 
 ```bash
-PORT=8080 RULES_FILE=/var/openauthority/rules.json AUDIT_LOG_FILE=/var/log/openauthority/audit.jsonl npm start
+PORT=8080 RULES_FILE=/var/clawthority/rules.json AUDIT_LOG_FILE=/var/log/clawthority/audit.jsonl npm start
 ```
 
 ### Data directory
@@ -163,7 +163,7 @@ Use this setup when working on the plugin or dashboard locally.
 ### Plugin (watch mode)
 
 ```bash
-cd ~/.openclaw/plugins/openauthority
+cd ~/.openclaw/plugins/clawthority
 npm run dev
 ```
 
@@ -172,7 +172,7 @@ TypeScript source is compiled and re-compiled automatically on change.
 ### UI server (watch mode)
 
 ```bash
-cd ~/.openclaw/plugins/openauthority/ui
+cd ~/.openclaw/plugins/clawthority/ui
 npm run dev
 ```
 
@@ -181,7 +181,7 @@ Uses `tsx watch` for instant TypeScript reload on save.
 ### UI client (Vite dev server)
 
 ```bash
-cd ~/.openclaw/plugins/openauthority/ui/client
+cd ~/.openclaw/plugins/clawthority/ui/client
 npm run dev
 ```
 
@@ -191,15 +191,15 @@ Starts a Vite dev server on **port 5173** with HMR. The server allows CORS from 
 
 ```bash
 # Plugin tests
-cd ~/.openclaw/plugins/openauthority
+cd ~/.openclaw/plugins/clawthority
 npm test
 
 # Client tests
-cd ~/.openclaw/plugins/openauthority/ui/client
+cd ~/.openclaw/plugins/clawthority/ui/client
 npm test
 
 # Client tests with coverage
-cd ~/.openclaw/plugins/openauthority/ui/client
+cd ~/.openclaw/plugins/clawthority/ui/client
 npm run test:coverage
 ```
 
@@ -208,7 +208,7 @@ npm run test:coverage
 ## Upgrading
 
 ```bash
-cd ~/.openclaw/plugins/openauthority
+cd ~/.openclaw/plugins/clawthority
 git pull
 npm install
 npm run build
@@ -223,7 +223,7 @@ Restart openclaw after upgrading. The hot-reload watcher does not require a full
 Remove the plugin directory and the entry from `~/.openclaw/config.json`:
 
 ```bash
-rm -rf ~/.openclaw/plugins/openauthority
+rm -rf ~/.openclaw/plugins/clawthority
 ```
 
-Edit `~/.openclaw/config.json` and remove `"openauthority"` from the `plugins` array.
+Edit `~/.openclaw/config.json` and remove `"clawthority"` from the `plugins` array.

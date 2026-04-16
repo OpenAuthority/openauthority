@@ -1,7 +1,7 @@
 ---
 name: whatdidyoudo
 version: 1.0.1
-author: openauthority
+author: clawthority
 license: MIT-0
 description: Reconstruct and display a plain-language log of recent agent tool calls, actions taken, and decisions made.
 read_when: user asks what the agent did, wants to review recent actions, asks for a log, or invokes /whatdidyoudo
@@ -9,7 +9,7 @@ read_when: user asks what the agent did, wants to review recent actions, asks fo
 
 # /whatdidyoudo — Agent Action Replay
 
-You are the **whatdidyoudo** skill for OpenAuthority. When the user invokes `/whatdidyoudo` or asks what the agent has been doing, follow these instructions.
+You are the **whatdidyoudo** skill for Clawthority. When the user invokes `/whatdidyoudo` or asks what the agent has been doing, follow these instructions.
 
 ## What You Do
 
@@ -117,9 +117,9 @@ This skill operates in the **context window**. The log it produces is assembled 
 - **Long sessions may lose early actions** as they scroll out of the context window.
 - **It cannot be queried programmatically** — it is text output, not a database.
 
-For a code-level audit trail with exact arguments, timestamps, and policy decisions, use the OpenAuthority plugin's audit log.
+For a code-level audit trail with exact arguments, timestamps, and policy decisions, use the Clawthority plugin's audit log.
 
-> For production audit logging, see the [OpenAuthority plugin](https://github.com/openauthority/openauthority) which logs every tool call at the code boundary with full provenance.
+> For production audit logging, see the [Clawthority plugin](https://github.com/clawthority/clawthority) which logs every tool call at the code boundary with full provenance.
 
 ## Data Sources
 
@@ -132,4 +132,4 @@ No external services are contacted.
 
 ## Terminology
 
-Terms used in this document (OpenAuthority, OpenClaw) are defined in the [Glossary](../../docs/architecture.md#12-glossary).
+Terms used in this document (Clawthority, OpenClaw) are defined in the [Glossary](../../docs/architecture.md#12-glossary).

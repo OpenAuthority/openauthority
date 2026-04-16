@@ -1,6 +1,6 @@
 # Human-in-the-Loop (HITL)
 
-This guide covers how OpenAuthority routes high-stakes agent actions to a human operator for approval before execution, using Telegram or Slack.
+This guide covers how Clawthority routes high-stakes agent actions to a human operator for approval before execution, using Telegram or Slack.
 
 ---
 
@@ -49,7 +49,7 @@ HITL runs **after** the policy engines. If a policy engine already blocks the ac
 
 ### 1. Create a policy file
 
-Create `hitl-policy.yaml` in the plugin root (`~/.openclaw/plugins/openauthority/`):
+Create `hitl-policy.yaml` in the plugin root (`~/.openclaw/plugins/clawthority/`):
 
 ```yaml
 version: "1"

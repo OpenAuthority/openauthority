@@ -1,6 +1,6 @@
 # Contributing Guide
 
-Thank you for contributing to Open Authority. This guide covers development setup, code conventions, testing requirements, and the pull request process.
+Thank you for contributing to Clawthority. This guide covers development setup, code conventions, testing requirements, and the pull request process.
 
 ---
 
@@ -15,8 +15,8 @@ Thank you for contributing to Open Authority. This guide covers development setu
 ### Clone and install
 
 ```bash
-git clone https://github.com/OpenAuthority/openauthority
-cd openauthority
+git clone https://github.com/Clawthority/clawthority
+cd clawthority
 
 # Plugin dependencies
 npm install
@@ -48,7 +48,7 @@ The dashboard is available at `http://localhost:7331` (served by Express) or `ht
 ## Project Structure
 
 ```
-openauthority/
+clawthority/
 ├── src/                        # Plugin source
 │   ├── index.ts                # Plugin entry point and openclaw hooks
 │   ├── types.ts                # Core v0.1 runtime types (Intent, Capability, ExecutionEnvelope, CeeDecision)
@@ -145,7 +145,7 @@ openauthority/
 
 ## Testing
 
-Open Authority has three layers of automated tests:
+Clawthority has three layers of automated tests:
 
 | Layer | Files | Runner |
 |---|---|---|
@@ -265,7 +265,7 @@ Create `src/<feature-name>.e2e.ts`. Start with the standard file-level JSDoc lis
 
 ```typescript
 /**
- * <Feature> e2e tests — Open Authority v0.1
+ * <Feature> e2e tests — Clawthority v0.1
  *
  *  TC-<PREFIX>-01  <description>
  *  TC-<PREFIX>-02  <description>

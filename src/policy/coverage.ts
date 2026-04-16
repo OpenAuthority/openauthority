@@ -40,7 +40,7 @@ export interface CoverageEntry {
 // ─── CoverageMap ──────────────────────────────────────────────────────────────
 
 /**
- * Backend data structure for the OpenAuthority CoverageMap dashboard component.
+ * Backend data structure for the Clawthority CoverageMap dashboard component.
  *
  * Tracks which (resource, name) pairs have been evaluated by a PolicyEngine and
  * what the outcome was. Each call to {@link record} increments the hit counter

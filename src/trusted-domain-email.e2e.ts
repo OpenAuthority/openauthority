@@ -1,5 +1,5 @@
 /**
- * Trusted domain email policy e2e tests — Open Authority v0.1
+ * Trusted domain email policy e2e tests — Clawthority v0.1
  *
  * Exercises send_email operations through the two-stage enforcement pipeline
  * with a domain-allowlist Stage 2 policy derived from the trusted-acme.json

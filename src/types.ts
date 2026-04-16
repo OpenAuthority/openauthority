@@ -1,5 +1,5 @@
 // ---------------------------------------------------------------------------
-// OpenAuthority v0.1 — semantic authorization runtime core types
+// Clawthority v0.1 — semantic authorization runtime core types
 // ---------------------------------------------------------------------------
 
 /** Rate limit bounds attached to a CeeDecision. */
@@ -66,7 +66,7 @@ export interface Metadata {
 
 /**
  * Execution envelope wrapping a single agent action through the
- * OpenAuthority authorization pipeline.
+ * Clawthority authorization pipeline.
  */
 export interface ExecutionEnvelope {
   /** The agent's stated intent. */

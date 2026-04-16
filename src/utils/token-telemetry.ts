@@ -3,7 +3,7 @@
  *
  * Provides `TokenTelemetry` for recording token consumption from LLM API
  * calls, persisting usage history, and reporting session/daily metrics.
- * Data is stored locally at `~/.openclaw/openauthority/budget-state.json`
+ * Data is stored locally at `~/.openclaw/clawthority/budget-state.json`
  * (or a custom path passed to the constructor for testing).
  *
  * Intended to back the `token-budget` skill's live reporting.
@@ -120,7 +120,7 @@ export const MODEL_PRICING: Record<string, ModelPricing> = {
 export const DEFAULT_STATE_PATH: string = join(
   homedir(),
   '.openclaw',
-  'openauthority',
+  'clawthority',
   'budget-state.json',
 );
 

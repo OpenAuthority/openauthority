@@ -1,6 +1,6 @@
 # Action Registry and Classification System
 
-Complete reference for the 19 canonical action classes recognized by OpenAuthority. Policy authors use this document to understand what each action class covers, its default risk posture, and when human approval is required.
+Complete reference for the 19 canonical action classes recognized by Clawthority. Policy authors use this document to understand what each action class covers, its default risk posture, and when human approval is required.
 
 Source of truth: [`src/enforcement/normalize.ts`](../src/enforcement/normalize.ts)
 

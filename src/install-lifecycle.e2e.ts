@@ -1,5 +1,5 @@
 /**
- * Install lifecycle e2e tests — Open Authority
+ * Install lifecycle e2e tests — Clawthority
  *
  * Validates install lifecycle behaviour: policy enforcement is deferred during
  * npm install lifecycle phases, activated when the marker file is present, and
