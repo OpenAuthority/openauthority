@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="docs/assets/clawthority-logo.png" alt="Clawthority" width="320">
+</p>
+
 # Clawthority
 
 [![OpenClaw Plugin](https://img.shields.io/badge/OpenClaw-plugin-8A2BE2)](https://github.com/openclaw/openclaw)
