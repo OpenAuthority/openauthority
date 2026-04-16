@@ -15,7 +15,7 @@ Thank you for contributing to Clawthority. This guide covers development setup, 
 ### Clone and install
 
 ```bash
-git clone https://github.com/Clawthority/clawthority
+git clone https://github.com/OpenAuthority/clawthority
 cd clawthority
 
 # Plugin dependencies

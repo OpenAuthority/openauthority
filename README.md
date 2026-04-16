@@ -1,7 +1,7 @@
 # Clawthority
 
 [![OpenClaw Plugin](https://img.shields.io/badge/OpenClaw-plugin-8A2BE2)](https://github.com/openclaw/openclaw)
-[![CI](https://github.com/Clawthority/clawthority/actions/workflows/e2e.yml/badge.svg)](https://github.com/Clawthority/clawthority/actions/workflows/e2e.yml)
+[![CI](https://github.com/OpenAuthority/clawthority/actions/workflows/e2e.yml/badge.svg)](https://github.com/OpenAuthority/clawthority/actions/workflows/e2e.yml)
 [![License: Apache 2.0](https://img.shields.io/badge/License-Apache_2.0-blue.svg)](LICENSE)
 [![Node.js >= 18](https://img.shields.io/badge/node-%3E%3D18-brightgreen.svg)](https://nodejs.org)
 [![TypeScript](https://img.shields.io/badge/TypeScript-5.7-3178C6.svg?logo=typescript&logoColor=white)](https://www.typescriptlang.org/)
@@ -120,7 +120,7 @@ Details: [docs/human-in-the-loop.md](docs/human-in-the-loop.md).
 ### Install
 
 ```bash
-git clone https://github.com/Clawthority/clawthority ~/.openclaw/plugins/clawthority
+git clone https://github.com/OpenAuthority/clawthority ~/.openclaw/plugins/clawthority
 cd ~/.openclaw/plugins/clawthority
 npm install && npm run build
 ```
