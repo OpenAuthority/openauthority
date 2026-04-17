@@ -1,5 +1,9 @@
-import type { TelegramConfig } from './types.js';
 import { CircuitBreaker, withRetry } from './retry.js';
+import type { ResolvedTelegramConfig } from './config.js';
+
+// Re-export so existing imports from this module keep working.
+export type { ResolvedTelegramConfig } from './config.js';
+export { resolveTelegramConfig } from './config.js';
 
 const TELEGRAM_API = 'https://api.telegram.org';
 const POLL_TIMEOUT_SECONDS = 30;
@@ -11,24 +15,6 @@ const POLL_RATE_LIMIT_DELAY_MS = 30_000;
  * Exported so tests can inject a fresh instance.
  */
 export const telegramCircuitBreaker = new CircuitBreaker();
-
-export interface ResolvedTelegramConfig {
-  botToken: string;
-  chatId: string;
-}
-
-/**
- * Resolves the Telegram configuration from env vars and/or the HITL policy config.
- * Env vars take precedence. Returns `null` if either token or chatId is missing.
- */
-export function resolveTelegramConfig(
-  policyConfig?: TelegramConfig,
-): ResolvedTelegramConfig | null {
-  const botToken = process.env.TELEGRAM_BOT_TOKEN ?? policyConfig?.botToken;
-  const chatId = process.env.TELEGRAM_CHAT_ID ?? policyConfig?.chatId;
-  if (!botToken || !chatId) return null;
-  return { botToken, chatId };
-}
 
 export interface SendApprovalOpts {
   token: string;

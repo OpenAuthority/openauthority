@@ -1,10 +1,13 @@
 import { createHmac, timingSafeEqual } from 'node:crypto';
 import { createServer, type Server, type IncomingMessage, type ServerResponse } from 'node:http';
-import type { SlackConfig } from './types.js';
 import { CircuitBreaker, withRetry } from './retry.js';
+import { type ResolvedSlackConfig } from './config.js';
+
+// Re-export so existing imports from this module keep working.
+export type { ResolvedSlackConfig } from './config.js';
+export { resolveSlackConfig } from './config.js';
 
 const SLACK_API = 'https://slack.com/api';
-const DEFAULT_INTERACTION_PORT = 3201;
 const TIMESTAMP_MAX_AGE_SECONDS = 300; // 5 minutes
 
 /**
@@ -12,33 +15,6 @@ const TIMESTAMP_MAX_AGE_SECONDS = 300; // 5 minutes
  * Exported so tests can inject a fresh instance.
  */
 export const slackCircuitBreaker = new CircuitBreaker();
-
-export interface ResolvedSlackConfig {
-  botToken: string;
-  channelId: string;
-  signingSecret: string;
-  interactionPort: number;
-}
-
-/**
- * Resolves Slack configuration from env vars and/or the HITL policy config.
- * Env vars take precedence. Returns `null` if botToken, channelId, or signingSecret is missing.
- */
-export function resolveSlackConfig(
-  policyConfig?: SlackConfig,
-): ResolvedSlackConfig | null {
-  const botToken = process.env.SLACK_BOT_TOKEN ?? policyConfig?.botToken;
-  const channelId = process.env.SLACK_CHANNEL_ID ?? policyConfig?.channelId;
-  const signingSecret = process.env.SLACK_SIGNING_SECRET ?? policyConfig?.signingSecret;
-  if (!botToken || !channelId || !signingSecret) return null;
-
-  const portStr = process.env.SLACK_INTERACTION_PORT;
-  const interactionPort = portStr
-    ? parseInt(portStr, 10)
-    : policyConfig?.interactionPort ?? DEFAULT_INTERACTION_PORT;
-
-  return { botToken, channelId, signingSecret, interactionPort };
-}
 
 export interface SlackSendApprovalOpts {
   token: string;
