@@ -5,6 +5,24 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.2] — 2026-04-17
+
+Addresses findings from the ClawHub security scan on the 1.1.1 upload and reconciles the package metadata with the rebrand.
+
+### Security
+
+- **Removed `child_process`/`execSync` from runtime.** `src/index.ts` previously called `git rev-parse --short HEAD` and `git status --porcelain` at plugin activation to populate the version banner. ClawHub's static analysis flagged this as shell-execution behaviour. Git commit info is now baked into `src/build-info.ts` at build time by the new `scripts/gen-build-info.mjs` script (wired as a `prebuild` step alongside `sync-version`). No process spawns at runtime.
+
+### Changed
+
+- **Package scope renamed** from `@clawthority/clawthority` to `@openauthority/clawthority` to align with the publishing org on ClawHub. The plugin `id` and `installPath` are unchanged.
+- **Compat range lowered** from `>=2026.3.24-beta.2` to `>=2026.3.13` in `package.json` `openclaw.compat.pluginApi` and `openclaw.compat.minGatewayVersion` so the plugin declares support for the current stable OpenClaw release rather than the docs-example beta.
+
+### Added
+
+- `scripts/gen-build-info.mjs` — generates `src/build-info.ts` at build time from `package.json` version and `git rev-parse`/`git status` output (run only on the build machine, not the runtime host).
+- `src/build-info.ts` added to `.gitignore` as a build artifact.
+
 ## [1.1.1] — 2026-04-17
 
 First release distributed via ClawHub. Rolls up the 1.1.0 install-modes work (tagged in-repo but never published) together with the build, install-lifecycle, and security fixes needed to ship a working tarball.
