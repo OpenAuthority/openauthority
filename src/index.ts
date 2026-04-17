@@ -141,10 +141,10 @@ import { TelegramListener, sendApprovalRequest, sendConfirmation, resolveTelegra
 import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig } from "./hitl/slack.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
-import { readFileSync, statSync, existsSync } from "node:fs";
-import { execSync } from "node:child_process";
+import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { BUILD_VERSION, BUILD_COMMIT, BUILD_DIRTY, BUILD_AT } from "./build-info.js";
 import { normalize_action, sortedJsonStringify } from "./enforcement/normalize.js";
 import { buildEnvelope } from "./envelope.js";
 import { defaultAgentIdentityRegistry } from "./identity.js";
@@ -926,37 +926,21 @@ interface VersionInfo {
 /**
  * Collect best-effort version info for the activation banner so the operator
  * can confirm at a glance which build of clawthority is running.
+ *
+ * Build-time constants (version, commit, builtAt) are injected by
+ * scripts/gen-build-info.mjs during `npm run build`. This avoids any
+ * runtime use of execSync / child_process, which triggers security scanners.
  */
 function getVersionInfo(): VersionInfo {
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const pluginRoot = resolve(moduleDir, "..");
-
-  let version = "unknown";
-  try {
-    const pkg = JSON.parse(readFileSync(resolve(pluginRoot, "package.json"), "utf8"));
-    version = pkg.version ?? "unknown";
-  } catch {}
-
-  let commit = "unknown";
-  let commitDirty = false;
-  try {
-    commit = execSync("git rev-parse --short HEAD", {
-      cwd: pluginRoot,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).toString().trim();
-    const status = execSync("git status --porcelain", {
-      cwd: pluginRoot,
-      stdio: ["ignore", "pipe", "ignore"],
-    }).toString();
-    commitDirty = status.trim().length > 0;
-  } catch {}
-
-  let builtAt = "unknown";
-  try {
-    builtAt = statSync(fileURLToPath(import.meta.url)).mtime.toISOString();
-  } catch {}
-
-  return { version, commit, commitDirty, builtAt, pluginRoot };
+  return {
+    version: BUILD_VERSION,
+    commit: BUILD_COMMIT,
+    commitDirty: BUILD_DIRTY,
+    builtAt: BUILD_AT,
+    pluginRoot,
+  };
 }
 
 let rulesWatcher: WatcherHandle | null = null;

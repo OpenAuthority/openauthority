@@ -28,6 +28,9 @@ Thumbs.db
 # Runtime state — created by the install script, not committed
 data/.installed
 
+# Build-time generated file — baked by scripts/gen-build-info.mjs
+src/build-info.ts
+
 # npm pack artifacts — built by `npm pack`, distributed via releases not git
 *.tgz
 
