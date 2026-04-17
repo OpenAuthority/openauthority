@@ -73,7 +73,7 @@ function checkContent(
     };
   }
 
-  const headingLevel = headingMatch[1].length;
+  const headingLevel = headingMatch[1]!.length;
   const afterHeading = content.slice(headingMatch.index + headingMatch[0].length);
   const nextHeadingPattern = new RegExp(`^#{1,${headingLevel}}\\s`, 'm');
   const nextHeadingMatch = nextHeadingPattern.exec(afterHeading);

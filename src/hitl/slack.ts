@@ -135,7 +135,7 @@ export async function sendSlackApprovalRequest(
   ];
 
   try {
-    return await withRetry(
+    return await withRetry<SlackSendApprovalResult>(
       () =>
         fetch(`${SLACK_API}/chat.postMessage`, {
           method: 'POST',

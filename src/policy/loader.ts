@@ -97,7 +97,7 @@ export async function loadPolicyFile(filePath: string): Promise<LoadedPolicyBund
 
   // Validate that all target_match patterns compile as valid regexes
   for (let i = 0; i < (parsed.rules?.length ?? 0); i++) {
-    const rule = parsed.rules![i];
+    const rule = parsed.rules![i]!;
     if (rule.target_match !== undefined) {
       try {
         new RegExp(rule.target_match);
