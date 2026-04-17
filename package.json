@@ -13,10 +13,12 @@
   },
   "files": [
     "dist",
-    "openclaw.plugin.json"
+    "openclaw.plugin.json",
+    "scripts/post-install.mjs"
   ],
   "scripts": {
     "plugin:install": "node scripts/post-install.mjs",
+    "postinstall": "node scripts/post-install.mjs",
     "prepare": "node scripts/sync-version.mjs",
     "prebuild": "node scripts/sync-version.mjs",
     "build": "tsc",
