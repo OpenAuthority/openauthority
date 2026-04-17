@@ -128,7 +128,7 @@ export function validateCommitMessage(message: string): CommitValidationResult {
     };
   }
 
-  const [, rawType, rawScope, subject] = match as [string, string, string | undefined, string];
+  const [, rawType, rawScope, subject] = match as unknown as [string, string, string | undefined, string];
 
   const errors: CommitValidationError[] = [];
 
