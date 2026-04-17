@@ -137,10 +137,14 @@ const DEFAULT_RULES: Rule[] = [
  *
  * These are the unconditional-forbid tier: shell/code execution bypass
  * parameter policy entirely, payment/credential operations are
- * cross-cutting high-risk, and `unknown_sensitive_action` is the
- * normalizer's catch-all for un-registered tools. Keeping these
- * forbidden in both modes prevents `mode: open` from being a total
- * bypass of the safety net.
+ * cross-cutting high-risk.
+ *
+ * NOTE: `unknown_sensitive_action` is intentionally excluded from OPEN mode.
+ * In OPEN mode, unrecognised tools fall through to the implicit permit —
+ * that is the definition of OPEN mode. Including unknown_sensitive_action
+ * here would block every OpenClaw tool not in the normalizer registry
+ * (e.g. process, cron, sessions_*, message, image), breaking normal usage.
+ * Use CLOSED mode if you want fail-closed behaviour for unknown tools.
  */
 const CRITICAL_ACTION_CLASSES = new Set<string>([
   'shell.exec',
@@ -148,7 +152,6 @@ const CRITICAL_ACTION_CLASSES = new Set<string>([
   'payment.initiate',
   'credential.read',
   'credential.write',
-  'unknown_sensitive_action',
 ]);
 
 /**
