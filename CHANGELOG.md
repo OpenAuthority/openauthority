@@ -49,13 +49,9 @@ export CLAWTHORITY_MODE=closed
 
 No rule-bundle changes are required; the same rules continue to work in both modes. Stage 1 (capability gate, protected paths, HITL binding) and pipeline-level error handling fail closed regardless of mode.
 
-## [1.0.1] — 2025-XX-XX
+## [1.0.1] — 2026-04-16
 
 ### Fixed
 
 - Aligned default rules to the normalizer registry so rule targets correspond to action classes the normalizer actually produces.
 - Made `package.json` the sole source of truth for the plugin version; `openclaw.plugin.json` is regenerated from it.
-
-## [1.0.0]
-
-- Initial stable release of the Clawthority OpenClaw plugin: two-stage enforcement pipeline, Cedar-style policy engine, action normalization registry, HITL approval (Telegram + Slack), append-only audit log, and hot-reloadable policy bundles.
