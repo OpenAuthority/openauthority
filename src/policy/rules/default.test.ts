@@ -14,16 +14,20 @@ const EXPECTED_CRITICAL_CLASSES: readonly string[] = [
   'payment.initiate',
   'credential.read',
   'credential.write',
-  'unknown_sensitive_action',
 ];
 
 describe('OPEN_MODE_RULES', () => {
-  it('contains exactly the six critical action classes', () => {
+  it('contains exactly the five critical action classes', () => {
     const classes = OPEN_MODE_RULES
       .map((r) => r.action_class)
       .filter((c): c is string => c !== undefined)
       .sort();
     expect(classes).toEqual([...EXPECTED_CRITICAL_CLASSES].sort());
+  });
+
+  it('omits unknown_sensitive_action (unknown tools fall through to implicit permit)', () => {
+    const classes = OPEN_MODE_RULES.map((r) => r.action_class);
+    expect(classes).not.toContain('unknown_sensitive_action');
   });
 
   it('contains only forbid rules', () => {

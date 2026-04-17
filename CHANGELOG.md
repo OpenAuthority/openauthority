@@ -5,6 +5,16 @@ All notable changes to this project will be documented in this file.
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0.html).
 
+## [1.1.3] — 2026-04-17
+
+Fixes a critical regression in OPEN mode where most OpenClaw tools were blocked.
+
+### Fixed
+
+- **OPEN mode blocking all unrecognised tools.** `unknown_sensitive_action` was included in `CRITICAL_ACTION_CLASSES`, which caused every tool not in the normalizer registry (`process`, `cron`, `sessions_*`, `message`, `image`, etc.) to be unconditionally blocked even in OPEN mode. Removed `unknown_sensitive_action` from the OPEN mode critical forbids — unknown tools now fall through to the implicit permit as intended. CLOSED mode is unchanged (still fails closed on unknown tools).
+
+---
+
 ## [1.1.2] — 2026-04-17
 
 Addresses findings from the ClawHub security scan on the 1.1.1 upload and reconciles the package metadata with the rebrand.
