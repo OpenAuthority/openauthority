@@ -60,6 +60,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
     default_risk: 'low',
     default_hitl_mode: 'none',
     aliases: [
+      'read',
       'read_file',
       'readfile',
       'read_files',
@@ -74,6 +75,8 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
     default_risk: 'medium',
     default_hitl_mode: 'per_request',
     aliases: [
+      'write',
+      'edit',
       'write_file',
       'writefile',
       'create_file',
@@ -113,6 +116,7 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
     default_risk: 'low',
     default_hitl_mode: 'none',
     aliases: [
+      'list',
       'list_files',
       'listfiles',
       'list_directory',
@@ -380,6 +384,52 @@ const SHELL_WRAPPER_TOOL_NAMES = new Set<string>([
   'zsh',
 ]);
 
+/**
+ * Well-known credential file paths. Conservative — only paths where the
+ * file contents are almost certainly secret. Matching is case-insensitive
+ * and works against absolute paths, `~`-prefixed paths, and paths embedded
+ * inside longer shell command strings. Public counterparts (`.pub` files,
+ * `known_hosts`, `authorized_keys`) are explicitly NOT matched.
+ */
+const CREDENTIAL_PATH_PATTERNS: readonly string[] = [
+  // AWS
+  String.raw`\.aws/credentials\b`,
+  String.raw`\.aws/config\b`,
+  // SSH private keys — anchor on common algorithm names, exclude .pub
+  String.raw`\.ssh/id_(?:rsa|ed25519|ecdsa|dsa)\b(?!\.pub)`,
+  String.raw`\.ssh/[a-z0-9_-]+_(?:rsa|ed25519|ecdsa|dsa)\b(?!\.pub)`,
+  // Kubernetes / Docker
+  String.raw`\.kube/config\b`,
+  String.raw`\.docker/config\.json\b`,
+  // GCP application default credentials
+  String.raw`\.config/gcloud/application_default_credentials\.json\b`,
+  String.raw`\.config/gcloud/legacy_credentials\b`,
+  // Generic home-directory credentials
+  String.raw`\.netrc\b`,
+  String.raw`\.pgpass\b`,
+  String.raw`\.npmrc\b`,
+  String.raw`\.gnupg(?:/|\b)`,
+  // Dotenv files: .env, .env.local, .env.production, etc.
+  String.raw`(?:^|[\s"'=/])\.env(?:\.[a-z0-9_-]+)?(?![a-z0-9_])`,
+  // /etc/shadow
+  String.raw`/etc/shadow\b`,
+];
+const CREDENTIAL_PATH_RE = new RegExp(CREDENTIAL_PATH_PATTERNS.join('|'), 'i');
+
+/**
+ * Leading commands that indicate a write/copy into the target path (when the
+ * target is a credential path, this flips Rule 5 to `credential.write`).
+ */
+const CREDENTIAL_WRITE_CMD_RE =
+  /^\s*(?:sudo\s+)?(?:cp|mv|scp|install|rsync|ln)\b/i;
+
+/**
+ * Shell output redirect (`>`, `>>`) — flips Rule 5 to credential.write.
+ * Excludes fd redirects like `2>&1` by requiring the `>` to be preceded
+ * by whitespace or start-of-string and not followed by `&`.
+ */
+const SHELL_REDIRECT_RE = /(?:^|\s)>{1,2}(?!&)/;
+
 // ---------------------------------------------------------------------------
 // Target extraction
 // ---------------------------------------------------------------------------
@@ -442,6 +492,15 @@ export function normalizeActionClass(toolName: string): string {
  *      `filesystem.delete`. Lets operators put `filesystem.delete` in HITL
  *      policy and have it actually fire for hosts that expose only a
  *      generic shell-exec tool (e.g. OpenClaw's `exec`).
+ *   5. Any tool whose `target` or shell-wrapper `command` references a
+ *      well-known credential file path (AWS creds, SSH private keys, kube
+ *      config, .env*, /etc/shadow, ...) → reclassified to `credential.read`
+ *      or `credential.write`. Write is picked when the starting class is
+ *      already `filesystem.write`, when the command uses a shell redirect
+ *      (`>`, `>>`), or when the command starts with `cp`/`mv`/`scp`/
+ *      `rsync`/`install`/`ln`. Skipped when Rule 4 already reclassified to
+ *      `filesystem.delete` — deleting a credential file stays a destructive
+ *      fs action.
  *
  * @param toolName  Name of the tool being invoked (case-insensitive).
  * @param params    Tool call parameters used for target extraction and
@@ -483,16 +542,38 @@ export function normalize_action(
   // Rule 4: shell-wrapper tool + destructive command → filesystem.delete
   const toolKey = toolName.toLowerCase();
   const command = params['command'];
+  const commandStr = typeof command === 'string' ? command : '';
   if (
     SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    typeof command === 'string' &&
-    DESTRUCTIVE_SHELL_CMD_RE.test(command)
+    commandStr !== '' &&
+    DESTRUCTIVE_SHELL_CMD_RE.test(commandStr)
   ) {
     const deleteEntry = ALIAS_INDEX.get('rm') ?? UNKNOWN_ENTRY;
     action_class = deleteEntry.action_class;
     hitl_mode = deleteEntry.default_hitl_mode;
     intent_group = deleteEntry.intent_group;
     if (risk !== 'critical') risk = deleteEntry.default_risk;
+  }
+
+  // Rule 5: reference to a well-known credential path → credential.read / .write
+  // Skip when Rule 4 already reclassified to filesystem.delete — a destructive
+  // action on a credential file stays filesystem.delete.
+  if (action_class !== 'filesystem.delete') {
+    const targetHasCredPath = target !== '' && CREDENTIAL_PATH_RE.test(target);
+    const commandHasCredPath = commandStr !== '' && CREDENTIAL_PATH_RE.test(commandStr);
+    if (targetHasCredPath || commandHasCredPath) {
+      const looksLikeWrite =
+        action_class === 'filesystem.write' ||
+        (commandStr !== '' &&
+          (SHELL_REDIRECT_RE.test(commandStr) ||
+            CREDENTIAL_WRITE_CMD_RE.test(commandStr)));
+      const credAliasKey = looksLikeWrite ? 'write_secret' : 'read_secret';
+      const credEntry = ALIAS_INDEX.get(credAliasKey) ?? UNKNOWN_ENTRY;
+      action_class = credEntry.action_class;
+      hitl_mode = credEntry.default_hitl_mode;
+      intent_group = credEntry.intent_group;
+      if (risk !== 'critical') risk = credEntry.default_risk;
+    }
   }
 
   return { action_class, risk, hitl_mode, target, ...(intent_group !== undefined && { intent_group }) };
