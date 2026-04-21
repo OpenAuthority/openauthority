@@ -7,7 +7,7 @@
  *  TC-FS-01  filesystem.read on normal path → permit (action_class audit)
  *  TC-FS-02  bash (shell.exec) execute → forbid (bash_execute_denied)
  *  TC-FS-03  unknown tool → forbid (unknown_sensitive_action)
- *  TC-FS-04  filesystem.write to ~/.ssh/id_rsa → forbid (protected_path)
+ *  TC-FS-04  write to ~/.ssh/id_rsa → credential.write + forbid (protected_path)
  */
 import { describe, it, expect, beforeEach, afterEach } from 'vitest';
 import { EventEmitter } from 'node:events';
@@ -27,7 +27,12 @@ import type { Capability } from './adapter/types.js';
  * Policy rules (evaluated in order):
  *   1. shell.exec → forbid (bash_execute_denied)
  *   2. unknown_sensitive_action → forbid (unknown_sensitive_action)
- *   3. filesystem.write to a ~/.ssh/* path → forbid (protected_path)
+ *   3. write of any kind to a ~/.ssh/* path → forbid (protected_path).
+ *      Matches both `filesystem.write` (legacy classification before the
+ *      normalizer's Rule 5 credential-path detection) and `credential.write`
+ *      (what Rule 5 now produces for SSH key paths) so operators keep their
+ *      path-based protection regardless of which class the normalizer
+ *      resolves to.
  *   4. default → permit (action_class)
  */
 function buildFilesystemPolicyStage2(): Stage2Fn {
@@ -38,7 +43,11 @@ function buildFilesystemPolicyStage2(): Stage2Fn {
     if (ctx.action_class === 'unknown_sensitive_action') {
       return { effect: 'forbid', reason: 'unknown_sensitive_action', stage: 'stage2' };
     }
-    if (ctx.action_class === 'filesystem.write' && /\.ssh[/\\]/.test(ctx.target)) {
+    if (
+      (ctx.action_class === 'filesystem.write' ||
+        ctx.action_class === 'credential.write') &&
+      /\.ssh[/\\]/.test(ctx.target)
+    ) {
       return { effect: 'forbid', reason: 'protected_path', stage: 'stage2' };
     }
     return { effect: 'permit', reason: 'action_class', stage: 'stage2' };
@@ -249,11 +258,16 @@ describe('filesystem policy enforcement', () => {
   // ── TC-FS-04 ─────────────────────────────────────────────────────────────────
 
   it(
-    'TC-FS-04: filesystem.write to ~/.ssh/id_rsa is denied with protected_path',
+    'TC-FS-04: write to ~/.ssh/id_rsa normalizes to credential.write and is denied with protected_path',
     async () => {
       const SSH_KEY_PATH = '~/.ssh/id_rsa';
       const normalized = normalize_action('write_file', { path: SSH_KEY_PATH });
-      expect(normalized.action_class).toBe('filesystem.write');
+      // Before normalizer Rule 5 (credential path detection) this resolved
+      // to `filesystem.write`. Writing to a known private-key path is now
+      // reclassified to `credential.write`, which matches the semantic
+      // better. The Stage 2 policy above handles both classes for the SSH
+      // path so operators keep their path-based protection either way.
+      expect(normalized.action_class).toBe('credential.write');
       expect(normalized.target).toBe(SSH_KEY_PATH);
 
       const HASH = 'hash-fs-04';
