@@ -33,6 +33,27 @@ vi.mock('chokidar', () => ({
   },
 }));
 
+// Capture audit entries written via JsonlAuditLogger so tests can assert the
+// structured-decision shape without touching the real on-disk audit log.
+const auditEntries: Array<Record<string, unknown>> = [];
+vi.mock('./audit.js', async () => {
+  const actual = await vi.importActual<typeof import('./audit.js')>('./audit.js');
+  return {
+    ...actual,
+    JsonlAuditLogger: class StubJsonlAuditLogger {
+      // Signature kept compatible with the real class — options arg unused.
+      constructor(_opts: { logFile: string }) {}
+      log(entry: Record<string, unknown>): Promise<void> {
+        auditEntries.push(entry);
+        return Promise.resolve();
+      }
+      flush(): Promise<void> {
+        return Promise.resolve();
+      }
+    },
+  };
+});
+
 // ─── Helpers ────────────────────────────────────────────────────────────────
 
 interface LoadOpts {
@@ -156,6 +177,7 @@ describe('HITL-gated forbid routing', () => {
     delete process.env.OPENAUTH_FORCE_ACTIVE;
     delete process.env.TELEGRAM_BOT_TOKEN;
     delete process.env.TELEGRAM_CHAT_ID;
+    auditEntries.length = 0;
   });
 
   afterEach(() => {
@@ -259,6 +281,97 @@ describe('HITL-gated forbid routing', () => {
       const handler = await loadPlugin({ mode: 'open', hitl: credentialPolicy });
       const result = await callHook(handler, 'read_secret', { path: '/tmp/x' });
       expect(result?.block).not.toBe(true);
+    });
+  });
+
+  // ── Audit log: every block path writes a structured decision entry ────────
+
+  describe('audit log: structured policy decisions on block', () => {
+    it('Stage-1 trust gate block writes a stage1-trust entry', async () => {
+      const handler = await loadPlugin({ mode: 'closed' });
+      const result = await handler(
+        {
+          toolName: 'delete_file',
+          params: { path: '/tmp/x' },
+          // 'web' / 'file' / anything non-user/agent is treated as untrusted.
+          source: 'web',
+        },
+        { agentId: 'agent-test', channelId: 'default' },
+      );
+      expect(result && 'block' in result && result.block).toBe(true);
+      const policyEntries = auditEntries.filter((e) => e['type'] === 'policy');
+      expect(policyEntries).toHaveLength(1);
+      expect(policyEntries[0]).toMatchObject({
+        type: 'policy',
+        effect: 'forbid',
+        stage: 'stage1-trust',
+        toolName: 'delete_file',
+        actionClass: 'filesystem.delete',
+      });
+      expect(policyEntries[0]!['ts']).toEqual(expect.any(String));
+    });
+
+    it('Cedar unconditional forbid writes a cedar entry with priority=100', async () => {
+      const handler = await loadPlugin({ mode: 'closed' });
+      await callHook(handler, 'bash', { command: 'ls' });
+      const cedarForbids = auditEntries.filter(
+        (e) => e['type'] === 'policy' && e['stage'] === 'cedar',
+      );
+      expect(cedarForbids).toHaveLength(1);
+      expect(cedarForbids[0]).toMatchObject({
+        type: 'policy',
+        effect: 'forbid',
+        stage: 'cedar',
+        priority: 100,
+        actionClass: 'shell.exec',
+        mode: 'closed',
+      });
+    });
+
+    it('HITL-gated forbid with no matching policy writes a hitl-gated entry', async () => {
+      const handler = await loadPlugin({ mode: 'closed', hitl: IRRELEVANT_POLICY });
+      await callHook(handler, 'delete_file', { path: '/tmp/x' });
+      const gated = auditEntries.filter(
+        (e) => e['type'] === 'policy' && e['stage'] === 'hitl-gated',
+      );
+      expect(gated).toHaveLength(1);
+      expect(gated[0]).toMatchObject({
+        type: 'policy',
+        effect: 'forbid',
+        stage: 'hitl-gated',
+        priority: 90,
+        actionClass: 'filesystem.delete',
+      });
+    });
+
+    it('HITL-gated forbid RELEASED by approval writes no policy entry (HITL log takes over)', async () => {
+      const handler = await loadPlugin({
+        mode: 'closed',
+        hitl: AUTO_APPROVE_DELETE_POLICY,
+      });
+      const result = await callHook(handler, 'delete_file', { path: '/tmp/x' });
+      expect(result?.block).not.toBe(true);
+      // The HITL approval path should NOT synthesize a policy entry for the
+      // released forbid — it was released, not upheld.
+      const policyEntries = auditEntries.filter((e) => e['type'] === 'policy');
+      expect(policyEntries).toHaveLength(0);
+    });
+
+    it('successful permit (no block path taken) writes no policy entry', async () => {
+      const handler = await loadPlugin({ mode: 'open' });
+      await callHook(handler, 'read_file', { path: '/tmp/x' });
+      const policyEntries = auditEntries.filter((e) => e['type'] === 'policy');
+      expect(policyEntries).toHaveLength(0);
+    });
+
+    it('audit entry contains the normalized action_class even when the host uses a bare-verb alias', async () => {
+      const handler = await loadPlugin({ mode: 'closed' });
+      await callHook(handler, 'exec', { command: 'rm /tmp/x' });
+      const entries = auditEntries.filter((e) => e['type'] === 'policy');
+      expect(entries[0]).toMatchObject({
+        actionClass: 'filesystem.delete',
+        toolName: 'exec',
+      });
     });
   });
 

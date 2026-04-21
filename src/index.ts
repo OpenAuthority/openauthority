@@ -125,7 +125,7 @@ export type {
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
 import { JsonlAuditLogger } from "./audit.js";
-import type { HitlDecisionEntry } from "./audit.js";
+import type { HitlDecisionEntry, PolicyDecisionEntry } from "./audit.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules, { OPEN_MODE_RULES } from "./policy/rules.js";
@@ -686,6 +686,45 @@ async function resolveHitlDecision(
   return;
 }
 
+/**
+ * Formats a `Rule` for a human-readable identifier used in logs and audit
+ * entries. Prefers the semantic `action_class`, falls back to
+ * `resource:match`, and returns `'<default>'` when neither is set (implicit
+ * mode-default decisions carry no matched rule).
+ */
+function formatRuleTag(rule: { action_class?: string; resource?: string; match?: string | RegExp } | undefined): string {
+  if (rule === undefined) return '<default>';
+  if (rule.action_class !== undefined) return `action:${rule.action_class}`;
+  const res = rule.resource ?? '?';
+  const m = rule.match instanceof RegExp ? rule.match.source : (rule.match ?? '*');
+  return `${res}:${m}`;
+}
+
+/**
+ * Append a structured policy decision to the JSONL audit log.
+ *
+ * Records every *block* path produced by `beforeToolCallHandler`: Stage 1
+ * trust-gate rejections, Cedar unconditional forbids, JSON-rule forbids,
+ * and HITL-gated forbids upheld because no HITL policy matched (or HITL
+ * was not configured). HITL approval/denial outcomes are written
+ * separately by {@link logHitlDecision} so each stage owns its own audit
+ * shape — the two entry types carry distinct `type` markers to make
+ * post-mortem filtering straightforward.
+ *
+ * Permits are intentionally not logged: on most hosts the vast majority
+ * of tool calls are permits and writing every one would make the audit
+ * log unusable. Operators who want a permit trail can wire their own
+ * logging via a custom rule condition or by tailing stdout.
+ */
+async function logPolicyDecision(entry: Omit<PolicyDecisionEntry, 'ts' | 'type'>): Promise<void> {
+  if (!hitlAuditLogger) return;
+  await hitlAuditLogger.log({
+    ts: new Date().toISOString(),
+    type: 'policy',
+    ...entry,
+  });
+}
+
 /** Log a HITL decision to the JSONL audit file. */
 async function logHitlDecision(
   decision: HitlDecisionEntry['decision'],
@@ -798,13 +837,34 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     '',
   );
 
+  // Common audit-entry scaffolding — every block path fills these fields in
+  // addition to its stage-specific details.
+  const auditBase = {
+    toolName,
+    actionClass: normalizedAction.action_class,
+    agentId: identity.auditAgentId,
+    channel: identity.auditChannel,
+    verified: identity.verified,
+    mode: MODE,
+  } as const;
+
   // ── Stage 1: trust level gate ─────────────────────────────────────────────
   // Untrusted sources (external content: web, file, email, etc.) are blocked
   // from triggering high/critical-risk actions.
   if (sourceTrustLevel === 'untrusted' && (normalizedAction.risk === 'high' || normalizedAction.risk === 'critical')) {
+    const blockReason = 'untrusted_source_high_risk';
     console.log(`[clawthority] │ DECISION: ✕ BLOCKED (stage1/untrusted_source_high_risk) — actionClass=${normalizedAction.action_class} risk=${normalizedAction.risk}`);
     console.log(`[clawthority] └──────────────────────────────────────────────────────`);
-    return { block: true, blockReason: 'untrusted_source_high_risk' };
+    await logPolicyDecision({
+      effect: 'forbid',
+      stage: 'stage1-trust',
+      resource: 'tool',
+      match: toolName,
+      reason: blockReason,
+      rule: `trust:${sourceTrustLevel}+${normalizedAction.risk}`,
+      ...auditBase,
+    });
+    return { block: true, blockReason };
   }
 
   // Rules with priority < UNCONDITIONAL_FORBID_PRIORITY are HITL-gated:
@@ -814,6 +874,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   // resolve the final decision after running the HITL stage.
   let pendingHitlGatedBlockReason: string | null = null;
   let pendingHitlGatedSource: 'cedar' | 'json-rules' | null = null;
+  let pendingHitlGatedRule: Rule | undefined;
 
   // ── 1. Cedar engine (TypeScript rules, hot-reloaded) ──────────────────────
   // Queries by the normalised action_class so the action_class-based rules
@@ -839,13 +900,26 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     coverageMap.record('tool', toolName, covState, decision.matchedRule);
     if (decision.effect === "forbid") {
       const blockReason = decision.reason ?? "Tool call denied by Cedar policy";
+      const priority = decision.matchedRule?.priority;
+      const ruleTag = formatRuleTag(decision.matchedRule);
       if (isHitlGatedForbid(decision.matchedRule)) {
-        console.log(`[clawthority] │ [cedar] ⏸ HITL-gated forbid (priority=${decision.matchedRule?.priority}) — will defer to HITL policy`);
+        console.log(`[clawthority] │ [cedar] ⏸ HITL-gated forbid (priority=${priority} rule=${ruleTag}) — will defer to HITL policy`);
         pendingHitlGatedBlockReason = blockReason;
         pendingHitlGatedSource = 'cedar';
+        pendingHitlGatedRule = decision.matchedRule;
       } else {
-        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (cedar/${decision.effect}) — ${blockReason}`);
+        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (cedar/${decision.effect} priority=${priority ?? '?'} rule=${ruleTag}) — ${blockReason}`);
         console.log(`[clawthority] └──────────────────────────────────────────────────────`);
+        await logPolicyDecision({
+          effect: 'forbid',
+          stage: 'cedar',
+          resource: 'tool',
+          match: toolName,
+          reason: blockReason,
+          rule: ruleTag,
+          ...(priority !== undefined && { priority }),
+          ...auditBase,
+        });
         return { block: true, blockReason };
       }
     } else {
@@ -854,6 +928,15 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   } catch (err) {
     console.error(`[clawthority] │ [cedar] ✕ ERROR — fail closed`, err);
     console.log(`[clawthority] └──────────────────────────────────────────────────────`);
+    await logPolicyDecision({
+      effect: 'forbid',
+      stage: 'cedar',
+      resource: 'tool',
+      match: toolName,
+      reason: 'Cedar policy evaluation error — fail closed',
+      rule: '<error>',
+      ...auditBase,
+    });
     return { block: true, blockReason: "Cedar policy evaluation error — fail closed" };
   }
 
@@ -865,6 +948,8 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
       if (jsonDecision.matchedRule?.reason) console.log(`[clawthority] │ [json-rules] reason: ${jsonDecision.matchedRule.reason}`);
       if (jsonDecision.effect === "forbid") {
         const blockReason = jsonDecision.reason ?? "Tool call denied by JSON rule";
+        const priority = jsonDecision.matchedRule?.priority;
+        const ruleTag = formatRuleTag(jsonDecision.matchedRule);
         if (isHitlGatedForbid(jsonDecision.matchedRule)) {
           // A HITL-gated Cedar forbid seen earlier already staked a claim —
           // keep its reason so the most specific / first-matched rule wins
@@ -872,11 +957,22 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
           if (pendingHitlGatedBlockReason === null) {
             pendingHitlGatedBlockReason = blockReason;
             pendingHitlGatedSource = 'json-rules';
+            pendingHitlGatedRule = jsonDecision.matchedRule;
           }
-          console.log(`[clawthority] │ [json-rules] ⏸ HITL-gated forbid (priority=${jsonDecision.matchedRule?.priority}) — will defer to HITL policy`);
+          console.log(`[clawthority] │ [json-rules] ⏸ HITL-gated forbid (priority=${priority} rule=${ruleTag}) — will defer to HITL policy`);
         } else {
-          console.log(`[clawthority] │ DECISION: ✕ BLOCKED (json-rules/${jsonDecision.effect}) — ${blockReason}`);
+          console.log(`[clawthority] │ DECISION: ✕ BLOCKED (json-rules/${jsonDecision.effect} priority=${priority ?? '?'} rule=${ruleTag}) — ${blockReason}`);
           console.log(`[clawthority] └──────────────────────────────────────────────────────`);
+          await logPolicyDecision({
+            effect: 'forbid',
+            stage: 'json-rules',
+            resource: 'tool',
+            match: toolName,
+            reason: blockReason,
+            rule: ruleTag,
+            ...(priority !== undefined && { priority }),
+            ...auditBase,
+          });
           return { block: true, blockReason };
         }
       } else {
@@ -885,6 +981,15 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     } catch (err) {
       console.error(`[clawthority] │ [json-rules] ✕ ERROR — fail closed`, err);
       console.log(`[clawthority] └──────────────────────────────────────────────────────`);
+      await logPolicyDecision({
+        effect: 'forbid',
+        stage: 'json-rules',
+        resource: 'tool',
+        match: toolName,
+        reason: 'JSON rule evaluation error — fail closed',
+        rule: '<error>',
+        ...auditBase,
+      });
       return { block: true, blockReason: "JSON rule evaluation error — fail closed" };
     }
   }
@@ -909,8 +1014,20 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
         if (hitlChannelResult) return hitlChannelResult;
         // Approved: fall through to ALLOWED below. The HITL-gated forbid is released.
       } else {
-        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (${pendingHitlGatedSource}/forbid; no HITL policy matches) — ${pendingHitlGatedBlockReason}`);
+        const ruleTag = formatRuleTag(pendingHitlGatedRule);
+        const priority = pendingHitlGatedRule?.priority;
+        console.log(`[clawthority] │ DECISION: ✕ BLOCKED (${pendingHitlGatedSource}/forbid priority=${priority ?? '?'} rule=${ruleTag}; no HITL policy matches) — ${pendingHitlGatedBlockReason}`);
         console.log(`[clawthority] └──────────────────────────────────────────────────────`);
+        await logPolicyDecision({
+          effect: 'forbid',
+          stage: 'hitl-gated',
+          resource: 'tool',
+          match: toolName,
+          reason: pendingHitlGatedBlockReason,
+          rule: ruleTag,
+          ...(priority !== undefined && { priority }),
+          ...auditBase,
+        });
         return { block: true, blockReason: pendingHitlGatedBlockReason };
       }
     } else if (hitlResult.requiresApproval && hitlResult.matchedPolicy) {
@@ -924,6 +1041,15 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   } catch (err) {
     console.error(`[clawthority] │ [hitl] ✕ ERROR — fail closed`, err);
     console.log(`[clawthority] └──────────────────────────────────────────────────────`);
+    await logPolicyDecision({
+      effect: 'forbid',
+      stage: 'hitl-gated',
+      resource: 'tool',
+      match: toolName,
+      reason: 'HITL evaluation error — fail closed',
+      rule: '<error>',
+      ...auditBase,
+    });
     return { block: true, blockReason: 'HITL evaluation error — fail closed' };
   }
 
@@ -1163,6 +1289,16 @@ const plugin: OpenclawPlugin = {
     }
     console.log("└──────────────────────────────────────────────────────────────┘");
 
+    // ── Audit logger — wire up before any stage so policy decisions land ────
+    // The logger backs both HITL events (logHitlDecision) and structured
+    // policy decisions (logPolicyDecision). Initialising it unconditionally,
+    // before HITL loading, ensures block entries are captured even when
+    // there is no hitl-policy.yaml in play.
+    const auditModuleDir = dirname(fileURLToPath(import.meta.url));
+    const auditPluginRoot = resolve(auditModuleDir, "..");
+    const auditLogPath = resolve(auditPluginRoot, "data", "audit.jsonl");
+    hitlAuditLogger = new JsonlAuditLogger({ logFile: auditLogPath });
+
     // ── HITL policy loading + Telegram listener ─────────────────────────────
     try {
       const moduleDir = dirname(fileURLToPath(import.meta.url));
@@ -1171,10 +1307,6 @@ const plugin: OpenclawPlugin = {
 
       const hitlConfig = await parseHitlPolicyFile(hitlPolicyPath);
       hitlConfigRef.current = hitlConfig;
-
-      // Initialise HITL audit logger (same data/ directory as other audit logs)
-      const auditLogPath = resolve(pluginRoot, "data", "audit.jsonl");
-      hitlAuditLogger = new JsonlAuditLogger({ logFile: auditLogPath });
 
       // Start hot-reload watcher
       hitlWatcher = startHitlPolicyWatcher(hitlPolicyPath, hitlConfigRef as { current: HitlPolicyConfig });
