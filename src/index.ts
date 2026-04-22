@@ -145,7 +145,7 @@ import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUILD_VERSION, BUILD_COMMIT, BUILD_DIRTY, BUILD_AT } from "./build-info.js";
-import { normalize_action, sortedJsonStringify } from "./enforcement/normalize.js";
+import { normalize_action, sortedJsonStringify, getRegistryEntry } from "./enforcement/normalize.js";
 import { buildEnvelope } from "./envelope.js";
 import { defaultAgentIdentityRegistry } from "./identity.js";
 import { BudgetTracker, createBudgetTracker } from "./budget/tracker.js";
@@ -856,6 +856,23 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     ? (params as Record<string, unknown>)
     : {};
   const sourceTrustLevel = determineSourceTrustLevel(source);
+
+  // ── 0a. Tool registry gate — pre-normalization check ─────────────────────
+  // Check whether the tool is present in the @openclaw/action-registry alias
+  // index before normalization. Tools not found in the index, and registered
+  // entries that lack a valid action_class, are classified as
+  // unknown_sensitive_action by normalize_action (fail-closed). A warning is
+  // emitted in both cases so operators can identify unrecognised tools early.
+  const preRegistryEntry = getRegistryEntry(toolName);
+  const toolIsRegistered =
+    !!preRegistryEntry.action_class &&
+    preRegistryEntry.action_class !== 'unknown_sensitive_action';
+  if (!toolIsRegistered) {
+    console.warn(
+      `[clawthority] │ [registry] ⚠ tool="${toolName}" is not registered in the action registry — will be classified as unknown_sensitive_action`,
+    );
+  }
+
   const normalizedAction = normalize_action(toolName, normalizedParams);
   console.log(`[clawthority] │ [trust] source=${source ?? "undefined"} → trustLevel=${sourceTrustLevel}  actionClass=${normalizedAction.action_class}  risk=${normalizedAction.risk}`);
 

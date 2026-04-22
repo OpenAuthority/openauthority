@@ -339,4 +339,36 @@ describe('beforeToolCallHandler — unit coverage', () => {
     expect(result?.block).toBe(true);
     expect(result?.blockReason).toMatch(/credential/i);
   });
+
+  // ── Tool registry gate — pre-normalization check ──────────────────────────
+
+  it('emits a registry warn for an unregistered tool and classifies it as unknown_sensitive_action', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const handler = await loadPlugin({ mode: 'open' });
+      await call(handler, 'totally_unknown_tool_xyz', {});
+      const registryWarns = warnSpy.mock.calls.filter(
+        (args) => typeof args[0] === 'string' && (args[0] as string).includes('[registry]'),
+      );
+      expect(registryWarns).toHaveLength(1);
+      expect(registryWarns[0]![0]).toContain('totally_unknown_tool_xyz');
+      expect(registryWarns[0]![0]).toContain('unknown_sensitive_action');
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
+
+  it('does not emit a registry warn for a registered tool', async () => {
+    const warnSpy = vi.spyOn(console, 'warn').mockImplementation(() => undefined);
+    try {
+      const handler = await loadPlugin({ mode: 'open' });
+      await call(handler, 'read_file', { path: '/tmp/notes.txt' });
+      const registryWarns = warnSpy.mock.calls.filter(
+        (args) => typeof args[0] === 'string' && (args[0] as string).includes('[registry]'),
+      );
+      expect(registryWarns).toHaveLength(0);
+    } finally {
+      warnSpy.mockRestore();
+    }
+  });
 });
