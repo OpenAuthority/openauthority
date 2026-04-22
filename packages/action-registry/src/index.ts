@@ -99,6 +99,9 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'view_file',
       'open_file',
       'get_file_contents',
+      'find_files',
+      'find_file',
+      'search_files',
     ],
   },
   {
