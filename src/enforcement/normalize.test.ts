@@ -55,7 +55,7 @@ describe('normalizeActionClass', () => {
 });
 
 // ---------------------------------------------------------------------------
-// All 25 action classes resolve from at least one alias
+// All 27 action classes resolve from at least one alias
 // ---------------------------------------------------------------------------
 
 describe('registry coverage — each action class resolves from at least one alias', () => {
@@ -82,6 +82,8 @@ describe('registry coverage — each action class resolves from at least one ali
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
     ['install_package',  'package.install'],
+    ['npm_run_script',   'package.run'],
+    ['pip_list',         'package.read'],
     ['run_compiler',     'build.compile'],
     ['run_tests',        'build.test'],
     ['run_linter',       'build.lint'],
@@ -95,6 +97,112 @@ describe('registry coverage — each action class resolves from at least one ali
 
   it('unknown tool resolves to unknown_sensitive_action', () => {
     expect(normalizeActionClass('__not_a_real_tool__')).toBe('unknown_sensitive_action');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// package action classes — aliases, risk, HITL, target extraction
+// ---------------------------------------------------------------------------
+
+describe('package.install aliases', () => {
+  it('npm_install → package.install with medium risk and per_request HITL', () => {
+    const result = normalize_action('npm_install', { package_name: 'lodash' });
+    expect(result.action_class).toBe('package.install');
+    expect(result.risk).toBe('medium');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('pip_install → package.install', () => {
+    const result = normalize_action('pip_install', { package_name: 'requests' });
+    expect(result.action_class).toBe('package.install');
+  });
+
+  it('extracts package_name as target', () => {
+    const result = normalize_action('npm_install', { package_name: 'express' });
+    expect(result.target).toBe('express');
+  });
+
+  it('falls back to package param when package_name is absent', () => {
+    const result = normalize_action('pip_install', { package: 'numpy' });
+    expect(result.target).toBe('numpy');
+  });
+});
+
+describe('package.run aliases', () => {
+  it('npm_run_script → package.run with medium risk and per_request HITL', () => {
+    const result = normalize_action('npm_run_script', { script: 'build' });
+    expect(result.action_class).toBe('package.run');
+    expect(result.risk).toBe('medium');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('npm_run → package.run', () => {
+    const result = normalize_action('npm_run', { script: 'test' });
+    expect(result.action_class).toBe('package.run');
+  });
+
+  it('yarn_run → package.run', () => {
+    const result = normalize_action('yarn_run', { script: 'lint' });
+    expect(result.action_class).toBe('package.run');
+  });
+
+  it('pnpm_run → package.run', () => {
+    const result = normalize_action('pnpm_run', { script: 'dev' });
+    expect(result.action_class).toBe('package.run');
+  });
+
+  it('run_script → package.run', () => {
+    const result = normalize_action('run_script', { script: 'deploy' });
+    expect(result.action_class).toBe('package.run');
+  });
+
+  it('extracts script param as target', () => {
+    const result = normalize_action('npm_run_script', { script: 'build' });
+    expect(result.target).toBe('build');
+  });
+
+  it('falls back to script_name param when script is absent', () => {
+    const result = normalize_action('npm_run_script', { script_name: 'start' });
+    expect(result.target).toBe('start');
+  });
+
+  it('falls back to name param when script and script_name are absent', () => {
+    const result = normalize_action('npm_run_script', { name: 'watch' });
+    expect(result.target).toBe('watch');
+  });
+});
+
+describe('package.read aliases', () => {
+  it('pip_list → package.read with low risk and no HITL', () => {
+    const result = normalize_action('pip_list', {});
+    expect(result.action_class).toBe('package.read');
+    expect(result.risk).toBe('low');
+    expect(result.hitl_mode).toBe('none');
+  });
+
+  it('pip_freeze → package.read', () => {
+    const result = normalize_action('pip_freeze', {});
+    expect(result.action_class).toBe('package.read');
+  });
+
+  it('npm_list → package.read', () => {
+    const result = normalize_action('npm_list', {});
+    expect(result.action_class).toBe('package.read');
+  });
+
+  it('list_packages → package.read', () => {
+    const result = normalize_action('list_packages', {});
+    expect(result.action_class).toBe('package.read');
+  });
+
+  it('extracts package_name as target when provided', () => {
+    const result = normalize_action('pip_list', { package_name: 'django' });
+    expect(result.target).toBe('django');
+  });
+
+  it('returns empty target when no package filter is specified', () => {
+    const result = normalize_action('pip_list', {});
+    expect(result.target).toBe('');
   });
 });
 

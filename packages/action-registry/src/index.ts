@@ -70,6 +70,8 @@ export const ActionClass = {
   VcsWrite: 'vcs.write',
   VcsRemote: 'vcs.remote',
   PackageInstall: 'package.install',
+  PackageRun: 'package.run',
+  PackageRead: 'package.read',
   BuildCompile: 'build.compile',
   BuildTest: 'build.test',
   BuildLint: 'build.lint',
@@ -79,7 +81,7 @@ export const ActionClass = {
 export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
 
 // ---------------------------------------------------------------------------
-// Registry — 26 entries, aliases stored lowercase
+// Registry — 28 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 export const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -423,6 +425,30 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'apt_install',
       'brew_install',
       'add_package',
+    ],
+  },
+  {
+    action_class: ActionClass.PackageRun,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'npm_run_script',
+      'npm_run',
+      'yarn_run',
+      'pnpm_run',
+      'run_script',
+    ],
+  },
+  {
+    action_class: ActionClass.PackageRead,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'pip_list',
+      'pip3_list',
+      'pip_freeze',
+      'npm_list',
+      'list_packages',
     ],
   },
   {

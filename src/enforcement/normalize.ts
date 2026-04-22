@@ -307,6 +307,10 @@ const TARGET_KEYS_BY_CLASS: Readonly<Record<string, readonly string[]>> = {
   'vcs.remote':        ['repo_url', 'url', 'remote_url', 'remote'],
   // Package installation operations identify the target via `package_name`.
   'package.install':   ['package_name', 'package', 'name'],
+  // Package run operations identify the target script name.
+  'package.run':       ['script', 'script_name', 'name', 'package_name'],
+  // Package read operations optionally filter by `package_name`.
+  'package.read':      ['package_name', 'package', 'name'],
   // Build operations identify the target by working directory or specific file/target.
   'build.compile':     ['target', 'path', 'file_path', 'working_dir'],
   'build.test':        ['target', 'path', 'working_dir'],
