@@ -28,6 +28,7 @@ import { gitAddManifest } from '../tools/git_add/manifest.js';
 import { gitLogManifest } from '../tools/git_log/manifest.js';
 import { gitDiffManifest } from '../tools/git_diff/manifest.js';
 import { gitStatusManifest } from '../tools/git_status/manifest.js';
+import { gitMergeManifest } from '../tools/git_merge/manifest.js';
 import { editFileManifest } from '../tools/edit_file/manifest.js';
 import { readFileManifest } from '../tools/read_file/manifest.js';
 import { writeFileManifest } from '../tools/write_file/manifest.js';
@@ -408,6 +409,7 @@ describe('TC-SMV-Contract: first-party tool manifests validate against F-05 sche
     { name: 'gitLogManifest', manifest: gitLogManifest },
     { name: 'gitDiffManifest', manifest: gitDiffManifest },
     { name: 'gitStatusManifest', manifest: gitStatusManifest },
+    { name: 'gitMergeManifest', manifest: gitMergeManifest },
     { name: 'editFileManifest', manifest: editFileManifest },
     { name: 'readFileManifest', manifest: readFileManifest },
     { name: 'writeFileManifest', manifest: writeFileManifest },
