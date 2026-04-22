@@ -396,6 +396,10 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'git.checkout',
       'checkout_branch',
       'switch_branch',
+      'git_branch',
+      'git-branch',
+      'git.branch',
+      'create_branch',
     ],
   },
   {
