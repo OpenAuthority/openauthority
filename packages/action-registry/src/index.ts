@@ -135,6 +135,11 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'cp',
       'duplicate_file',
       'copy_file_to',
+      'move_file',
+      'mv',
+      'move',
+      'rename_file',
+      'rename',
     ],
   },
   {
