@@ -51,7 +51,7 @@ export interface NormalizedAction {
 }
 
 // ---------------------------------------------------------------------------
-// Registry — 22 entries, aliases stored lowercase
+// Registry — 25 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -390,6 +390,63 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
     ],
   },
   {
+    action_class: 'build.compile',
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'run_compiler',
+      'compile',
+      'build',
+      'npm_run_build',
+      'make',
+      'tsc',
+      'javac',
+      'gcc',
+      'cargo_build',
+      'go_build',
+      'mvn_compile',
+      'gradle_build',
+    ],
+  },
+  {
+    action_class: 'build.test',
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'run_tests',
+      'run_test',
+      'npm_test',
+      'npm_run_test',
+      'yarn_test',
+      'pytest',
+      'jest',
+      'vitest',
+      'mocha',
+      'go_test',
+      'cargo_test',
+      'mvn_test',
+      'gradle_test',
+    ],
+  },
+  {
+    action_class: 'build.lint',
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'run_linter',
+      'run_formatter',
+      'run_typecheck',
+      'eslint',
+      'prettier',
+      'pylint',
+      'flake8',
+      'mypy',
+      'cargo_clippy',
+      'golangci_lint',
+      'rubocop',
+    ],
+  },
+  {
     action_class: 'unknown_sensitive_action',
     default_risk: 'critical',
     default_hitl_mode: 'per_request',
@@ -666,6 +723,10 @@ const TARGET_KEYS_BY_CLASS: Readonly<Record<string, readonly string[]>> = {
   'vcs.remote':        ['repo_url', 'url', 'remote_url', 'remote'],
   // Package installation operations identify the target via `package_name`.
   'package.install':   ['package_name', 'package', 'name'],
+  // Build operations identify the target by working directory or specific file/target.
+  'build.compile':     ['target', 'path', 'file_path', 'working_dir'],
+  'build.test':        ['target', 'path', 'working_dir'],
+  'build.lint':        ['target', 'path', 'file_path', 'working_dir'],
 };
 
 function extractTarget(actionClass: string, params: Record<string, unknown>): string {

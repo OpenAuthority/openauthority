@@ -55,7 +55,7 @@ describe('normalizeActionClass', () => {
 });
 
 // ---------------------------------------------------------------------------
-// All 20 action classes resolve from at least one alias
+// All 23 action classes resolve from at least one alias
 // ---------------------------------------------------------------------------
 
 describe('registry coverage — each action class resolves from at least one alias', () => {
@@ -82,6 +82,9 @@ describe('registry coverage — each action class resolves from at least one ali
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
     ['install_package',  'package.install'],
+    ['run_compiler',     'build.compile'],
+    ['run_tests',        'build.test'],
+    ['run_linter',       'build.lint'],
   ];
 
   for (const [alias, expectedClass] of cases) {
@@ -1547,6 +1550,111 @@ describe('package.install — alias coverage', () => {
       expect(normalizeActionClass(alias)).toBe('package.install');
     });
   }
+});
+
+describe('build.compile — alias coverage', () => {
+  const BUILD_COMPILE_ALIASES = [
+    'run_compiler', 'compile', 'build', 'npm_run_build', 'make',
+    'tsc', 'javac', 'gcc', 'cargo_build', 'go_build', 'mvn_compile', 'gradle_build',
+  ] as const;
+
+  for (const alias of BUILD_COMPILE_ALIASES) {
+    it(`"${alias}" resolves to build.compile`, () => {
+      expect(normalizeActionClass(alias)).toBe('build.compile');
+    });
+  }
+
+  it('build.compile has medium risk and per_request HITL', () => {
+    const entry = getRegistryEntry('run_compiler');
+    expect(entry.default_risk).toBe('medium');
+    expect(entry.default_hitl_mode).toBe('per_request');
+  });
+});
+
+describe('build.test — alias coverage', () => {
+  const BUILD_TEST_ALIASES = [
+    'run_tests', 'run_test', 'npm_test', 'npm_run_test', 'yarn_test',
+    'pytest', 'jest', 'vitest', 'mocha', 'go_test', 'cargo_test', 'mvn_test', 'gradle_test',
+  ] as const;
+
+  for (const alias of BUILD_TEST_ALIASES) {
+    it(`"${alias}" resolves to build.test`, () => {
+      expect(normalizeActionClass(alias)).toBe('build.test');
+    });
+  }
+
+  it('build.test has low risk and none HITL', () => {
+    const entry = getRegistryEntry('run_tests');
+    expect(entry.default_risk).toBe('low');
+    expect(entry.default_hitl_mode).toBe('none');
+  });
+});
+
+describe('build.lint — alias coverage', () => {
+  const BUILD_LINT_ALIASES = [
+    'run_linter', 'run_formatter', 'run_typecheck',
+    'eslint', 'prettier', 'pylint', 'flake8', 'mypy',
+    'cargo_clippy', 'golangci_lint', 'rubocop',
+  ] as const;
+
+  for (const alias of BUILD_LINT_ALIASES) {
+    it(`"${alias}" resolves to build.lint`, () => {
+      expect(normalizeActionClass(alias)).toBe('build.lint');
+    });
+  }
+
+  it('build.lint has low risk and none HITL', () => {
+    const entry = getRegistryEntry('run_linter');
+    expect(entry.default_risk).toBe('low');
+    expect(entry.default_hitl_mode).toBe('none');
+  });
+});
+
+describe('build action classes — target extraction', () => {
+  it('build.compile extracts target from target param', () => {
+    const result = normalize_action('run_compiler', { target: 'dist/index.js' });
+    expect(result.target).toBe('dist/index.js');
+  });
+
+  it('build.compile falls back to path when target is absent', () => {
+    const result = normalize_action('run_compiler', { path: '/workspace/project' });
+    expect(result.target).toBe('/workspace/project');
+  });
+
+  it('build.compile falls back to file_path when target and path are absent', () => {
+    const result = normalize_action('run_compiler', { file_path: '/src/main.ts' });
+    expect(result.target).toBe('/src/main.ts');
+  });
+
+  it('build.compile returns empty string when no target params provided', () => {
+    const result = normalize_action('run_compiler', {});
+    expect(result.target).toBe('');
+  });
+
+  it('build.test extracts target from target param', () => {
+    const result = normalize_action('run_tests', { target: 'src/auth' });
+    expect(result.target).toBe('src/auth');
+  });
+
+  it('build.test falls back to path when target is absent', () => {
+    const result = normalize_action('run_tests', { path: '/workspace' });
+    expect(result.target).toBe('/workspace');
+  });
+
+  it('build.lint extracts target from target param', () => {
+    const result = normalize_action('run_linter', { target: 'src/' });
+    expect(result.target).toBe('src/');
+  });
+
+  it('build.lint falls back to path when target is absent', () => {
+    const result = normalize_action('run_linter', { path: '/workspace/project' });
+    expect(result.target).toBe('/workspace/project');
+  });
+
+  it('build.lint falls back to file_path when target and path are absent', () => {
+    const result = normalize_action('run_formatter', { file_path: '/src/utils.ts' });
+    expect(result.target).toBe('/src/utils.ts');
+  });
 });
 
 // Satisfy TypeScript — type-only imports used in stub file
