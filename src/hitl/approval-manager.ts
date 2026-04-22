@@ -220,6 +220,35 @@ export class ApprovalManager {
     return this.pending.size;
   }
 
+  /**
+   * Returns a snapshot of all pending approvals, sorted oldest-first.
+   *
+   * Omits internal fields (resolve, timer) so the result is safe to
+   * serialise and pass to UI layers.
+   */
+  listPending(): Array<Omit<PendingApproval, 'resolve' | 'timer'>> {
+    return [...this.pending.values()]
+      .map(({ resolve: _r, timer: _t, ...rest }) => rest)
+      .sort((a, b) => a.createdAt - b.createdAt);
+  }
+
+  /**
+   * Resolves multiple pending approval requests with the same decision.
+   *
+   * Skips tokens that are unknown, already consumed, or have a binding
+   * mismatch (same semantics as `resolveApproval`). Returns the count
+   * of tokens that were successfully resolved.
+   */
+  batchResolve(tokens: readonly string[], decision: 'approved' | 'denied'): number {
+    let count = 0;
+    for (const token of tokens) {
+      if (this.resolveApproval(token, decision)) {
+        count++;
+      }
+    }
+    return count;
+  }
+
   /** Clears all pending approvals, resolving each as 'expired'. */
   shutdown(): void {
     for (const entry of this.pending.values()) {

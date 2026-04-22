@@ -1,15 +1,18 @@
 /**
- * Demo application for RuleDeleteModal.
+ * Demo application for RuleDeleteModal and BatchApprovalPanel.
  *
  * Shows a simple rule list where each rule has a Delete button that opens
  * the RuleDeleteModal with sample audit hits. Demonstrates all field types:
  * action-class rule, intent-group rule, resource rule, and a rule with
  * target_match and target_in.
+ *
+ * Also demonstrates the BatchApprovalPanel for bulk HITL approval decisions.
  */
 
-import { useState } from 'react';
+import { useCallback, useState } from 'react';
+import { BatchApprovalPanel } from './components/BatchApprovalPanel.js';
 import { RuleDeleteModal } from './components/RuleDeleteModal.js';
-import type { AuditHit, Rule } from './types.js';
+import type { AuditHit, BatchAuditEntry, BatchingConfig, PendingApprovalItem, Rule } from './types.js';
 
 // ─── Demo data ────────────────────────────────────────────────────────────────
 
@@ -156,11 +159,96 @@ function RuleRow({ demoRule, onDeleteClick }: RuleRowProps) {
   );
 }
 
+// ─── Demo data: batch approvals ───────────────────────────────────────────────
+
+const now = Date.now();
+
+const DEMO_PENDING_ITEMS: PendingApprovalItem[] = [
+  {
+    token: 'tok-001',
+    toolName: 'bash',
+    agentId: 'agent-alpha',
+    channelId: 'telegram',
+    policyName: 'require-hitl-fs-delete',
+    fallback: 'deny',
+    createdAt: now - 30_000,
+    timeoutMs: 120_000,
+    action_class: 'filesystem.delete',
+    target: '/var/data/report-2024.csv',
+    summary: 'Delete quarterly report CSV',
+  },
+  {
+    token: 'tok-002',
+    toolName: 'bash',
+    agentId: 'agent-beta',
+    channelId: 'slack',
+    policyName: 'require-hitl-fs-delete',
+    fallback: 'deny',
+    createdAt: now - 15_000,
+    timeoutMs: 120_000,
+    action_class: 'filesystem.delete',
+    target: '/var/data/backup-2024-q3.tar.gz',
+    summary: 'Remove Q3 backup archive',
+  },
+  {
+    token: 'tok-003',
+    toolName: 'send_email',
+    agentId: 'agent-alpha',
+    channelId: 'telegram',
+    policyName: 'require-hitl-email',
+    fallback: 'deny',
+    createdAt: now - 60_000,
+    timeoutMs: 300_000,
+    action_class: 'email.send',
+    target: 'cto@example.com',
+    summary: 'Send incident report to CTO',
+    session_id: 'sess-abc123',
+  },
+  {
+    token: 'tok-004',
+    toolName: 'http_request',
+    agentId: 'agent-gamma',
+    channelId: 'telegram',
+    policyName: 'require-hitl-external',
+    fallback: 'auto-approve',
+    createdAt: now - 5_000,
+    timeoutMs: 60_000,
+    action_class: 'web.request',
+    target: 'https://api.payments.example.com/charge',
+    summary: 'POST payment charge request',
+  },
+  {
+    token: 'tok-005',
+    toolName: 'bash',
+    agentId: 'agent-beta',
+    channelId: 'slack',
+    policyName: 'require-hitl-fs-delete',
+    fallback: 'deny',
+    createdAt: now - 90_000,
+    timeoutMs: 120_000,
+    action_class: 'filesystem.delete',
+    target: '/tmp/scratch-files/*',
+    summary: 'Clean up scratch directory',
+    session_id: 'sess-def456',
+  },
+];
+
+const DEFAULT_BATCHING_CONFIG: BatchingConfig = {
+  groupBy: 'action_class',
+  autoGroupThreshold: 2,
+  sessionScope: null,
+  maxBatchSize: 0,
+};
+
 // ─── App ──────────────────────────────────────────────────────────────────────
 
 export default function App() {
   const [rules, setRules] = useState<DemoRule[]>(DEMO_RULES);
   const [pendingDeleteId, setPendingDeleteId] = useState<string | null>(null);
+
+  const [pendingItems, setPendingItems] = useState<PendingApprovalItem[]>(DEMO_PENDING_ITEMS);
+  const [batchConfig, setBatchConfig] = useState<BatchingConfig>(DEFAULT_BATCHING_CONFIG);
+  const [auditLog, setAuditLog] = useState<BatchAuditEntry[]>([]);
 
   const pendingRule = rules.find((r) => r.id === pendingDeleteId) ?? null;
 
@@ -179,8 +267,91 @@ export default function App() {
     setPendingDeleteId(null);
   }
 
+  const handleApprove = useCallback(
+    (tokens: string[]) => {
+      const resolved = pendingItems.filter((i) => tokens.includes(i.token));
+      if (resolved.length === 0) return;
+
+      // Group by the configured dimension for the audit entry
+      const byKey = new Map<string, string[]>();
+      for (const item of resolved) {
+        let key: string;
+        switch (batchConfig.groupBy) {
+          case 'action_class':
+            key = item.action_class || '(no action class)';
+            break;
+          case 'agent_id':
+            key = item.agentId;
+            break;
+          case 'policy_name':
+            key = item.policyName;
+            break;
+        }
+        const g = byKey.get(key);
+        if (g !== undefined) {
+          g.push(item.token);
+        } else {
+          byKey.set(key, [item.token]);
+        }
+      }
+
+      const newEntries: BatchAuditEntry[] = [...byKey.entries()].map(([groupKey, tkns]) => ({
+        timestamp: new Date().toISOString(),
+        decision: 'approved',
+        count: tkns.length,
+        groupKey,
+        tokens: tkns,
+      }));
+
+      setPendingItems((prev) => prev.filter((i) => !tokens.includes(i.token)));
+      setAuditLog((prev) => [...prev, ...newEntries]);
+    },
+    [pendingItems, batchConfig.groupBy],
+  );
+
+  const handleDeny = useCallback(
+    (tokens: string[]) => {
+      const resolved = pendingItems.filter((i) => tokens.includes(i.token));
+      if (resolved.length === 0) return;
+
+      const byKey = new Map<string, string[]>();
+      for (const item of resolved) {
+        let key: string;
+        switch (batchConfig.groupBy) {
+          case 'action_class':
+            key = item.action_class || '(no action class)';
+            break;
+          case 'agent_id':
+            key = item.agentId;
+            break;
+          case 'policy_name':
+            key = item.policyName;
+            break;
+        }
+        const g = byKey.get(key);
+        if (g !== undefined) {
+          g.push(item.token);
+        } else {
+          byKey.set(key, [item.token]);
+        }
+      }
+
+      const newEntries: BatchAuditEntry[] = [...byKey.entries()].map(([groupKey, tkns]) => ({
+        timestamp: new Date().toISOString(),
+        decision: 'denied',
+        count: tkns.length,
+        groupKey,
+        tokens: tkns,
+      }));
+
+      setPendingItems((prev) => prev.filter((i) => !tokens.includes(i.token)));
+      setAuditLog((prev) => [...prev, ...newEntries]);
+    },
+    [pendingItems, batchConfig.groupBy],
+  );
+
   return (
-    <div style={{ padding: '2rem', maxWidth: '900px', margin: '0 auto' }}>
+    <div style={{ padding: '2rem', maxWidth: '960px', margin: '0 auto' }}>
       <h1 style={{ fontSize: '1.25rem', fontWeight: 600, marginBottom: '0.25rem' }}>
         Clawthority — Policy Rules
       </h1>
@@ -237,6 +408,132 @@ export default function App() {
           onCancel={handleCancel}
         />
       )}
+
+      {/* ── Batch Approval Panel ──────────────────────────────────────────── */}
+      <div style={{ marginTop: '2.5rem' }}>
+        <h2 style={{ fontSize: '1.125rem', fontWeight: 600, marginBottom: '0.25rem' }}>
+          Batch Approval Panel
+        </h2>
+        <p style={{ color: '#6b7280', fontSize: '0.875rem', marginBottom: '1rem' }}>
+          Bulk approve or deny pending HITL requests to reduce operator fatigue.
+        </p>
+
+        {/* Config controls */}
+        <div
+          style={{
+            display: 'flex',
+            gap: '1rem',
+            flexWrap: 'wrap',
+            marginBottom: '1rem',
+            padding: '0.75rem 1rem',
+            background: '#f9fafb',
+            border: '1px solid #e5e7eb',
+            borderRadius: '6px',
+            fontSize: '0.8125rem',
+            color: '#374151',
+            alignItems: 'center',
+          }}
+        >
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            Group by:
+            <select
+              value={batchConfig.groupBy}
+              onChange={(e) =>
+                setBatchConfig((c) => ({
+                  ...c,
+                  groupBy: e.target.value as BatchingConfig['groupBy'],
+                }))
+              }
+              style={{
+                padding: '0.25rem 0.5rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '0.8125rem',
+                background: '#fff',
+              }}
+            >
+              <option value="action_class">Action class</option>
+              <option value="agent_id">Agent ID</option>
+              <option value="policy_name">Policy name</option>
+            </select>
+          </label>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            Session scope:
+            <select
+              value={batchConfig.sessionScope ?? ''}
+              onChange={(e) =>
+                setBatchConfig((c) => ({
+                  ...c,
+                  sessionScope: e.target.value === '' ? null : e.target.value,
+                }))
+              }
+              style={{
+                padding: '0.25rem 0.5rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '0.8125rem',
+                background: '#fff',
+              }}
+            >
+              <option value="">All sessions</option>
+              <option value="sess-abc123">sess-abc123</option>
+              <option value="sess-def456">sess-def456</option>
+            </select>
+          </label>
+
+          <label style={{ display: 'flex', alignItems: 'center', gap: '0.375rem' }}>
+            Bulk-action threshold:
+            <input
+              type="number"
+              min={1}
+              max={20}
+              value={batchConfig.autoGroupThreshold}
+              onChange={(e) =>
+                setBatchConfig((c) => ({
+                  ...c,
+                  autoGroupThreshold: Math.max(1, Number(e.target.value)),
+                }))
+              }
+              style={{
+                width: '4rem',
+                padding: '0.25rem 0.5rem',
+                border: '1px solid #d1d5db',
+                borderRadius: '4px',
+                fontSize: '0.8125rem',
+                background: '#fff',
+              }}
+            />
+          </label>
+
+          <button
+            type="button"
+            onClick={() => {
+              setPendingItems(DEMO_PENDING_ITEMS.map((i) => ({ ...i, createdAt: Date.now() - (Date.now() - i.createdAt) })));
+              setAuditLog([]);
+            }}
+            style={{
+              padding: '0.3rem 0.75rem',
+              background: '#e5e7eb',
+              color: '#374151',
+              border: '1px solid #d1d5db',
+              borderRadius: '4px',
+              cursor: 'pointer',
+              fontSize: '0.8125rem',
+            }}
+          >
+            Reset demo
+          </button>
+        </div>
+
+        <BatchApprovalPanel
+          items={pendingItems}
+          config={batchConfig}
+          auditLog={auditLog}
+          onApprove={handleApprove}
+          onDeny={handleDeny}
+        />
+      </div>
     </div>
   );
 }
