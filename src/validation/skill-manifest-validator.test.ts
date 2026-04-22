@@ -18,6 +18,7 @@ import {
   type ToolManifest,
 } from './skill-manifest-validator.js';
 import { gitAddManifest } from '../tools/git_add/manifest.js';
+import { gitLogManifest } from '../tools/git_log/manifest.js';
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
@@ -170,6 +171,11 @@ describe('TC-SMV-04: a fully valid manifest passes', () => {
 describe('TC-SMV-Contract: first-party tool manifests validate against F-05 schema', () => {
   it('gitAddManifest validates against the F-05 schema', () => {
     const result = validateToolManifest(gitAddManifest);
+    expect(result.valid, JSON.stringify(result.errors, null, 2)).toBe(true);
+  });
+
+  it('gitLogManifest validates against the F-05 schema', () => {
+    const result = validateToolManifest(gitLogManifest);
     expect(result.valid, JSON.stringify(result.errors, null, 2)).toBe(true);
   });
 });

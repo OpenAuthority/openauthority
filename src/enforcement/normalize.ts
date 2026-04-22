@@ -323,6 +323,18 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
     intent_group: 'payment',
   },
   {
+    action_class: 'vcs.read',
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'git_log',
+      'git-log',
+      'git.log',
+      'log_commits',
+      'view_history',
+    ],
+  },
+  {
     action_class: 'vcs.write',
     default_risk: 'medium',
     default_hitl_mode: 'per_request',
