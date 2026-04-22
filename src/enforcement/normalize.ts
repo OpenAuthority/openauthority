@@ -327,6 +327,10 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
     default_risk: 'low',
     default_hitl_mode: 'none',
     aliases: [
+      'git_status',
+      'git-status',
+      'git.status',
+      'show_status',
       'git_log',
       'git-log',
       'git.log',
@@ -344,6 +348,10 @@ const REGISTRY: readonly ActionRegistryEntry[] = [
     default_risk: 'medium',
     default_hitl_mode: 'per_request',
     aliases: [
+      'git_commit',
+      'git-commit',
+      'git.commit',
+      'commit_changes',
       'git_add',
       'git-add',
       'git.add',
@@ -719,6 +727,10 @@ const TARGET_KEYS_BY_CLASS: Readonly<Record<string, readonly string[]>> = {
   'filesystem.write':  ['file_path', 'path', 'file', 'destination', 'url'],
   'filesystem.delete': ['file_path', 'path', 'file'],
   'filesystem.list':   ['file_path', 'path', 'file'],
+  // VCS read operations (status, log, diff) target a file path or branch/ref.
+  'vcs.read':          ['path', 'file_path', 'branch', 'ref', 'revision'],
+  // VCS write operations (stage, commit) target a file path or working directory.
+  'vcs.write':         ['path', 'file_path', 'working_dir'],
   // Remote VCS operations carry the target repository as `repo_url`.
   'vcs.remote':        ['repo_url', 'url', 'remote_url', 'remote'],
   // Package installation operations identify the target via `package_name`.

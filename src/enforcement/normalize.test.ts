@@ -55,7 +55,7 @@ describe('normalizeActionClass', () => {
 });
 
 // ---------------------------------------------------------------------------
-// All 23 action classes resolve from at least one alias
+// All 25 action classes resolve from at least one alias
 // ---------------------------------------------------------------------------
 
 describe('registry coverage — each action class resolves from at least one alias', () => {
@@ -1524,6 +1524,69 @@ describe('normalize_action — per-action-class typed target extraction: package
   });
 });
 
+describe('normalize_action — per-action-class typed target extraction: vcs.read', () => {
+  it('TC-TEX-25: extracts path for git_diff', () => {
+    const result = normalize_action('git_diff', { path: 'src/index.ts' });
+    expect(result.target).toBe('src/index.ts');
+    expect(result.action_class).toBe('vcs.read');
+  });
+
+  it('TC-TEX-26: extracts file_path for git_log when path is absent', () => {
+    const result = normalize_action('git_log', { file_path: 'src/utils.ts' });
+    expect(result.target).toBe('src/utils.ts');
+  });
+
+  it('TC-TEX-27: path takes priority over file_path for vcs.read', () => {
+    const result = normalize_action('git_diff', { path: 'preferred.ts', file_path: 'fallback.ts' });
+    expect(result.target).toBe('preferred.ts');
+  });
+
+  it('TC-TEX-28: extracts branch when path and file_path are absent', () => {
+    const result = normalize_action('git_log', { branch: 'main' });
+    expect(result.target).toBe('main');
+  });
+
+  it('TC-TEX-29: vcs.read has low risk and none HITL', () => {
+    const result = normalize_action('git_status', {});
+    expect(result.risk).toBe('low');
+    expect(result.hitl_mode).toBe('none');
+  });
+
+  it('TC-TEX-30: returns empty target when no recognised key is present for vcs.read', () => {
+    const result = normalize_action('git_status', { verbose: 'true' });
+    expect(result.target).toBe('');
+  });
+});
+
+describe('normalize_action — per-action-class typed target extraction: vcs.write', () => {
+  it('TC-TEX-31: extracts path for git_add', () => {
+    const result = normalize_action('git_add', { path: 'src/feature.ts' });
+    expect(result.target).toBe('src/feature.ts');
+    expect(result.action_class).toBe('vcs.write');
+  });
+
+  it('TC-TEX-32: extracts file_path for git_add when path is absent', () => {
+    const result = normalize_action('git_add', { file_path: 'src/index.ts' });
+    expect(result.target).toBe('src/index.ts');
+  });
+
+  it('TC-TEX-33: falls back to working_dir for git_commit', () => {
+    const result = normalize_action('git_commit', { working_dir: '/workspace/project' });
+    expect(result.target).toBe('/workspace/project');
+  });
+
+  it('TC-TEX-34: vcs.write has medium risk and per_request HITL', () => {
+    const result = normalize_action('git_commit', {});
+    expect(result.risk).toBe('medium');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('TC-TEX-35: returns empty target when no recognised key is present for vcs.write', () => {
+    const result = normalize_action('git_commit', { message: 'fix: bug' });
+    expect(result.target).toBe('');
+  });
+});
+
 describe('vcs.remote — alias coverage', () => {
   const VCS_REMOTE_ALIASES = [
     'git_clone', 'git-clone', 'git.clone', 'clone_repo',
@@ -1537,6 +1600,45 @@ describe('vcs.remote — alias coverage', () => {
       expect(normalizeActionClass(alias)).toBe('vcs.remote');
     });
   }
+});
+
+describe('vcs.read — alias coverage', () => {
+  const VCS_READ_ALIASES = [
+    'git_status', 'git-status', 'git.status', 'show_status',
+    'git_log', 'git-log', 'git.log', 'log_commits', 'view_history',
+    'git_diff', 'git-diff', 'git.diff', 'view_diff', 'show_diff',
+  ] as const;
+
+  for (const alias of VCS_READ_ALIASES) {
+    it(`"${alias}" resolves to vcs.read`, () => {
+      expect(normalizeActionClass(alias)).toBe('vcs.read');
+    });
+  }
+
+  it('vcs.read has low risk and none HITL', () => {
+    const entry = getRegistryEntry('git_status');
+    expect(entry.default_risk).toBe('low');
+    expect(entry.default_hitl_mode).toBe('none');
+  });
+});
+
+describe('vcs.write — alias coverage', () => {
+  const VCS_WRITE_ALIASES = [
+    'git_commit', 'git-commit', 'git.commit', 'commit_changes',
+    'git_add', 'git-add', 'git.add', 'stage_file', 'stage_files',
+  ] as const;
+
+  for (const alias of VCS_WRITE_ALIASES) {
+    it(`"${alias}" resolves to vcs.write`, () => {
+      expect(normalizeActionClass(alias)).toBe('vcs.write');
+    });
+  }
+
+  it('vcs.write has medium risk and per_request HITL', () => {
+    const entry = getRegistryEntry('git_commit');
+    expect(entry.default_risk).toBe('medium');
+    expect(entry.default_hitl_mode).toBe('per_request');
+  });
 });
 
 describe('package.install — alias coverage', () => {
