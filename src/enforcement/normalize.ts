@@ -724,7 +724,7 @@ const TARGET_PARAM_KEYS = [
 const TARGET_KEYS_BY_CLASS: Readonly<Record<string, readonly string[]>> = {
   // Filesystem classes: typed `file_path` field takes priority over generic `path`/`file`.
   'filesystem.read':   ['file_path', 'path', 'file'],
-  'filesystem.write':  ['file_path', 'path', 'file', 'destination', 'url'],
+  'filesystem.write':  ['file_path', 'path', 'file', 'destination', 'url', 'to', 'recipient', 'email'],
   'filesystem.delete': ['file_path', 'path', 'file'],
   'filesystem.list':   ['file_path', 'path', 'file'],
   // VCS read operations (status, log, diff) target a file path or branch/ref.
