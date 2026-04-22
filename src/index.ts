@@ -3,6 +3,7 @@ export { JsonlAuditLogger } from "./audit.js";
 export type {
   PolicyDecisionEntry,
   HitlDecisionEntry,
+  NormalizerUnclassifiedEntry,
   JsonlAuditLoggerOptions,
 } from "./audit.js";
 
@@ -125,7 +126,7 @@ export type {
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
 import { JsonlAuditLogger } from "./audit.js";
-import type { HitlDecisionEntry, PolicyDecisionEntry } from "./audit.js";
+import type { HitlDecisionEntry, NormalizerUnclassifiedEntry, PolicyDecisionEntry } from "./audit.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules, { OPEN_MODE_RULES } from "./policy/rules.js";
@@ -764,6 +765,19 @@ async function logPolicyDecision(entry: Omit<PolicyDecisionEntry, 'ts' | 'type'>
   });
 }
 
+/** Log a normalizer-unclassified event to the JSONL audit file. */
+async function logNormalizerUnclassified(
+  entry: Omit<NormalizerUnclassifiedEntry, 'ts' | 'type' | 'stage'>,
+): Promise<void> {
+  if (!hitlAuditLogger) return;
+  await hitlAuditLogger.log({
+    ts: new Date().toISOString(),
+    type: 'normalizer-unclassified',
+    stage: 'normalizer-unclassified',
+    ...entry,
+  } satisfies NormalizerUnclassifiedEntry);
+}
+
 /** Log a HITL decision to the JSONL audit file. */
 async function logHitlDecision(
   decision: HitlDecisionEntry['decision'],
@@ -871,6 +885,12 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     console.warn(
       `[clawthority] │ [registry] ⚠ tool="${toolName}" is not registered in the action registry — will be classified as unknown_sensitive_action`,
     );
+    await logNormalizerUnclassified({
+      toolName,
+      agentId: identity.auditAgentId,
+      channel: identity.auditChannel,
+      verified: identity.verified,
+    });
   }
 
   const normalizedAction = normalize_action(toolName, normalizedParams);
