@@ -216,7 +216,9 @@ export class RFCProcessor {
 
   constructor(options: RFCProcessorOptions = {}) {
     this.clock = options.clock ?? (() => new Date());
-    this.notify = options.notify;
+    if (options.notify !== undefined) {
+      this.notify = options.notify;
+    }
   }
 
   // ── Filing ─────────────────────────────────────────────────────────────────
@@ -304,7 +306,7 @@ export class RFCProcessor {
     this.appendAudit(rfc, {
       event: 'status_changed',
       detail: `Status changed from "${previous}" to "${status}"`,
-      actor,
+      ...(actor !== undefined ? { actor } : {}),
     });
 
     const notifType = isResolved(status) ? 'resolution' : 'status_update';

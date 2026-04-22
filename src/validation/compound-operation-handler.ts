@@ -158,7 +158,7 @@ export class CompoundOperationHandler implements EdgeCaseHandler {
     const errors: string[] = [];
 
     for (let i = 0; i < rawSteps.length; i++) {
-      const toolName = rawSteps[i].trim();
+      const toolName = rawSteps[i]!.trim();
 
       if (toolName === '') {
         errors.push(`Step ${i + 1}: empty step name is not allowed.`);

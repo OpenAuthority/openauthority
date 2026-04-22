@@ -38,7 +38,7 @@
     "test:dod": "vitest run --config vitest.dod.config.ts",
     "pretest:watch": "npm run build --workspace=packages/action-registry && node scripts/gen-build-info.mjs",
     "test:watch": "vitest",
-    "prevalidate:spec": "npm run build --workspace=packages/action-registry && tsc",
+    "prevalidate:spec": "npm run build --workspace=packages/action-registry && node scripts/gen-build-info.mjs && tsc",
     "validate:spec": "node scripts/validate-spec-alignment.mjs"
   },
   "dependencies": {

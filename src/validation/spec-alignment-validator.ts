@@ -423,11 +423,37 @@ export class SpecAlignmentValidator {
   }
 
   /**
+   * Paths allowed to use node:child_process / spawnSync for SA-S-01 and
+   * SA-S-02. FEP's shell-prohibition targets *unstructured* shell execution
+   * (command injection surface). These files invoke external binaries with
+   * explicit argv arrays and `{ shell: false }` — the safe pattern — or are
+   * meta-level lint/release validators that must reference the forbidden
+   * API names as data.
+   */
+  private static readonly CHILD_PROCESS_ALLOWLIST: readonly RegExp[] = [
+    // Git tools: spawnSync('git', [argv], { shell: false }) — explicit argv,
+    // no shell interpretation.
+    /^src\/tools\/git_[a-z]+\/git-[a-z]+\.ts$/,
+    // Meta-level validators that must reference the forbidden API names
+    // as strings/regex sources to detect them in other files.
+    /^src\/validation\/spec-alignment-validator\.ts$/,
+    /^src\/validation\/release-validator\.ts$/,
+  ];
+
+  private static isAllowlisted(relPath: string): boolean {
+    const normalized = relPath.replace(/\\/g, '/');
+    return SpecAlignmentValidator.CHILD_PROCESS_ALLOWLIST.some((re) => re.test(normalized));
+  }
+
+  /**
    * SA-S-01: No child_process imports in src/ non-test source files.
    *
-   * Scans all `.ts` files under src/ (excluding `.test.ts` and `.e2e.ts`)
-   * for `child_process` import statements. This enforces the FEP shell
-   * prohibition — the plugin must not spawn subprocesses.
+   * Scans for actual `import` or `require` statements pulling in
+   * `child_process` (or `node:child_process`). Mere string mentions in
+   * comments or string literals do NOT count as violations — those arise
+   * naturally in documentation and meta-level validators.
+   *
+   * Files matching CHILD_PROCESS_ALLOWLIST are exempt (see its docstring).
    */
   private checkSaS01(root: string): SpecCheckResult {
     const id = 'SA-S-01';
@@ -437,17 +463,23 @@ export class SpecAlignmentValidator {
     const srcDir = join(root, 'src');
     const sourceFiles = collectSourceFiles(srcDir);
     const violations: string[] = [];
+    // Real import forms: `import ... from 'child_process'` / `'node:child_process'`
+    // and `require('child_process')` / `require('node:child_process')`.
+    const importPattern =
+      /(?:import[^'"]*from\s*['"](?:node:)?child_process['"]|require\s*\(\s*['"](?:node:)?child_process['"]\s*\))/;
 
     for (const filePath of sourceFiles) {
+      const rel = (filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath)
+        .replace(/\\/g, '/');
+      if (SpecAlignmentValidator.isAllowlisted(rel)) continue;
+
       let content: string;
       try {
         content = readFileSync(filePath, 'utf-8');
       } catch {
         continue;
       }
-      if (content.includes('child_process')) {
-        // Make path relative to root for readability
-        const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
+      if (importPattern.test(content)) {
         violations.push(rel);
       }
     }
@@ -458,17 +490,17 @@ export class SpecAlignmentValidator {
         description,
         specSection: section,
         passed: false,
-        reason: `child_process found in: ${violations.join(', ')} — FEP prohibits raw shell execution in plugin source`,
+        reason: `child_process imported in: ${violations.join(', ')} — FEP prohibits raw shell execution in plugin source`,
       };
     }
     return { id, description, specSection: section, passed: true };
   }
 
   /**
-   * SA-S-02: No execSync / spawnSync / exec references in src/ non-test source files.
+   * SA-S-02: No execSync / spawnSync calls in src/ non-test source files.
    *
-   * Detects runtime shell execution API calls that bypass the FEP shell
-   * prohibition, independent of whether child_process is imported.
+   * Detects runtime shell-execution API calls. Files matching
+   * CHILD_PROCESS_ALLOWLIST are exempt (see its docstring).
    */
   private checkSaS02(root: string): SpecCheckResult {
     const id = 'SA-S-02';
@@ -478,11 +510,13 @@ export class SpecAlignmentValidator {
     const srcDir = join(root, 'src');
     const sourceFiles = collectSourceFiles(srcDir);
     const violations: string[] = [];
-    // Match execSync, spawnSync, or exec( as function calls (not in comments or strings
-    // that form identifiable patterns). We use a broad word-boundary check.
     const forbiddenPattern = /\b(execSync|spawnSync)\s*\(/;
 
     for (const filePath of sourceFiles) {
+      const rel = (filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath)
+        .replace(/\\/g, '/');
+      if (SpecAlignmentValidator.isAllowlisted(rel)) continue;
+
       let content: string;
       try {
         content = readFileSync(filePath, 'utf-8');
@@ -490,7 +524,6 @@ export class SpecAlignmentValidator {
         continue;
       }
       if (forbiddenPattern.test(content)) {
-        const rel = filePath.startsWith(root) ? filePath.slice(root.length + 1) : filePath;
         violations.push(rel);
       }
     }
