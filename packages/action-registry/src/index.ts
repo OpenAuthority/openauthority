@@ -126,6 +126,10 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'update_file',
       'edit_file',
       'patch_file',
+      'make_dir',
+      'mkdir',
+      'create_dir',
+      'create_directory',
     ],
   },
   {
