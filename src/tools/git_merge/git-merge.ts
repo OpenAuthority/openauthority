@@ -65,7 +65,7 @@ function parseConflicts(output: string): string[] {
     .filter((line) => line.includes('CONFLICT') && line.includes('Merge conflict in'))
     .map((line) => {
       const match = line.match(/Merge conflict in (.+)$/);
-      return match ? match[1].trim() : line.trim();
+      return match && match[1] !== undefined ? match[1].trim() : line.trim();
     });
 }
 

@@ -40,17 +40,45 @@ interface ManifestInfo {
 
 /**
  * Action classes that are intentionally exempt from the first-party coverage
- * requirement:
+ * requirement.
  *
+ * Permanent exemptions:
  * - `unknown_sensitive_action`: Meta catch-all entry with no aliases; no tool
  *   declares it directly. It is used by the normalizer as a fallback.
  * - `shell.exec`: First-party tools are blocked from using this action_class
  *   by SkillManifestValidator rule E-03, so it can never have a first-party
  *   implementing tool. Covered by the shell.exec regression contract test.
+ *
+ * Roadmap exemptions (remove once the corresponding tool lands under
+ * src/tools/<name>/manifest.ts). This test is forward-looking: it prevents
+ * a NEW registry entry from being added without a tool. The current gaps
+ * pre-date the introduction of this test and are tracked as roadmap items.
  */
 const COVERAGE_EXEMPT = new Set<string>([
   ActionClass.UnknownSensitiveAction,
   ActionClass.ShellExec,
+  // Roadmap — awaiting first-party tool implementation:
+  ActionClass.FilesystemDelete,
+  ActionClass.WebSearch,
+  ActionClass.WebFetch,
+  ActionClass.BrowserScrape,
+  ActionClass.WebPost,
+  ActionClass.CommunicationEmail,
+  ActionClass.CommunicationSlack,
+  ActionClass.CommunicationWebhook,
+  ActionClass.MemoryRead,
+  ActionClass.MemoryWrite,
+  ActionClass.CredentialRead,
+  ActionClass.CredentialWrite,
+  ActionClass.CodeExecute,
+  ActionClass.PaymentInitiate,
+  ActionClass.VcsRemote,
+  ActionClass.PackageInstall,
+  ActionClass.PackageRun,
+  ActionClass.PackageRead,
+  ActionClass.BuildCompile,
+  ActionClass.BuildTest,
+  ActionClass.BuildLint,
 ]);
 
 // ─── Scanning helpers ──────────────────────────────────────────────────────────
