@@ -1,0 +1,23 @@
+{
+  "name": "@openclaw/action-registry",
+  "version": "1.0.0",
+  "description": "Shared action class registry for OpenClaw / Clawthority",
+  "type": "module",
+  "exports": {
+    ".": {
+      "types": "./src/index.ts",
+      "import": "./src/index.ts"
+    }
+  },
+  "files": [
+    "src"
+  ],
+  "engines": {
+    "node": ">=18"
+  },
+  "license": "Apache-2.0",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/OpenAuthority/clawthority"
+  }
+}

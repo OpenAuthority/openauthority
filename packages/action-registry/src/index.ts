@@ -1,0 +1,491 @@
+/**
+ * @openclaw/action-registry
+ *
+ * Single source of truth for the OpenClaw action class taxonomy.
+ * Exports the frozen registry of all canonical action classes with their
+ * default risk levels, HITL modes, and tool name aliases.
+ *
+ * Consumed by normalize.ts and the future Sidecar component.
+ */
+
+// ---------------------------------------------------------------------------
+// Types
+// ---------------------------------------------------------------------------
+
+export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
+export type HitlModeNorm = 'none' | 'per_request' | 'session_approval';
+export type IntentGroup =
+  | 'destructive_fs'
+  | 'external_send'
+  | 'data_exfiltration'
+  | 'credential_access'
+  | 'payment'
+  | 'web_access';
+
+/** A single entry in the action normalization registry. */
+export interface ActionRegistryEntry {
+  /** Canonical dot-separated action class (e.g. 'filesystem.read'). */
+  readonly action_class: string;
+  /** Default risk level before parameter-level reclassification. */
+  readonly default_risk: RiskLevel;
+  /** Default HITL mode for this action class. */
+  readonly default_hitl_mode: HitlModeNorm;
+  /**
+   * Lowercase tool name aliases that map to this action class.
+   * All stored in lowercase; matching is case-insensitive.
+   */
+  readonly aliases: readonly string[];
+  /** Optional intent group for broader policy targeting. */
+  readonly intent_group?: IntentGroup;
+}
+
+// ---------------------------------------------------------------------------
+// Action class enum — frozen taxonomy (T4)
+// ---------------------------------------------------------------------------
+
+/**
+ * All canonical action class strings recognized by the registry.
+ * Use these constants instead of raw strings to avoid typos in policy code.
+ */
+export const ActionClass = {
+  FilesystemRead: 'filesystem.read',
+  FilesystemWrite: 'filesystem.write',
+  FilesystemDelete: 'filesystem.delete',
+  FilesystemList: 'filesystem.list',
+  WebSearch: 'web.search',
+  WebFetch: 'web.fetch',
+  BrowserScrape: 'browser.scrape',
+  WebPost: 'web.post',
+  ShellExec: 'shell.exec',
+  CommunicationEmail: 'communication.email',
+  CommunicationSlack: 'communication.slack',
+  CommunicationWebhook: 'communication.webhook',
+  MemoryRead: 'memory.read',
+  MemoryWrite: 'memory.write',
+  CredentialRead: 'credential.read',
+  CredentialWrite: 'credential.write',
+  CodeExecute: 'code.execute',
+  PaymentInitiate: 'payment.initiate',
+  VcsRead: 'vcs.read',
+  VcsWrite: 'vcs.write',
+  VcsRemote: 'vcs.remote',
+  PackageInstall: 'package.install',
+  BuildCompile: 'build.compile',
+  BuildTest: 'build.test',
+  BuildLint: 'build.lint',
+  UnknownSensitiveAction: 'unknown_sensitive_action',
+} as const;
+
+export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
+
+// ---------------------------------------------------------------------------
+// Registry — 26 entries, aliases stored lowercase
+// ---------------------------------------------------------------------------
+
+export const REGISTRY: readonly ActionRegistryEntry[] = [
+  {
+    action_class: ActionClass.FilesystemRead,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'read',
+      'read_file',
+      'readfile',
+      'read_files',
+      'cat_file',
+      'view_file',
+      'open_file',
+      'get_file_contents',
+    ],
+  },
+  {
+    action_class: ActionClass.FilesystemWrite,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'write',
+      'edit',
+      'write_file',
+      'writefile',
+      'create_file',
+      'save_file',
+      'update_file',
+      'edit_file',
+      'patch_file',
+    ],
+  },
+  {
+    action_class: ActionClass.FilesystemDelete,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'delete_file',
+      'deletefile',
+      'remove_file',
+      'rm_file',
+      'unlink_file',
+      'rm',
+      'rm_rf',
+      'unlink',
+      'delete',
+      'remove',
+      'move_to_trash',
+      'trash',
+      'shred',
+      'rmdir',
+      'format',
+      'empty_trash',
+      'purge',
+    ],
+    intent_group: 'destructive_fs',
+  },
+  {
+    action_class: ActionClass.FilesystemList,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'list',
+      'list_files',
+      'listfiles',
+      'list_directory',
+      'list_dir',
+      'read_directory',
+      'ls',
+    ],
+  },
+  {
+    action_class: ActionClass.WebSearch,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'web_search',
+      'google_search',
+      'bing_search',
+      'duckduckgo_search',
+      'ddg_search',
+      'search_web',
+      'web_research',
+      'news_search',
+    ],
+  },
+  {
+    action_class: ActionClass.WebFetch,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'fetch',
+      'browser',
+      'http_get',
+      'web_fetch',
+      'get_url',
+      'fetch_url',
+      'http_request',
+      'curl',
+      'wget',
+      'download_url',
+      'http_head',
+      'head_url',
+      'http_options',
+    ],
+    intent_group: 'data_exfiltration',
+  },
+  {
+    action_class: ActionClass.BrowserScrape,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'scrape_page',
+      'extract_page',
+      'read_url',
+    ],
+  },
+  {
+    action_class: ActionClass.WebPost,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'http_post',
+      'post_url',
+      'web_post',
+      'post_request',
+      'submit_form',
+      'http_put',
+      'put_url',
+      'web_put',
+      'put_request',
+      'http_patch',
+      'patch_url',
+      'web_patch',
+      'patch_request',
+    ],
+    intent_group: 'web_access',
+  },
+  {
+    action_class: ActionClass.ShellExec,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'bash',
+      'shell_exec',
+      'run_command',
+      'execute_command',
+      'run_terminal_cmd',
+      'terminal_exec',
+      'cmd',
+    ],
+  },
+  {
+    action_class: ActionClass.CommunicationEmail,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'send_email',
+      'email_send',
+      'send_mail',
+      'compose_email',
+      'email',
+    ],
+    intent_group: 'external_send',
+  },
+  {
+    action_class: ActionClass.CommunicationSlack,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'send_slack',
+      'slack_message',
+      'slack_send',
+      'post_slack',
+    ],
+    intent_group: 'external_send',
+  },
+  {
+    action_class: ActionClass.CommunicationWebhook,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'call_webhook',
+      'webhook',
+      'trigger_webhook',
+      'post_webhook',
+    ],
+    intent_group: 'external_send',
+  },
+  {
+    action_class: ActionClass.MemoryRead,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'memory_get',
+      'read_memory',
+      'get_memory',
+      'recall',
+      'retrieve_memory',
+    ],
+  },
+  {
+    action_class: ActionClass.MemoryWrite,
+    default_risk: 'medium',
+    default_hitl_mode: 'none',
+    aliases: [
+      'memory_set',
+      'write_memory',
+      'set_memory',
+      'store_memory',
+      'save_memory',
+      'remember',
+    ],
+  },
+  {
+    action_class: ActionClass.CredentialRead,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'read_secret',
+      'get_secret',
+      'get_credential',
+      'retrieve_secret',
+      'read_credential',
+    ],
+    intent_group: 'credential_access',
+  },
+  {
+    action_class: ActionClass.CredentialWrite,
+    default_risk: 'critical',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'write_secret',
+      'set_secret',
+      'set_credential',
+      'store_secret',
+      'create_secret',
+    ],
+    intent_group: 'credential_access',
+  },
+  {
+    action_class: ActionClass.CodeExecute,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'run_code',
+      'execute_code',
+      'eval_code',
+      'python',
+      'javascript',
+      'node_exec',
+      'code_runner',
+    ],
+  },
+  {
+    action_class: ActionClass.PaymentInitiate,
+    default_risk: 'critical',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'pay',
+      'payment',
+      'initiate_payment',
+      'create_payment',
+      'charge',
+      'stripe_payment',
+    ],
+    intent_group: 'payment',
+  },
+  {
+    action_class: ActionClass.VcsRead,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'git_status',
+      'git-status',
+      'git.status',
+      'show_status',
+      'git_log',
+      'git-log',
+      'git.log',
+      'log_commits',
+      'view_history',
+      'git_diff',
+      'git-diff',
+      'git.diff',
+      'view_diff',
+      'show_diff',
+    ],
+  },
+  {
+    action_class: ActionClass.VcsWrite,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'git_commit',
+      'git-commit',
+      'git.commit',
+      'commit_changes',
+      'git_add',
+      'git-add',
+      'git.add',
+      'stage_file',
+      'stage_files',
+    ],
+  },
+  {
+    action_class: ActionClass.VcsRemote,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'git_clone',
+      'git-clone',
+      'git.clone',
+      'clone_repo',
+      'git_push',
+      'git-push',
+      'git.push',
+      'push_commits',
+      'git_pull',
+      'git-pull',
+      'git.pull',
+      'pull_changes',
+      'git_fetch',
+      'git-fetch',
+      'git.fetch',
+      'fetch_remote',
+    ],
+  },
+  {
+    action_class: ActionClass.PackageInstall,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'install_package',
+      'npm_install',
+      'pip_install',
+      'pip3_install',
+      'yarn_add',
+      'apt_install',
+      'brew_install',
+      'add_package',
+    ],
+  },
+  {
+    action_class: ActionClass.BuildCompile,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'run_compiler',
+      'compile',
+      'build',
+      'npm_run_build',
+      'make',
+      'tsc',
+      'javac',
+      'gcc',
+      'cargo_build',
+      'go_build',
+      'mvn_compile',
+      'gradle_build',
+    ],
+  },
+  {
+    action_class: ActionClass.BuildTest,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'run_tests',
+      'run_test',
+      'npm_test',
+      'npm_run_test',
+      'yarn_test',
+      'pytest',
+      'jest',
+      'vitest',
+      'mocha',
+      'go_test',
+      'cargo_test',
+      'mvn_test',
+      'gradle_test',
+    ],
+  },
+  {
+    action_class: ActionClass.BuildLint,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'run_linter',
+      'run_formatter',
+      'run_typecheck',
+      'eslint',
+      'prettier',
+      'pylint',
+      'flake8',
+      'mypy',
+      'cargo_clippy',
+      'golangci_lint',
+      'rubocop',
+    ],
+  },
+  {
+    action_class: ActionClass.UnknownSensitiveAction,
+    default_risk: 'critical',
+    default_hitl_mode: 'per_request',
+    aliases: [],
+  },
+] as const;
