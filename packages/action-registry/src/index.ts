@@ -448,6 +448,11 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'git-branch',
       'git.branch',
       'create_branch',
+      'git_reset',
+      'git-reset',
+      'git.reset',
+      'reset_head',
+      'undo_commit',
     ],
   },
   {

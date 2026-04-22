@@ -22,6 +22,7 @@ import { gitLogManifest } from '../tools/git_log/manifest.js';
 import { gitDiffManifest } from '../tools/git_diff/manifest.js';
 import { gitStatusManifest } from '../tools/git_status/manifest.js';
 import { gitMergeManifest } from '../tools/git_merge/manifest.js';
+import { gitResetManifest } from '../tools/git_reset/manifest.js';
 import { editFileManifest } from '../tools/edit_file/manifest.js';
 import { readFileManifest } from '../tools/read_file/manifest.js';
 import { writeFileManifest } from '../tools/write_file/manifest.js';
@@ -41,6 +42,7 @@ export const FIRST_PARTY_MANIFESTS: readonly ToolManifest[] = [
   gitDiffManifest,
   gitStatusManifest,
   gitMergeManifest,
+  gitResetManifest,
   editFileManifest,
   readFileManifest,
   writeFileManifest,
