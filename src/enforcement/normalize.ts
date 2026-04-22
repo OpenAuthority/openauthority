@@ -267,6 +267,24 @@ const DATA_EXFIL_UPLOAD_PATTERNS: readonly RegExp[] = [
 ];
 
 // ---------------------------------------------------------------------------
+// Feature flags
+// ---------------------------------------------------------------------------
+
+/**
+ * When set to `false` (case-insensitive), Rules 4–8 in `normalize_action` are
+ * skipped entirely. This prepares for retiring the command-regex layer while
+ * maintaining backward compatibility (default: `true`).
+ *
+ * Example:
+ *   CLAWTHORITY_COMMAND_REGEX_LAYER=false
+ */
+const COMMAND_REGEX_LAYER_ENABLED: boolean = (() => {
+  const raw = process.env['CLAWTHORITY_COMMAND_REGEX_LAYER'];
+  if (raw === undefined) return true;
+  return raw.trim().toLowerCase() !== 'false';
+})();
+
+// ---------------------------------------------------------------------------
 // Target extraction
 // ---------------------------------------------------------------------------
 
@@ -434,103 +452,108 @@ export function normalize_action(
     risk = 'critical';
   }
 
-  // Rule 4: shell-wrapper tool + destructive command → filesystem.delete
+  // Rules 4–8: command-regex layer. Skipped entirely when the
+  // CLAWTHORITY_COMMAND_REGEX_LAYER feature flag is false.
   const toolKey = toolName.toLowerCase();
   const command = params['command'];
   const commandStr = typeof command === 'string' ? command : '';
-  if (
-    SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    commandStr !== '' &&
-    DESTRUCTIVE_SHELL_CMD_RE.test(commandStr)
-  ) {
-    const deleteEntry = ALIAS_INDEX.get('rm') ?? UNKNOWN_ENTRY;
-    action_class = deleteEntry.action_class;
-    hitl_mode = deleteEntry.default_hitl_mode;
-    intent_group = deleteEntry.intent_group;
-    if (risk !== 'critical') risk = deleteEntry.default_risk;
-  }
 
-  // Rule 5: reference to a well-known credential path → credential.read / .write
-  // Skip when Rule 4 already reclassified to filesystem.delete — a destructive
-  // action on a credential file stays filesystem.delete.
-  if (action_class !== 'filesystem.delete') {
-    const targetHasCredPath = target !== '' && CREDENTIAL_PATH_RE.test(target);
-    const commandHasCredPath = commandStr !== '' && CREDENTIAL_PATH_RE.test(commandStr);
-    if (targetHasCredPath || commandHasCredPath) {
-      const looksLikeWrite =
-        action_class === 'filesystem.write' ||
-        (commandStr !== '' &&
-          (SHELL_REDIRECT_RE.test(commandStr) ||
-            CREDENTIAL_WRITE_CMD_RE.test(commandStr)));
-      const credAliasKey = looksLikeWrite ? 'write_secret' : 'read_secret';
-      const credEntry = ALIAS_INDEX.get(credAliasKey) ?? UNKNOWN_ENTRY;
+  if (COMMAND_REGEX_LAYER_ENABLED) {
+    // Rule 4: shell-wrapper tool + destructive command → filesystem.delete
+    if (
+      SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
+      commandStr !== '' &&
+      DESTRUCTIVE_SHELL_CMD_RE.test(commandStr)
+    ) {
+      const deleteEntry = ALIAS_INDEX.get('rm') ?? UNKNOWN_ENTRY;
+      action_class = deleteEntry.action_class;
+      hitl_mode = deleteEntry.default_hitl_mode;
+      intent_group = deleteEntry.intent_group;
+      if (risk !== 'critical') risk = deleteEntry.default_risk;
+    }
+
+    // Rule 5: reference to a well-known credential path → credential.read / .write
+    // Skip when Rule 4 already reclassified to filesystem.delete — a destructive
+    // action on a credential file stays filesystem.delete.
+    if (action_class !== 'filesystem.delete') {
+      const targetHasCredPath = target !== '' && CREDENTIAL_PATH_RE.test(target);
+      const commandHasCredPath = commandStr !== '' && CREDENTIAL_PATH_RE.test(commandStr);
+      if (targetHasCredPath || commandHasCredPath) {
+        const looksLikeWrite =
+          action_class === 'filesystem.write' ||
+          (commandStr !== '' &&
+            (SHELL_REDIRECT_RE.test(commandStr) ||
+              CREDENTIAL_WRITE_CMD_RE.test(commandStr)));
+        const credAliasKey = looksLikeWrite ? 'write_secret' : 'read_secret';
+        const credEntry = ALIAS_INDEX.get(credAliasKey) ?? UNKNOWN_ENTRY;
+        action_class = credEntry.action_class;
+        hitl_mode = credEntry.default_hitl_mode;
+        intent_group = credEntry.intent_group;
+        if (risk !== 'critical') risk = credEntry.default_risk;
+      }
+    }
+
+    // Rule 6: shell-wrapper invoking a credential-emitting CLI subcommand →
+    // credential.read. Skipped when an earlier rule already picked a more
+    // specific class (filesystem.delete, credential.read/write).
+    const alreadyReclassified =
+      action_class === 'filesystem.delete' ||
+      action_class === 'credential.read' ||
+      action_class === 'credential.write';
+    if (
+      !alreadyReclassified &&
+      SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
+      commandStr !== '' &&
+      CREDENTIAL_CLI_PATTERNS.some((re) => re.test(commandStr))
+    ) {
+      const credEntry = ALIAS_INDEX.get('read_secret') ?? UNKNOWN_ENTRY;
       action_class = credEntry.action_class;
       hitl_mode = credEntry.default_hitl_mode;
       intent_group = credEntry.intent_group;
       if (risk !== 'critical') risk = credEntry.default_risk;
     }
-  }
 
-  // Rule 6: shell-wrapper invoking a credential-emitting CLI subcommand →
-  // credential.read. Skipped when an earlier rule already picked a more
-  // specific class (filesystem.delete, credential.read/write).
-  const alreadyReclassified =
-    action_class === 'filesystem.delete' ||
-    action_class === 'credential.read' ||
-    action_class === 'credential.write';
-  if (
-    !alreadyReclassified &&
-    SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    commandStr !== '' &&
-    CREDENTIAL_CLI_PATTERNS.some((re) => re.test(commandStr))
-  ) {
-    const credEntry = ALIAS_INDEX.get('read_secret') ?? UNKNOWN_ENTRY;
-    action_class = credEntry.action_class;
-    hitl_mode = credEntry.default_hitl_mode;
-    intent_group = credEntry.intent_group;
-    if (risk !== 'critical') risk = credEntry.default_risk;
-  }
+    // Rule 8: shell-wrapper reading credentials from the environment →
+    // credential.read. Same skip semantics as Rule 6.
+    const stillUnclassifiedAfter6 =
+      action_class !== 'filesystem.delete' &&
+      action_class !== 'credential.read' &&
+      action_class !== 'credential.write';
+    if (
+      stillUnclassifiedAfter6 &&
+      SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
+      commandStr !== '' &&
+      CREDENTIAL_ENV_PATTERNS.some((re) => re.test(commandStr))
+    ) {
+      const credEntry = ALIAS_INDEX.get('read_secret') ?? UNKNOWN_ENTRY;
+      action_class = credEntry.action_class;
+      hitl_mode = credEntry.default_hitl_mode;
+      intent_group = credEntry.intent_group;
+      if (risk !== 'critical') risk = credEntry.default_risk;
+    }
 
-  // Rule 8: shell-wrapper reading credentials from the environment →
-  // credential.read. Same skip semantics as Rule 6.
-  const stillUnclassifiedAfter6 =
-    action_class !== 'filesystem.delete' &&
-    action_class !== 'credential.read' &&
-    action_class !== 'credential.write';
-  if (
-    stillUnclassifiedAfter6 &&
-    SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    commandStr !== '' &&
-    CREDENTIAL_ENV_PATTERNS.some((re) => re.test(commandStr))
-  ) {
-    const credEntry = ALIAS_INDEX.get('read_secret') ?? UNKNOWN_ENTRY;
-    action_class = credEntry.action_class;
-    hitl_mode = credEntry.default_hitl_mode;
-    intent_group = credEntry.intent_group;
-    if (risk !== 'critical') risk = credEntry.default_risk;
-  }
-
-  // Rule 7: shell-wrapper invoking an outbound file upload → web.post with
-  // intent_group: 'data_exfiltration'. Skipped when an earlier rule already
-  // produced a more specific class — destructive (Rule 4) or credential
-  // (Rules 5/6/8) take precedence.
-  const stillUnclassifiedAfter8 =
-    action_class !== 'filesystem.delete' &&
-    action_class !== 'credential.read' &&
-    action_class !== 'credential.write';
-  if (
-    stillUnclassifiedAfter8 &&
-    SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    commandStr !== '' &&
-    DATA_EXFIL_UPLOAD_PATTERNS.some((re) => re.test(commandStr))
-  ) {
-    action_class = 'web.post';
-    intent_group = 'data_exfiltration';
-    risk = 'critical';
-    // HITL mode follows web.post's default (per_request).
-    const webPostEntry = ALIAS_INDEX.get('http_post') ?? UNKNOWN_ENTRY;
-    hitl_mode = webPostEntry.default_hitl_mode;
-  }
+    // Rule 7: shell-wrapper invoking an outbound file upload → web.post with
+    // intent_group: 'data_exfiltration'. Skipped when an earlier rule already
+    // produced a more specific class — destructive (Rule 4) or credential
+    // (Rules 5/6/8) take precedence.
+    const stillUnclassifiedAfter8 =
+      action_class !== 'filesystem.delete' &&
+      action_class !== 'credential.read' &&
+      action_class !== 'credential.write';
+    if (
+      stillUnclassifiedAfter8 &&
+      SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
+      commandStr !== '' &&
+      DATA_EXFIL_UPLOAD_PATTERNS.some((re) => re.test(commandStr))
+    ) {
+      action_class = 'web.post';
+      intent_group = 'data_exfiltration';
+      risk = 'critical';
+      // HITL mode follows web.post's default (per_request).
+      const webPostEntry = ALIAS_INDEX.get('http_post') ?? UNKNOWN_ENTRY;
+      hitl_mode = webPostEntry.default_hitl_mode;
+    }
+  } // end COMMAND_REGEX_LAYER_ENABLED
 
   return { action_class, risk, hitl_mode, target, ...(intent_group !== undefined && { intent_group }) };
 }
