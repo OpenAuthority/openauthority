@@ -55,7 +55,7 @@ describe('normalizeActionClass', () => {
 });
 
 // ---------------------------------------------------------------------------
-// All 28 action classes resolve from at least one alias
+// All 31 action classes resolve from at least one alias
 // ---------------------------------------------------------------------------
 
 describe('registry coverage — each action class resolves from at least one alias', () => {
@@ -88,6 +88,9 @@ describe('registry coverage — each action class resolves from at least one ali
     ['run_compiler',     'build.compile'],
     ['run_tests',        'build.test'],
     ['run_linter',       'build.lint'],
+    ['archive_create',   'archive.create'],
+    ['archive_extract',  'archive.extract'],
+    ['archive_list',     'archive.read'],
   ];
 
   for (const [alias, expectedClass] of cases) {
@@ -1953,6 +1956,143 @@ describe('build action classes — target extraction', () => {
   it('build.lint falls back to file_path when target and path are absent', () => {
     const result = normalize_action('run_formatter', { file_path: '/src/utils.ts' });
     expect(result.target).toBe('/src/utils.ts');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// archive.create — aliases, risk, HITL, target extraction
+// ---------------------------------------------------------------------------
+
+describe('archive.create aliases', () => {
+  it('archive_create → archive.create with medium risk and per_request HITL', () => {
+    const result = normalize_action('archive_create', { output_path: '/tmp/out.tar.gz' });
+    expect(result.action_class).toBe('archive.create');
+    expect(result.risk).toBe('medium');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('tar_create → archive.create', () => {
+    const result = normalize_action('tar_create', { output_path: '/tmp/backup.tar.gz' });
+    expect(result.action_class).toBe('archive.create');
+  });
+
+  it('zip_create → archive.create', () => {
+    const result = normalize_action('zip_create', { output_path: '/tmp/files.zip' });
+    expect(result.action_class).toBe('archive.create');
+  });
+
+  it('compress → archive.create', () => {
+    expect(normalize_action('compress', {}).action_class).toBe('archive.create');
+  });
+
+  it('extracts output_path as target', () => {
+    const result = normalize_action('archive_create', { output_path: '/tmp/out.tar.gz' });
+    expect(result.target).toBe('/tmp/out.tar.gz');
+  });
+
+  it('falls back to destination when output_path is absent', () => {
+    const result = normalize_action('archive_create', { destination: '/tmp/archive.zip' });
+    expect(result.target).toBe('/tmp/archive.zip');
+  });
+
+  it('falls back to path when output_path and destination are absent', () => {
+    const result = normalize_action('archive_create', { path: '/tmp/files.tar' });
+    expect(result.target).toBe('/tmp/files.tar');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// archive.extract — aliases, risk, HITL, target extraction
+// ---------------------------------------------------------------------------
+
+describe('archive.extract aliases', () => {
+  it('archive_extract → archive.extract with medium risk and per_request HITL', () => {
+    const result = normalize_action('archive_extract', { archive_path: '/tmp/files.tar.gz' });
+    expect(result.action_class).toBe('archive.extract');
+    expect(result.risk).toBe('medium');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('unzip → archive.extract', () => {
+    const result = normalize_action('unzip', { archive_path: '/tmp/files.zip' });
+    expect(result.action_class).toBe('archive.extract');
+  });
+
+  it('tar_extract → archive.extract', () => {
+    expect(normalize_action('tar_extract', {}).action_class).toBe('archive.extract');
+  });
+
+  it('decompress → archive.extract', () => {
+    expect(normalize_action('decompress', {}).action_class).toBe('archive.extract');
+  });
+
+  it('extract_archive → archive.extract', () => {
+    expect(normalize_action('extract_archive', {}).action_class).toBe('archive.extract');
+  });
+
+  it('extracts destination as target', () => {
+    const result = normalize_action('archive_extract', { destination: '/tmp/out/' });
+    expect(result.target).toBe('/tmp/out/');
+  });
+
+  it('falls back to archive_path when destination is absent', () => {
+    const result = normalize_action('unzip', { archive_path: '/tmp/files.zip' });
+    expect(result.target).toBe('/tmp/files.zip');
+  });
+
+  it('has higher risk than archive.read', () => {
+    const extract = normalize_action('archive_extract', {});
+    const read = normalize_action('archive_list', {});
+    const riskOrder: string[] = ['low', 'medium', 'high', 'critical'];
+    expect(riskOrder.indexOf(extract.risk)).toBeGreaterThan(riskOrder.indexOf(read.risk));
+  });
+});
+
+// ---------------------------------------------------------------------------
+// archive.read — aliases, risk, HITL, target extraction
+// ---------------------------------------------------------------------------
+
+describe('archive.read aliases', () => {
+  it('archive_list → archive.read with low risk and none HITL', () => {
+    const result = normalize_action('archive_list', { archive_path: '/tmp/files.tar.gz' });
+    expect(result.action_class).toBe('archive.read');
+    expect(result.risk).toBe('low');
+    expect(result.hitl_mode).toBe('none');
+  });
+
+  it('archive_read → archive.read', () => {
+    expect(normalize_action('archive_read', {}).action_class).toBe('archive.read');
+  });
+
+  it('list_archive → archive.read', () => {
+    expect(normalize_action('list_archive', {}).action_class).toBe('archive.read');
+  });
+
+  it('tar_list → archive.read', () => {
+    expect(normalize_action('tar_list', {}).action_class).toBe('archive.read');
+  });
+
+  it('zip_list → archive.read', () => {
+    expect(normalize_action('zip_list', {}).action_class).toBe('archive.read');
+  });
+
+  it('inspect_archive → archive.read', () => {
+    expect(normalize_action('inspect_archive', {}).action_class).toBe('archive.read');
+  });
+
+  it('extracts archive_path as target', () => {
+    const result = normalize_action('archive_list', { archive_path: '/tmp/files.tar.gz' });
+    expect(result.target).toBe('/tmp/files.tar.gz');
+  });
+
+  it('falls back to path when archive_path is absent', () => {
+    const result = normalize_action('tar_list', { path: '/backup/data.tar' });
+    expect(result.target).toBe('/backup/data.tar');
+  });
+
+  it('falls back to file_path when archive_path and path are absent', () => {
+    const result = normalize_action('zip_list', { file_path: '/tmp/archive.zip' });
+    expect(result.target).toBe('/tmp/archive.zip');
   });
 });
 

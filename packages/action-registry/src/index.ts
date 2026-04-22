@@ -76,13 +76,16 @@ export const ActionClass = {
   BuildCompile: 'build.compile',
   BuildTest: 'build.test',
   BuildLint: 'build.lint',
+  ArchiveCreate: 'archive.create',
+  ArchiveExtract: 'archive.extract',
+  ArchiveRead: 'archive.read',
   UnknownSensitiveAction: 'unknown_sensitive_action',
 } as const;
 
 export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
 
 // ---------------------------------------------------------------------------
-// Registry — 29 entries, aliases stored lowercase
+// Registry — 32 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 export const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -564,6 +567,61 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'cargo_clippy',
       'golangci_lint',
       'rubocop',
+    ],
+  },
+  {
+    action_class: ActionClass.ArchiveCreate,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'archive_create',
+      'create_archive',
+      'tar_create',
+      'tar_czf',
+      'tar_compress',
+      'zip_create',
+      'create_zip',
+      'compress',
+      'compress_files',
+      'gzip',
+      'bzip2',
+      'zstd_compress',
+    ],
+  },
+  {
+    action_class: ActionClass.ArchiveExtract,
+    default_risk: 'medium',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'archive_extract',
+      'extract_archive',
+      'unarchive',
+      'tar_extract',
+      'tar_xzf',
+      'tar_decompress',
+      'unzip',
+      'gunzip',
+      'bunzip2',
+      'decompress',
+      'extract_files',
+      'zstd_decompress',
+    ],
+  },
+  {
+    action_class: ActionClass.ArchiveRead,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'archive_list',
+      'archive_read',
+      'list_archive',
+      'read_archive',
+      'tar_list',
+      'tar_tf',
+      'zip_list',
+      'list_zip',
+      'inspect_archive',
+      'peek_archive',
     ],
   },
   {

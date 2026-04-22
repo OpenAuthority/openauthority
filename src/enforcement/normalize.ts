@@ -335,6 +335,10 @@ const TARGET_KEYS_BY_CLASS: Readonly<Record<string, readonly string[]>> = {
   'build.compile':     ['target', 'path', 'file_path', 'working_dir'],
   'build.test':        ['target', 'path', 'working_dir'],
   'build.lint':        ['target', 'path', 'file_path', 'working_dir'],
+  // Archive operations: create/extract use output path; read uses archive path.
+  'archive.create':    ['output_path', 'destination', 'archive_path', 'path', 'file_path'],
+  'archive.extract':   ['destination', 'output_dir', 'archive_path', 'path', 'file_path'],
+  'archive.read':      ['archive_path', 'path', 'file_path'],
 };
 
 function extractTarget(actionClass: string, params: Record<string, unknown>): string {
