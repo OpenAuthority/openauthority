@@ -12,6 +12,7 @@
  *   TC-HPA-06: Result shape — status_code and body fields present
  *   TC-HPA-07: Non-2xx response — returns status_code without throwing
  *   TC-HPA-08: Empty body — accepts undefined body
+ *   TC-HPA-09: timeout — AbortError surfaces as code 'timeout'
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -225,5 +226,53 @@ describe('TC-HPA-08: empty body — accepts undefined body param', () => {
     stubFetch(200, 'ok');
     const result = await httpPatch({ url: 'http://api.example.com/resource/1' });
     expect(result.status_code).toBe(200);
+  });
+});
+
+// ─── TC-HPA-09: timeout ───────────────────────────────────────────────────────
+
+describe('TC-HPA-09: timeout — AbortError surfaces as code timeout', () => {
+  it('throws HttpPatchError with code timeout when fetch is aborted', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPatchError | undefined;
+    try {
+      await httpPatch({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpPatchError;
+    }
+    expect(err).toBeInstanceOf(HttpPatchError);
+    expect(err!.code).toBe('timeout');
+  });
+
+  it('timeout error message includes the URL', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPatchError | undefined;
+    try {
+      await httpPatch({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpPatchError;
+    }
+    expect(err!.message).toContain('https://slow.example.com/resource/1');
+  });
+
+  it('timeout error is distinct from network-error', async () => {
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPatchError | undefined;
+    try {
+      await httpPatch({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpPatchError;
+    }
+    expect(err!.code).not.toBe('network-error');
+    expect(err!.code).toBe('timeout');
   });
 });
