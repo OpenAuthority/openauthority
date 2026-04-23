@@ -35,6 +35,7 @@ import { readFileManifest } from '../tools/read_file/manifest.js';
 import { writeFileManifest } from '../tools/write_file/manifest.js';
 import { listDirManifest } from '../tools/list_dir/manifest.js';
 import { deleteFileManifest } from '../tools/delete_file/manifest.js';
+import { createDirectoryManifest } from '../tools/create_directory/manifest.js';
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
@@ -590,6 +591,7 @@ describe('TC-SMV-Contract: first-party tool manifests validate against F-05 sche
     { name: 'writeFileManifest', manifest: writeFileManifest },
     { name: 'listDirManifest', manifest: listDirManifest },
     { name: 'deleteFileManifest', manifest: deleteFileManifest },
+    { name: 'createDirectoryManifest', manifest: createDirectoryManifest },
   ];
 
   for (const { name, manifest } of firstPartyManifests) {
