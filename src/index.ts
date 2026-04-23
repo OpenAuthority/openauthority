@@ -143,7 +143,7 @@ import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
-import { resolve, dirname } from "node:path";
+import { resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUILD_VERSION, BUILD_COMMIT, BUILD_DIRTY, BUILD_AT } from "./build-info.js";
 import { normalize_action, sortedJsonStringify, getRegistryEntry } from "./enforcement/normalize.js";
@@ -456,11 +456,15 @@ interface JsonRuleRecord {
 async function loadJsonRules(): Promise<void> {
   try {
     const moduleDir = dirname(fileURLToPath(import.meta.url));
-    // data/rules.json sits two levels up from dist/ (project root/data/).
-    // `CLAWTHORITY_RULES_FILE` overrides this for non-standard install
-    // layouts and for tests that need to inject a fixture.
+    // data/bundle.json (preferred) or data/rules.json (fallback) sit two levels
+    // up from dist/ (project root/data/).  bundle.json takes precedence when
+    // present; this mirrors the watcher resolveActiveJsonRulesFile() logic.
+    // `CLAWTHORITY_RULES_FILE` overrides both for non-standard install layouts
+    // and for tests that need to inject a fixture.
+    const bundleFilePath = resolve(moduleDir, "../../data/bundle.json");
+    const rulesFilePath = resolve(moduleDir, "../../data/rules.json");
     const rulesPath = process.env['CLAWTHORITY_RULES_FILE']
-      ?? resolve(moduleDir, "../../data/rules.json");
+      ?? (existsSync(bundleFilePath) ? bundleFilePath : rulesFilePath);
 
     let raw: string;
     try {
@@ -468,15 +472,29 @@ async function loadJsonRules(): Promise<void> {
     } catch (readErr: unknown) {
       const code = (readErr as NodeJS.ErrnoException).code;
       if (code === "ENOENT") {
-        console.log("[plugin:clawthority] no data/rules.json found — skipping JSON rule load");
+        console.log("[plugin:clawthority] no data/bundle.json or data/rules.json found — skipping JSON rule load");
         return;
       }
       throw readErr;
     }
 
-    const records: JsonRuleRecord[] = JSON.parse(raw);
-    if (!Array.isArray(records)) {
-      throw new TypeError("data/rules.json must be a JSON array of rule objects");
+    const parsed: unknown = JSON.parse(raw);
+
+    // Accept both formats:
+    //   bundle.json → { version, rules, checksum } object; extract rules array.
+    //   rules.json  → plain JSON array of rule objects.
+    let records: JsonRuleRecord[];
+    if (Array.isArray(parsed)) {
+      records = parsed as JsonRuleRecord[];
+    } else if (
+      parsed !== null &&
+      typeof parsed === 'object' &&
+      'rules' in (parsed as object) &&
+      Array.isArray((parsed as { rules: unknown }).rules)
+    ) {
+      records = (parsed as { rules: JsonRuleRecord[] }).rules;
+    } else {
+      throw new TypeError("Rules file must be a JSON array or a bundle object with a 'rules' array");
     }
 
     // Reject any permit rule targeting shell.exec — this class is
@@ -567,9 +585,10 @@ async function loadJsonRules(): Promise<void> {
     engine.addRules(cedarRules);
     jsonRulesEngineRef.current = engine;
 
-    console.log(`[plugin:clawthority] loaded ${cedarRules.length} rule(s) from data/rules.json`);
+    const activeFile = basename(rulesPath);
+    console.log(`[plugin:clawthority] loaded ${cedarRules.length} rule(s) from data/${activeFile}`);
   } catch (err) {
-    console.error("[plugin:clawthority] failed to load data/rules.json — JSON rules will not be enforced:", err);
+    console.error("[plugin:clawthority] failed to load rules file — JSON rules will not be enforced:", err);
   }
 }
 
@@ -1469,10 +1488,13 @@ const plugin: OpenclawPlugin = {
 
     // Instantiate the file-based authority adapter using the same rules file
     // path as loadJsonRules() so both subsystems read from the same source.
+    // bundle.json takes precedence over rules.json when present.
     {
       const moduleDir = dirname(fileURLToPath(import.meta.url));
+      const bundleFilePath = resolve(moduleDir, "../../data/bundle.json");
+      const rulesFilePath = resolve(moduleDir, "../../data/rules.json");
       const bundlePath = process.env['CLAWTHORITY_RULES_FILE']
-        ?? resolve(moduleDir, "../../data/rules.json");
+        ?? (existsSync(bundleFilePath) ? bundleFilePath : rulesFilePath);
       adapterRef = new FileAuthorityAdapter({ bundlePath });
     }
 

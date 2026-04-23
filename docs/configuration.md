@@ -71,10 +71,11 @@ The `data/` directory is the default location for:
 
 | File | Purpose | Override |
 |---|---|---|
-| `data/rules.json` | Authorization rules array | `RULES_FILE` env var |
+| `data/bundle.json` | Policy bundle (preferred format, v1.2.1+) | `CLAWTHORITY_RULES_FILE` env var |
+| `data/rules.json` | Authorization rules array (legacy format, fallback) | `CLAWTHORITY_RULES_FILE` env var |
 | `data/audit.jsonl` | JSONL audit log | `AUDIT_LOG_FILE` env var |
 
-The server creates `data/` automatically if it does not exist. Override both paths with absolute paths for production deployments where the plugin directory may be read-only.
+`data/bundle.json` takes precedence over `data/rules.json` when both are present. The server creates `data/` automatically if it does not exist. Override both paths with absolute paths for production deployments where the plugin directory may be read-only.
 
 ### Custom data directory example
 
@@ -139,9 +140,46 @@ Defines the configuration properties accepted by the plugin in `config.json`. Al
 
 ## Rules File
 
-Authorization rules are stored as a JSON array. The active file path is controlled by the `RULES_FILE` environment variable (default: `data/rules.json`).
+Authorization rules can be stored in either of two formats. The plugin reads `data/bundle.json` when present; otherwise it falls back to `data/rules.json`. Both files are hot-reloaded: changes are picked up within 300 ms without restarting OpenClaw.
 
-The rules file is hot-reloaded: changes are picked up within 300 ms without restarting OpenClaw.
+The active file path can be overridden with the `CLAWTHORITY_RULES_FILE` environment variable (bypasses the bundle.json / rules.json resolution).
+
+### Schema formats
+
+**`data/bundle.json` (preferred, v1.2.1+)**
+
+A versioned bundle object. `bundle.json` takes precedence over `rules.json` when both are present.
+
+```json
+{
+  "version": 2,
+  "rules": [ ... ],
+  "checksum": "<sha256-hex>"
+}
+```
+
+| Field | Type | Required | Description |
+|---|---|---|---|
+| `version` | `integer` (≥1) | Yes | Monotonically increasing version number. The watcher rejects bundles whose version is not greater than the currently loaded version. |
+| `rules` | `object[]` | Yes | Array of rule objects (same schema as `rules.json` entries). |
+| `checksum` | `string` | Yes | SHA-256 hex digest of `JSON.stringify(rules)` for integrity verification. |
+
+**`data/rules.json` (legacy fallback)**
+
+A plain JSON array of rule objects. Used when `data/bundle.json` is absent.
+
+```json
+[ { "effect": "...", ... }, ... ]
+```
+
+### Transition path
+
+To migrate from `rules.json` to `bundle.json`:
+
+1. Create `data/bundle.json` with `version: 1` and copy your existing rules into the `rules` array.
+2. Compute `checksum` as `SHA-256(JSON.stringify(rules))` and set it in the bundle.
+3. Deploy — the plugin picks up `bundle.json` automatically on next hot-reload.
+4. Remove `data/rules.json` once `bundle.json` is confirmed active (optional; the file is ignored while `bundle.json` is present).
 
 ### Rule schema
 
