@@ -18,6 +18,7 @@
 
 import { SkillManifestValidator, type ToolManifest } from './skill-manifest-validator.js';
 import { gitAddManifest } from '../tools/git_add/manifest.js';
+import { gitCommitManifest } from '../tools/git_commit/manifest.js';
 import { gitLogManifest } from '../tools/git_log/manifest.js';
 import { gitDiffManifest } from '../tools/git_diff/manifest.js';
 import { gitStatusManifest } from '../tools/git_status/manifest.js';
@@ -38,6 +39,7 @@ import { listDirManifest } from '../tools/list_dir/manifest.js';
  */
 export const FIRST_PARTY_MANIFESTS: readonly ToolManifest[] = [
   gitAddManifest,
+  gitCommitManifest,
   gitLogManifest,
   gitDiffManifest,
   gitStatusManifest,
