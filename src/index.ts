@@ -953,7 +953,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     rule_context: ruleContext,
     sourceTrustLevel,
     risk: normalizedAction.risk,
-    intent_group: normalizedAction.intent_group,
+    ...(normalizedAction.intent_group !== undefined && { intent_group: normalizedAction.intent_group }),
   };
 
   // Stage 1: capability gate — validates source trust level and risk via
