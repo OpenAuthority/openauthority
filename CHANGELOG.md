@@ -11,80 +11,60 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [1.2.1] — 2026-04-23
 
-First release to ship the complete first-party tool library, the two-stage enforcement pipeline, `FileAuthorityAdapter`, and the `data/bundle.json` rules format. v1.2.0 delivered the enforcement engine; v1.2.1 delivers the tool surface it protects.
+First release to ship the two-stage enforcement pipeline, 17 registered first-party tools, `FileAuthorityAdapter` with live bundle hot-reload, and `FileCredentialVault`. v1.2.0 delivered the enforcement engine; v1.2.1 delivers the capability system and the tool surface it protects.
 
 ### Added
 
-#### Tool library — 44 registered tools
-
-Every tool ships with a TypeBox-validated manifest (schema, action class, risk tier, HITL mode) and, where noted, a full execution layer with unit tests.
-
-**Filesystem (11)** — all with execution layer:
-`check_exists`, `copy_file`, `delete_file`, `edit_file`, `find_files`, `list_dir`, `make_dir`, `move_file`, `read_file`, `read_files_batch`, `write_file`
-
-**Git / VCS (11)** — all with execution layer:
-`git_add`, `git_branch`, `git_checkout`, `git_clone`, `git_commit`, `git_diff`, `git_log`, `git_merge`, `git_push`, `git_reset`, `git_status`
-
-**HTTP (5)** — all with execution layer (30 s `AbortController` timeout on each):
-`http_delete`, `http_get`, `http_patch`, `http_post`, `http_put`
-
-**Communication (3)**:
-`send_email` (SMTP execution layer — see limitations below), `send_slack` (execution layer), `call_webhook` (manifest only — deferred)
-
-**Secrets management (3)** — all with execution layer:
-`read_secret`, `rotate_secret`, `write_secret`
-
-**System / environment / search (3)** — all with execution layer:
-`get_env_var`, `get_system_info`, `grep_files`
-
-**Package management (4)** — manifest + schema only; execution layers deferred:
-`npm_install`, `npm_run`, `npm_run_build`, `pip_list`
-
-**Code execution / build (3)** — manifest + schema only; execution layers deferred:
-`run_code`, `run_linter`, `run_tests`
-
-**Special (1)** — execution layer, opt-in only:
-`unsafe_admin_exec` — requires `CLAWTHORITY_ENABLE_UNSAFE_ADMIN_EXEC=1` and an explicit `permit` rule in the policy engine; manifest carries `unsafe_admin: true` so the skill manifest validator emits security warnings at registration.
-
 #### Two-stage enforcement pipeline
 
-`runPipeline` (`src/enforcement/pipeline.ts`) wires the two stages and propagates `PipelineContext` between them:
+`runPipeline` (`src/enforcement/pipeline.ts`) wires two sequential enforcement stages around a HITL pre-check and threads `PipelineContext` through each:
 
-- **Stage 1 — capability gate** (`validateCapability`): seven ordered security checks that short-circuit on the first failure. Checks: untrusted-source + high/critical risk → deny; `hitl_mode: none` → bypass; missing `approval_id`; capability not found; TTL expiration; SHA-256 payload hash binding mismatch; one-time consumption via `ApprovalManager`; session-scope mismatch. Any uncaught error returns `stage1_error` (fail closed).
+- **HITL pre-check**: when `hitl_mode !== 'none'` and no `approval_id` is present, the pipeline returns `pending_hitl_approval` before any capability validation runs.
+- **Stage 1 — capability gate** (`validateCapability`): validates the issued capability token — presence, TTL, SHA-256 payload-hash binding, and single-use consumption via `ApprovalManager`. Any uncaught error returns `stage1_error` (fail closed).
+- **Stage 2 — policy evaluation** (`createStage2`): delegates to the Cedar engine and the JSON rule engine, honouring the priority-90 HITL-gated / priority-100 unconditional split.
+- **`buildPipelineContext`**: constructs a typed `PipelineContext` from a raw tool call, computing the SHA-256 `payload_hash` used by the Stage 1 binding check.
+- **Install-phase bypass**: tool calls originating from npm lifecycle scripts (`install`, `preinstall`, `postinstall`, `prepare`) are permitted unconditionally to prevent activation-time lockout.
 
-- **Stage 2 — policy evaluation** (`createStage2`): delegates to the Cedar engine and the JSON rule engine, honouring the priority-90 HITL-gated / priority-100 unconditional split introduced in v1.2.0.
+#### First-party tool library — 17 registered tools
 
-- **HITL re-run flow** (`runWithHitl`): when Stage 2 returns a priority-90 forbid and a HITL policy matches, dispatches an approval request. On operator approval a capability is issued and the pipeline re-runs with `approval_id`. On denial the original forbid is upheld. Unconditional forbids (priority ≥ 100) are never released by HITL.
+All 17 tools ship with TypeBox-validated manifests (schema, action class, risk tier, HITL mode) and full execution layers.
 
-- **`buildPipelineContext`** builder constructs a typed `PipelineContext` from a raw tool call and normalised action, computing the SHA-256 `payload_hash` used by the Stage 1 binding check.
+**Git / VCS (7):** `git_add`, `git_commit`, `git_diff`, `git_log`, `git_merge`, `git_reset`, `git_status`
+
+**Filesystem (8):** `append_file`, `create_directory`, `delete_file`, `edit_file`, `list_dir`, `list_directory`, `read_file`, `write_file`
+
+**HTTP (1):** `http_get` — 30 s `AbortController` timeout; response body truncated at 1 MB.
+
+**Communication (1):** `send_email` — dependency-free Node.js SMTP transport (`createConnection` / `tlsConnect`). PORT 465 (implicit TLS) and STARTTLS on PORT 587 are both supported; AUTH LOGIN is used when credentials are present. Configure via `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, `SMTP_FROM`.
 
 #### FileAuthorityAdapter
 
-`FileAuthorityAdapter` (`src/adapter/file-adapter.ts`) is the first production `IAuthorityAdapter` implementation. Issues UUID v7 capability tokens, stores them in-process, watches `data/bundle.json` for live policy updates via chokidar (300 ms debounce), and exposes `issueCapability` / `getCapability` / `consumeCapability`. Instantiated and wired into `activate()` automatically.
+`FileAuthorityAdapter` (`src/adapter/file-adapter.ts`) is the first production `IAuthorityAdapter` implementation. Issues UUID v7 capability tokens with SHA-256 payload binding, stores them in-process for the adapter lifetime, and exposes `issueCapability` / `getCapability` / `consumeCapability`. Watches `data/bundle.json` for live policy updates via chokidar (300 ms debounce, monotonic version enforcement, schema validation on each reload — previous bundle remains active if the new one fails validation). Instantiated and wired into `activate()` automatically.
 
-#### `data/bundle.json` rules format
+#### FileCredentialVault
 
-A `{ version, rules, checksum }` envelope is now the preferred rules file format. The resolution order: `data/bundle.json` → `data/rules.json` (fallback). Both `watcher.ts` and `loadJsonRules()` use the same `existsSync`-based precedence logic. The bundle watcher includes an `unlink` handler so deleting `bundle.json` restores `rules.json` automatically. `CLAWTHORITY_RULES_FILE` bypasses resolution entirely.
+`FileCredentialVault` (`src/vault/file-vault.ts`) is the first `ICredentialVault` / `SecretBackend` implementation (`@experimental`). Loads credentials from a flat `{ "KEY": "value" }` JSON file, validates schema at load time via TypeBox, and is strictly read-only — `set()` throws `CredentialVaultError` with code `read-only`. Designed for local development and CI environments; cloud vault providers are deferred to v1.3.
+
+#### Documentation
+
+- **Production deployment guidance** added to [docs/installation.md](docs/installation.md): Docker (`-e OPENAUTH_FORCE_ACTIVE=1`) and systemd (`Environment=OPENAUTH_FORCE_ACTIVE=1`) examples documenting why container and service deployments must set the flag to bypass the install-phase permit.
+- **Security review: F-01 mitigated** in [docs/security-review.md](docs/security-review.md): the install-phase bypass is documented as an intentional design choice; finding status updated to "Mitigated via documentation".
 
 #### Test coverage
 
-- **`src/hitl-gated-pipeline-rerun.e2e.ts`** — five test cases (TC-PRR-01..05) exercising the full HITL re-run flow: approval → re-run → permit; denial → original forbid; replay rejection; unconditional forbid immune to HITL; no-matching-policy fallback.
-- **`src/regression-capability-replay.e2e.ts`** — regression suite for all three replay-rejection types: binding mismatch, consumed token, expired token. Every case asserts the `executionEvent` carries the correct `effect`, `reason`, `stage`, and ISO 8601 `timestamp` in the audit trail.
-- **`src/regression-pipeline-integration.e2e.ts`** — 16 pipeline integration regression cases (TC-RPI-01..16).
+- **`src/regression-bundle-hot-reload.e2e.ts`** — five cases (TC-RBH-01..05) asserting chokidar file-watch propagation within a 600 ms deadline (300 ms debounce + 300 ms tolerance): file write detection, active rule reflection, rapid-write coalescing, second-change propagation, and rule content parsing.
+- **`src/regression-rules-json-forbid.e2e.ts`** — regression suite for the priority-200 JSON-rules forbid scenario from 2026-04-23.
 
-### ⚠️ Does Not Ship in v1.2.1
+### ⚠️ Known gaps — deferred to v1.3
 
-See the [v1.2.0 addendum](#v120-addendum--what-does-not-ship) for the full list. The following are specific to v1.2.1:
-
-- **Archive tools** — `archive_create`, `archive_extract`, `archive_list` are registered in the `@openclaw/action-registry` under `archive.*` action classes but ship with manifest stubs only. The execution layer is deferred to a future release. Policies covering `archive.create`, `archive.extract`, and `archive.read` are enforced correctly — only the tool _execution_ is not wired.
-
-- **SMTP-only email** — `send_email` uses a dependency-free Node.js SMTP transport (`createConnection` / `tlsConnect`). OAuth-based providers (Gmail API, Microsoft 365, SendGrid, Mailgun, Postmark, AWS SES) are **not** supported. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` environment variables. PORT 465 and STARTTLS on PORT 587 are both supported; AUTH LOGIN is used when credentials are present.
-
-- **Local-only capability management** — `FileAuthorityAdapter` stores capabilities in-process and watches a local file. There is no remote, cloud-hosted, or multi-party capability authority in this release. Capability TTL defaults to 3 600 s; override via `capabilityTtlSeconds` in the adapter config.
-
-- **Memory, payment, and browser tools** — `memory.read`, `memory.write`, `payment.initiate`, `web.search`, `web.fetch`, `browser.scrape` are registered action classes with policy coverage but have no first-party tool implementations in v1.2.1.
+- **Normalizer Rules 4–8** — shell-wrapper reclassification for `filesystem.delete` (Rule 4), `credential.read/write` via file path (Rule 5), credential-emitting CLI patterns (Rule 6), file-upload exfiltration (Rule 7), and environment-variable exfiltration (Rule 8) are **not implemented** in v1.2.1. The v1.2.0 entry documents these rules as shipped; see the correction note below.
+- **Cloud vault providers** — HashiCorp Vault, AWS Secrets Manager, and 1Password are not yet supported. `FileCredentialVault` is the only vault implementation.
+- **Remote / multi-party capability management** — `FileAuthorityAdapter` stores capabilities in-process with no cross-process sharing, revocation stream, or cloud authority backend.
+- **SMTP-only email** — `send_email` does not support OAuth-based providers (Gmail API, Microsoft 365, SendGrid, Mailgun, Postmark, AWS SES). Capability TTL defaults to 3 600 s; override via `capabilityTtlSeconds` in the adapter config.
 
 ---
+
+> **⚠️ Correction to the v1.2.0 entry below:** The v1.2.0 changelog entry documents normalizer Rules 4–8 as shipped features of that release. **These rules were not implemented and do not ship in v1.2.0 or v1.2.1.** Affected rules: shell-wrapper reclassification for `filesystem.delete` (Rule 4), `credential.read/write` via file path (Rule 5), credential-emitting CLI patterns (Rule 6), file-upload exfiltration (Rule 7), and environment-variable exfiltration (Rule 8). They are deferred to v1.3. The remainder of the v1.2.0 entry — HITL gating fixes, priority-90 routing, structured audit log, `CLAWTHORITY_RULES_FILE`, intent-group evaluation, and documentation updates — is accurate.
 
 ## [1.2.0] — 2026-04-23
 
