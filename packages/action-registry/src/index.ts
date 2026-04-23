@@ -264,6 +264,7 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'run_terminal_cmd',
       'terminal_exec',
       'cmd',
+      'unsafe_admin_exec',
     ],
   },
   {
