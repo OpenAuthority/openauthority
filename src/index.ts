@@ -151,7 +151,7 @@ import { buildEnvelope } from "./envelope.js";
 import { defaultAgentIdentityRegistry } from "./identity.js";
 import { BudgetTracker, createBudgetTracker } from "./budget/tracker.js";
 import { EventEmitter } from "node:events";
-import { runPipeline } from "./enforcement/pipeline.js";
+import { runPipeline, isInstallPhase } from "./enforcement/pipeline.js";
 import type { PipelineContext, Stage1Fn, Stage2Fn } from "./enforcement/pipeline.js";
 import { validateCapability } from "./enforcement/stage1-capability.js";
 import { FileAuthorityAdapter } from "./adapter/file-adapter.js";
@@ -1414,9 +1414,9 @@ let rulesWatcher: WatcherHandle | null = null;
  */
 function isInstalled(): boolean {
   if (process.env.OPENAUTH_FORCE_ACTIVE === "1") return true;
-  // Defer during npm install lifecycle phases (preinstall, install, postinstall, prepare).
-  const lifecycleEvent = process.env.npm_lifecycle_event ?? "";
-  if (["install", "preinstall", "postinstall", "prepare"].includes(lifecycleEvent)) return false;
+  // Defer during npm install lifecycle phases — delegate to the single bypass
+  // point in pipeline.ts rather than duplicating the detection logic here.
+  if (isInstallPhase()) return false;
   const moduleDir = dirname(fileURLToPath(import.meta.url));
   const pluginRoot = resolve(moduleDir, "..");
   return existsSync(resolve(pluginRoot, "data", ".installed"));
