@@ -25,6 +25,7 @@ import {
 } from './skill-manifest-validator.js';
 import { REGISTRY } from '@openclaw/action-registry';
 import { gitAddManifest } from '../tools/git_add/manifest.js';
+import { gitCommitManifest } from '../tools/git_commit/manifest.js';
 import { gitLogManifest } from '../tools/git_log/manifest.js';
 import { gitDiffManifest } from '../tools/git_diff/manifest.js';
 import { gitStatusManifest } from '../tools/git_status/manifest.js';
@@ -578,6 +579,7 @@ describe('TC-SMV-Contract: first-party tool manifests validate against F-05 sche
 
   const firstPartyManifests = [
     { name: 'gitAddManifest', manifest: gitAddManifest },
+    { name: 'gitCommitManifest', manifest: gitCommitManifest },
     { name: 'gitLogManifest', manifest: gitLogManifest },
     { name: 'gitDiffManifest', manifest: gitDiffManifest },
     { name: 'gitStatusManifest', manifest: gitStatusManifest },
