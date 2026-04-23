@@ -12,6 +12,7 @@
  *   TC-HPT-06: Result shape — status_code and body fields present
  *   TC-HPT-07: Non-2xx response — returns status_code without throwing
  *   TC-HPT-08: Empty body — accepts undefined body
+ *   TC-HPT-09: timeout — AbortError surfaces as code 'timeout'
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -225,5 +226,53 @@ describe('TC-HPT-08: empty body — accepts undefined body param', () => {
     stubFetch(200, 'ok');
     const result = await httpPut({ url: 'http://api.example.com/resource/1' });
     expect(result.status_code).toBe(200);
+  });
+});
+
+// ─── TC-HPT-09: timeout ───────────────────────────────────────────────────────
+
+describe('TC-HPT-09: timeout — AbortError surfaces as code timeout', () => {
+  it('throws HttpPutError with code timeout when fetch is aborted', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPutError | undefined;
+    try {
+      await httpPut({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpPutError;
+    }
+    expect(err).toBeInstanceOf(HttpPutError);
+    expect(err!.code).toBe('timeout');
+  });
+
+  it('timeout error message includes the URL', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPutError | undefined;
+    try {
+      await httpPut({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpPutError;
+    }
+    expect(err!.message).toContain('https://slow.example.com/resource/1');
+  });
+
+  it('timeout error is distinct from network-error', async () => {
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPutError | undefined;
+    try {
+      await httpPut({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpPutError;
+    }
+    expect(err!.code).not.toBe('network-error');
+    expect(err!.code).toBe('timeout');
   });
 });
