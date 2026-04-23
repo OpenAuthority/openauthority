@@ -9,6 +9,83 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ---
 
+## [1.2.1] — 2026-04-23
+
+First release to ship the complete first-party tool library, the two-stage enforcement pipeline, `FileAuthorityAdapter`, and the `data/bundle.json` rules format. v1.2.0 delivered the enforcement engine; v1.2.1 delivers the tool surface it protects.
+
+### Added
+
+#### Tool library — 44 registered tools
+
+Every tool ships with a TypeBox-validated manifest (schema, action class, risk tier, HITL mode) and, where noted, a full execution layer with unit tests.
+
+**Filesystem (11)** — all with execution layer:
+`check_exists`, `copy_file`, `delete_file`, `edit_file`, `find_files`, `list_dir`, `make_dir`, `move_file`, `read_file`, `read_files_batch`, `write_file`
+
+**Git / VCS (11)** — all with execution layer:
+`git_add`, `git_branch`, `git_checkout`, `git_clone`, `git_commit`, `git_diff`, `git_log`, `git_merge`, `git_push`, `git_reset`, `git_status`
+
+**HTTP (5)** — all with execution layer (30 s `AbortController` timeout on each):
+`http_delete`, `http_get`, `http_patch`, `http_post`, `http_put`
+
+**Communication (3)**:
+`send_email` (SMTP execution layer — see limitations below), `send_slack` (execution layer), `call_webhook` (manifest only — deferred)
+
+**Secrets management (3)** — all with execution layer:
+`read_secret`, `rotate_secret`, `write_secret`
+
+**System / environment / search (3)** — all with execution layer:
+`get_env_var`, `get_system_info`, `grep_files`
+
+**Package management (4)** — manifest + schema only; execution layers deferred:
+`npm_install`, `npm_run`, `npm_run_build`, `pip_list`
+
+**Code execution / build (3)** — manifest + schema only; execution layers deferred:
+`run_code`, `run_linter`, `run_tests`
+
+**Special (1)** — execution layer, opt-in only:
+`unsafe_admin_exec` — requires `CLAWTHORITY_ENABLE_UNSAFE_ADMIN_EXEC=1` and an explicit `permit` rule in the policy engine; manifest carries `unsafe_admin: true` so the skill manifest validator emits security warnings at registration.
+
+#### Two-stage enforcement pipeline
+
+`runPipeline` (`src/enforcement/pipeline.ts`) wires the two stages and propagates `PipelineContext` between them:
+
+- **Stage 1 — capability gate** (`validateCapability`): seven ordered security checks that short-circuit on the first failure. Checks: untrusted-source + high/critical risk → deny; `hitl_mode: none` → bypass; missing `approval_id`; capability not found; TTL expiration; SHA-256 payload hash binding mismatch; one-time consumption via `ApprovalManager`; session-scope mismatch. Any uncaught error returns `stage1_error` (fail closed).
+
+- **Stage 2 — policy evaluation** (`createStage2`): delegates to the Cedar engine and the JSON rule engine, honouring the priority-90 HITL-gated / priority-100 unconditional split introduced in v1.2.0.
+
+- **HITL re-run flow** (`runWithHitl`): when Stage 2 returns a priority-90 forbid and a HITL policy matches, dispatches an approval request. On operator approval a capability is issued and the pipeline re-runs with `approval_id`. On denial the original forbid is upheld. Unconditional forbids (priority ≥ 100) are never released by HITL.
+
+- **`buildPipelineContext`** builder constructs a typed `PipelineContext` from a raw tool call and normalised action, computing the SHA-256 `payload_hash` used by the Stage 1 binding check.
+
+#### FileAuthorityAdapter
+
+`FileAuthorityAdapter` (`src/adapter/file-adapter.ts`) is the first production `IAuthorityAdapter` implementation. Issues UUID v7 capability tokens, stores them in-process, watches `data/bundle.json` for live policy updates via chokidar (300 ms debounce), and exposes `issueCapability` / `getCapability` / `consumeCapability`. Instantiated and wired into `activate()` automatically.
+
+#### `data/bundle.json` rules format
+
+A `{ version, rules, checksum }` envelope is now the preferred rules file format. The resolution order: `data/bundle.json` → `data/rules.json` (fallback). Both `watcher.ts` and `loadJsonRules()` use the same `existsSync`-based precedence logic. The bundle watcher includes an `unlink` handler so deleting `bundle.json` restores `rules.json` automatically. `CLAWTHORITY_RULES_FILE` bypasses resolution entirely.
+
+#### Test coverage
+
+- **`src/hitl-gated-pipeline-rerun.e2e.ts`** — five test cases (TC-PRR-01..05) exercising the full HITL re-run flow: approval → re-run → permit; denial → original forbid; replay rejection; unconditional forbid immune to HITL; no-matching-policy fallback.
+- **`src/regression-capability-replay.e2e.ts`** — regression suite for all three replay-rejection types: binding mismatch, consumed token, expired token. Every case asserts the `executionEvent` carries the correct `effect`, `reason`, `stage`, and ISO 8601 `timestamp` in the audit trail.
+- **`src/regression-pipeline-integration.e2e.ts`** — 16 pipeline integration regression cases (TC-RPI-01..16).
+
+### ⚠️ Does Not Ship in v1.2.1
+
+See the [v1.2.0 addendum](#v120-addendum--what-does-not-ship) for the full list. The following are specific to v1.2.1:
+
+- **Archive tools** — `archive_create`, `archive_extract`, `archive_list` are registered in the `@openclaw/action-registry` under `archive.*` action classes but ship with manifest stubs only. The execution layer is deferred to a future release. Policies covering `archive.create`, `archive.extract`, and `archive.read` are enforced correctly — only the tool _execution_ is not wired.
+
+- **SMTP-only email** — `send_email` uses a dependency-free Node.js SMTP transport (`createConnection` / `tlsConnect`). OAuth-based providers (Gmail API, Microsoft 365, SendGrid, Mailgun, Postmark, AWS SES) are **not** supported. Configure `SMTP_HOST`, `SMTP_PORT`, `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM` environment variables. PORT 465 and STARTTLS on PORT 587 are both supported; AUTH LOGIN is used when credentials are present.
+
+- **Local-only capability management** — `FileAuthorityAdapter` stores capabilities in-process and watches a local file. There is no remote, cloud-hosted, or multi-party capability authority in this release. Capability TTL defaults to 3 600 s; override via `capabilityTtlSeconds` in the adapter config.
+
+- **Memory, payment, and browser tools** — `memory.read`, `memory.write`, `payment.initiate`, `web.search`, `web.fetch`, `browser.scrape` are registered action classes with policy coverage but have no first-party tool implementations in v1.2.1.
+
+---
+
 ## [1.2.0] — 2026-04-23
 
 Addresses a class of tester-reported classification gaps on hosts that expose a single generic shell-exec tool (e.g. OpenClaw's `exec`). Destructive commands and credential-file access now normalise to the right semantic action class, so the policies Clawthority ships for `filesystem.delete`, `credential.read`, and `credential.write` actually fire instead of silently falling through to `unknown_sensitive_action`.
@@ -66,6 +143,20 @@ _(nothing deferred in this release — Rule 7 and intent-group evaluation previo
 - **Total lockout recovery runbook.** New section in [docs/troubleshooting.md](docs/troubleshooting.md#total-lockout-recovery) walks operators through diagnosing a full-tool-surface block from the structured audit log (`tail -n 20 data/audit.jsonl | jq 'select(.type == "policy" and .effect == "forbid")'`) and the step-by-step recovery: disable HITL via YAML rename + gateway restart, inspect `stage`/`rule`/`priority`, edit `data/rules.json` (hot-reload) or compiled source (restart). Replaces the narrower `unknown_sensitive_action`-only guidance from the previous release.
 
 - **Dead-code reference to `data/bundles/active/bundle.json` removed from README.** The top-level README previously told operators to drop a policy bundle at that path, but no code in `src/index.ts` ever loaded it — only `data/rules.json` is wired up. The README now describes the actual runtime surfaces (`data/rules.json`, `hitl-policy.yaml`, env vars) with their hot-reload semantics. Architecture-level references to the bundle abstraction in `docs/architecture.md` and `docs/roadmap.md` are intentionally kept — the bundle adapter layer still exists as test infrastructure and a future-facing design.
+
+### ⚠️ v1.2.0 Addendum — What Does Not Ship {#v120-addendum--what-does-not-ship}
+
+v1.2.0 shipped the enforcement engine (normalizer rules, Cedar policy routing, HITL gating, audit logging). The following capabilities were **not included** and were completed in v1.2.1:
+
+- **No first-party tool library.** v1.2.0 ships the enforcement layer but zero runnable tools. The 44-tool library (`check_exists`, `read_file`, `git_commit`, `http_patch`, `send_email`, etc.) and the two-stage pipeline that gates them are not present. Clawthority in v1.2.0 intercepts and classifies inbound tool calls from the host (e.g. OpenClaw's `exec`); it does not itself expose tools the agent can call.
+
+- **No `FileAuthorityAdapter` / capability system.** The `IAuthorityAdapter` interface and the UUID v7 + SHA-256 binding capability token flow are absent in v1.2.0. Stage 1 of the enforcement pipeline (TTL expiration, payload binding, replay prevention) does not exist yet. Only Stage 2 (Cedar policy evaluation) is present.
+
+- **No `data/bundle.json` support.** The preferred `{ version, rules, checksum }` bundle format is not recognised. Only the plain-array `data/rules.json` format loads.
+
+- **No HITL pipeline re-run flow.** v1.2.0 routes priority-90 forbids to a HITL approval dispatch but does not re-run the pipeline after approval — the re-run path (`runWithHitl`) ships in v1.2.1. Operators on v1.2.0 who configure HITL should upgrade to v1.2.1 to get the full approval → capability-issue → re-run flow.
+
+> **Recommendation:** point release tweets and blog posts at v1.2.1, which is the first self-contained, fully operational release. v1.2.0 is a valid upgrade for pure enforcement-engine improvements (normalizer rules 4–8, intent-group evaluation, audit log enrichment) but is incomplete as a standalone release.
 
 ---
 
