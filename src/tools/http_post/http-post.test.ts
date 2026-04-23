@@ -13,6 +13,8 @@
  *   TC-HPO-07: Non-2xx response — returns status_code without throwing
  *   TC-HPO-08: Empty body — accepts undefined body
  *   TC-HPO-09: timeout — AbortError surfaces as code 'timeout'
+ *   TC-HPO-10: content_type — response Content-Type header included in result
+ *   TC-HPO-11: invalid-content-type — multipart/* header rejected before fetch
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -20,10 +22,11 @@ import { httpPost, HttpPostError } from './http-post.js';
 
 // ─── Fetch stub helpers ───────────────────────────────────────────────────────
 
-function stubFetch(status: number, responseBody: string): void {
+function stubFetch(status: number, responseBody: string, contentType?: string): void {
   vi.stubGlobal('fetch', vi.fn().mockResolvedValue({
     status,
     text: async () => responseBody,
+    headers: { get: (name: string) => name === 'content-type' ? (contentType ?? null) : null },
   }));
 }
 
@@ -57,7 +60,7 @@ describe('TC-HPO-01: successful POST — returns status_code and body', () => {
 
 describe('TC-HPO-02: POST with body — body forwarded in request', () => {
   it('calls fetch with the provided body string', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ status: 201, text: async () => '' });
+    const fetchMock = vi.fn().mockResolvedValue({ status: 201, text: async () => '', headers: { get: () => null } });
     vi.stubGlobal('fetch', fetchMock);
 
     const payload = JSON.stringify({ name: 'new-resource' });
@@ -70,7 +73,7 @@ describe('TC-HPO-02: POST with body — body forwarded in request', () => {
   });
 
   it('sends undefined body when body is omitted', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ status: 200, text: async () => '' });
+    const fetchMock = vi.fn().mockResolvedValue({ status: 200, text: async () => '', headers: { get: () => null } });
     vi.stubGlobal('fetch', fetchMock);
 
     await httpPost({ url: 'https://api.example.com/resources' });
@@ -84,7 +87,7 @@ describe('TC-HPO-02: POST with body — body forwarded in request', () => {
 
 describe('TC-HPO-03: POST with custom headers — headers forwarded', () => {
   it('passes custom headers to fetch', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ status: 201, text: async () => '' });
+    const fetchMock = vi.fn().mockResolvedValue({ status: 201, text: async () => '', headers: { get: () => null } });
     vi.stubGlobal('fetch', fetchMock);
 
     const headers = { 'Content-Type': 'application/json', 'X-Request-ID': 'post-001' };
@@ -97,7 +100,7 @@ describe('TC-HPO-03: POST with custom headers — headers forwarded', () => {
   });
 
   it('uses empty headers object when headers are omitted', async () => {
-    const fetchMock = vi.fn().mockResolvedValue({ status: 201, text: async () => '' });
+    const fetchMock = vi.fn().mockResolvedValue({ status: 201, text: async () => '', headers: { get: () => null } });
     vi.stubGlobal('fetch', fetchMock);
 
     await httpPost({ url: 'https://api.example.com/resources' });
@@ -274,5 +277,103 @@ describe('TC-HPO-09: timeout — AbortError surfaces as code timeout', () => {
     }
     expect(err!.code).not.toBe('network-error');
     expect(err!.code).toBe('timeout');
+  });
+});
+
+// ─── TC-HPO-10: content_type ──────────────────────────────────────────────────
+
+describe('TC-HPO-10: content_type — response Content-Type header included in result', () => {
+  it('includes content_type when Content-Type response header is present', async () => {
+    stubFetch(200, '{"id":1}', 'application/json');
+    const result = await httpPost({ url: 'https://api.example.com/resources' });
+    expect(result.content_type).toBe('application/json');
+  });
+
+  it('omits content_type when Content-Type response header is absent', async () => {
+    stubFetch(201, '');
+    const result = await httpPost({ url: 'https://api.example.com/resources' });
+    expect(result.content_type).toBeUndefined();
+  });
+
+  it('includes content_type with charset suffix', async () => {
+    stubFetch(200, '{}', 'application/json; charset=utf-8');
+    const result = await httpPost({ url: 'https://api.example.com/resources' });
+    expect(result.content_type).toBe('application/json; charset=utf-8');
+  });
+});
+
+// ─── TC-HPO-11: invalid-content-type ─────────────────────────────────────────
+
+describe('TC-HPO-11: invalid-content-type — multipart/* header rejected before fetch', () => {
+  it('throws HttpPostError with code invalid-content-type for multipart/form-data', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    let err: HttpPostError | undefined;
+    try {
+      await httpPost({
+        url: 'https://api.example.com/upload',
+        headers: { 'Content-Type': 'multipart/form-data' },
+      });
+    } catch (e) {
+      err = e as HttpPostError;
+    }
+    expect(err).toBeInstanceOf(HttpPostError);
+    expect(err!.code).toBe('invalid-content-type');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('throws for multipart/mixed content-type', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    let err: HttpPostError | undefined;
+    try {
+      await httpPost({
+        url: 'https://api.example.com/upload',
+        headers: { 'Content-Type': 'multipart/mixed' },
+      });
+    } catch (e) {
+      err = e as HttpPostError;
+    }
+    expect(err!.code).toBe('invalid-content-type');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('is case-insensitive for the content-type header key', async () => {
+    const fetchMock = vi.fn();
+    vi.stubGlobal('fetch', fetchMock);
+
+    let err: HttpPostError | undefined;
+    try {
+      await httpPost({
+        url: 'https://api.example.com/upload',
+        headers: { 'content-type': 'multipart/form-data' },
+      });
+    } catch (e) {
+      err = e as HttpPostError;
+    }
+    expect(err!.code).toBe('invalid-content-type');
+    expect(fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('allows application/json without throwing', async () => {
+    stubFetch(200, '{"ok":true}', 'application/json');
+    const result = await httpPost({
+      url: 'https://api.example.com/resources',
+      body: '{"name":"test"}',
+      headers: { 'Content-Type': 'application/json' },
+    });
+    expect(result.status_code).toBe(200);
+  });
+
+  it('allows application/x-www-form-urlencoded without throwing', async () => {
+    stubFetch(200, 'ok');
+    const result = await httpPost({
+      url: 'https://api.example.com/form',
+      body: 'name=test&value=1',
+      headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+    });
+    expect(result.status_code).toBe(200);
   });
 });

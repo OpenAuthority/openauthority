@@ -30,6 +30,8 @@ export interface HttpPostResult {
   status_code: number;
   /** Response body as a UTF-8 string. */
   body: string;
+  /** Value of the Content-Type response header, if present. */
+  content_type?: string;
 }
 
 // ─── Error ────────────────────────────────────────────────────────────────────
@@ -37,14 +39,15 @@ export interface HttpPostResult {
 /**
  * Typed error thrown by `httpPost`.
  *
- * - `invalid-url`    — the provided URL is not a valid http/https URL.
- * - `network-error`  — a network-level failure occurred during the request.
- * - `timeout`        — the request exceeded the 30 s timeout.
+ * - `invalid-url`          — the provided URL is not a valid http/https URL.
+ * - `invalid-content-type` — the Content-Type header contains an unsupported type (e.g. multipart/*).
+ * - `network-error`        — a network-level failure occurred during the request.
+ * - `timeout`              — the request exceeded the 30 s timeout.
  */
 export class HttpPostError extends Error {
   constructor(
     message: string,
-    public readonly code: 'invalid-url' | 'network-error' | 'timeout',
+    public readonly code: 'invalid-url' | 'invalid-content-type' | 'network-error' | 'timeout',
   ) {
     super(message);
     this.name = 'HttpPostError';
@@ -56,12 +59,16 @@ export class HttpPostError extends Error {
 /**
  * Sends an HTTP POST request to the given URL.
  *
- * @param params  URL, optional body, and optional headers.
- * @returns       `{ status_code, body }` — the HTTP response.
+ * Supports application/json and application/x-www-form-urlencoded bodies.
+ * multipart/* content types are rejected (file uploads are out of scope).
  *
- * @throws {HttpPostError} code `invalid-url`   — URL is not http/https.
- * @throws {HttpPostError} code `network-error` — network failure.
- * @throws {HttpPostError} code `timeout`       — request exceeded 30 s.
+ * @param params  URL, optional body, and optional headers.
+ * @returns       `{ status_code, body, content_type? }` — the HTTP response.
+ *
+ * @throws {HttpPostError} code `invalid-url`          — URL is not http/https.
+ * @throws {HttpPostError} code `invalid-content-type` — Content-Type is multipart/*.
+ * @throws {HttpPostError} code `network-error`        — network failure.
+ * @throws {HttpPostError} code `timeout`              — request exceeded 30 s.
  */
 export async function httpPost(params: HttpPostParams): Promise<HttpPostResult> {
   const { url, body, headers } = params;
@@ -71,6 +78,20 @@ export async function httpPost(params: HttpPostParams): Promise<HttpPostResult> 
       `http_post: invalid URL '${url}' — only http and https schemes are supported.`,
       'invalid-url',
     );
+  }
+
+  // Validate content-type: reject multipart/* (file uploads are out of scope).
+  const contentTypeEntry = Object.entries(headers ?? {}).find(
+    ([key]) => key.toLowerCase() === 'content-type',
+  );
+  if (contentTypeEntry !== undefined) {
+    const [, contentTypeValue] = contentTypeEntry;
+    if (contentTypeValue.toLowerCase().startsWith('multipart/')) {
+      throw new HttpPostError(
+        `http_post: content-type '${contentTypeValue}' is not supported — file uploads and multipart data are out of scope.`,
+        'invalid-content-type',
+      );
+    }
   }
 
   const controller = new AbortController();
@@ -101,8 +122,11 @@ export async function httpPost(params: HttpPostParams): Promise<HttpPostResult> 
 
   clearTimeout(timeoutId);
   const responseBody = await response.text();
+  const contentType = response.headers.get('content-type') ?? undefined;
+
   return {
     status_code: response.status,
     body: responseBody,
+    ...(contentType !== undefined ? { content_type: contentType } : {}),
   };
 }

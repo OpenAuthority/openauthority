@@ -47,6 +47,10 @@ export const httpPostManifest: ToolManifest = {
         type: 'string',
         description: 'Response body as a UTF-8 string.',
       },
+      content_type: {
+        type: 'string',
+        description: 'Value of the Content-Type response header.',
+      },
     },
   },
 };
