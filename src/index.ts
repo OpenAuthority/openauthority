@@ -910,15 +910,9 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   const normalizedAction = normalize_action(toolName, normalizedParams);
   console.log(`[clawthority] │ [trust] source=${source ?? "undefined"} → trustLevel=${sourceTrustLevel}  actionClass=${normalizedAction.action_class}  risk=${normalizedAction.risk}`);
 
-  // Emit telemetry when Rules 4–8 reclassified the action.
-  if (normalizedAction.reclassification !== undefined) {
-    await logNormalizerReclassified({
-      ...normalizedAction.reclassification,
-      agentId: identity.auditAgentId,
-      channel: identity.auditChannel,
-      verified: identity.verified,
-    });
-  }
+  // Rules 4–8 (command-regex reclassification) were retired in commit 403cb72.
+  // The `NormalizedAction.reclassification` field no longer exists; the
+  // telemetry hook is dead code and has been removed.
 
   // Build envelope to propagate trust context for audit and pipeline tracing.
   const _envelope = buildEnvelope(

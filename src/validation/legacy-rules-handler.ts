@@ -263,7 +263,7 @@ export class LegacyRulesHandler {
         sessionEntries.push(entry);
 
         if (this.logger !== undefined) {
-          await this.logger.log(entry);
+          await this.logger.log(entry as unknown as Record<string, unknown>);
         }
 
         // Normalise: rewrite resource from 'command' → 'tool'
