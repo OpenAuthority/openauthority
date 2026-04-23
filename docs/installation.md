@@ -175,6 +175,77 @@ By default, persisted data is written to a `data/` directory at the repository r
 
 ---
 
+## Production Deployment
+
+> **Security note (F-01):** Clawthority includes an install-phase bypass that suppresses enforcement while npm lifecycle scripts (`install`, `preinstall`, `postinstall`, `prepare`) are running. In production environments you **must** set `OPENAUTH_FORCE_ACTIVE=1` to disable this bypass. Without it, any code that runs inside an npm lifecycle event — including compromised `postinstall` scripts from a supply-chain dependency — will bypass all enforcement for its duration.
+
+### Docker
+
+Set `OPENAUTH_FORCE_ACTIVE=1` in your container environment. Using a `Dockerfile`:
+
+```dockerfile
+ENV OPENAUTH_FORCE_ACTIVE=1
+```
+
+Or via `docker run`:
+
+```bash
+docker run -e OPENAUTH_FORCE_ACTIVE=1 your-openclaw-image
+```
+
+Or in `docker-compose.yml`:
+
+```yaml
+services:
+  openclaw:
+    image: your-openclaw-image
+    environment:
+      - OPENAUTH_FORCE_ACTIVE=1
+      - CLAWTHORITY_MODE=closed
+```
+
+### systemd
+
+Add `OPENAUTH_FORCE_ACTIVE=1` to the `[Service]` section of your systemd unit file:
+
+```ini
+[Unit]
+Description=OpenClaw agent with Clawthority enforcement
+After=network.target
+
+[Service]
+Type=simple
+User=openclaw
+WorkingDirectory=/opt/openclaw
+ExecStart=/usr/bin/node dist/index.js
+Environment=OPENAUTH_FORCE_ACTIVE=1
+Environment=CLAWTHORITY_MODE=closed
+Restart=on-failure
+RestartSec=5s
+
+[Install]
+WantedBy=multi-user.target
+```
+
+Reload and restart after editing:
+
+```bash
+sudo systemctl daemon-reload
+sudo systemctl restart openclaw
+```
+
+### What happens without OPENAUTH_FORCE_ACTIVE=1
+
+If the variable is unset and an npm lifecycle event is triggered in the host process, Clawthority logs:
+
+```
+[clawthority] install_phase_bypass: enforcement suspended during npm lifecycle
+```
+
+With `OPENAUTH_FORCE_ACTIVE=1` set, the bypass is suppressed and enforcement remains active throughout the process lifetime. This variable has no effect on normal (non-npm) process startup.
+
+---
+
 ## Development Setup
 
 Use this setup when working on the plugin or dashboard locally.

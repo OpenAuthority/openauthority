@@ -15,7 +15,7 @@ This document records the security review of three areas in Clawthority: the two
 
 | Finding | Area | Severity | Status |
 |---|---|---|---|
-| F-01 | Enforcement gate — install phase bypass | Medium | Open |
+| F-01 | Enforcement gate — install phase bypass | Medium | Mitigated via documentation |
 | F-02 | Enforcement gate — in-memory token consumption | Medium | Open |
 | F-03 | Enforcement gate — session-less capability reuse | Low | Accepted |
 | F-04 | Enforcement gate — error reason leakage | Low | Accepted |
@@ -83,7 +83,7 @@ Both stages catch all exceptions and return `forbid`, implementing fail-closed s
 
 **Severity:** Medium
 **File:** `src/enforcement/pipeline.ts:17–21`
-**Status:** Open
+**Status:** Mitigated via documentation
 
 **Description:**
 `isInstallPhase()` returns `true` when `npm_lifecycle_event` is one of `install`, `preinstall`, `postinstall`, or `prepare`. When true, the entire enforcement pipeline is bypassed with a `permit`. This is controlled by `OPENAUTH_FORCE_ACTIVE=1`.
@@ -100,6 +100,9 @@ An attacker who can inject or override the `npm_lifecycle_event` environment var
 1. Default `OPENAUTH_FORCE_ACTIVE=1` in production deployment documentation and container images.
 2. Add an audit log warning (distinct from the normal `install_phase_bypass` permit) when this path is taken, to make bypass events visible in the audit trail.
 3. Consider whether the install phase bypass can be narrowed to specific action classes (e.g., only `package.management.*`) rather than blanket permit.
+
+**Mitigation applied:**
+Remediation item 1 is addressed. A "Production Deployment" section has been added to `docs/installation.md` documenting the `OPENAUTH_FORCE_ACTIVE=1` requirement with Docker and systemd configuration examples. Items 2 and 3 remain open for a future engineering pass.
 
 ---
 
@@ -277,7 +280,7 @@ The following findings are classified as requiring resolution before the v1 rele
 
 | Finding | Description | Owner | Due |
 |---|---|---|---|
-| F-01 | Add `OPENAUTH_FORCE_ACTIVE=1` to production deployment docs; add audit log warning for install-phase bypass | Engineering | Before v1 |
+| F-01 | ~~Add `OPENAUTH_FORCE_ACTIVE=1` to production deployment docs~~ (done); add audit log warning for install-phase bypass | Engineering | Partially resolved — deployment docs updated |
 | F-02 | Document in-memory consumption limitation in `docs/installation.md`; production deployments must use persistent revocation via Firma remote adapter | Engineering | Before v1 |
 | F-05 (blocker) | `unsafe_legacy` must not be implemented without satisfying §4.3 requirements | Engineering | Before any `unsafe_legacy` PR |
 | F-06 (blocker) | CS-11 must not be implemented without satisfying §5.3 requirements | Engineering | Before any CS-11 PR |
@@ -306,3 +309,4 @@ The following steps are required to complete the external security review proces
 | Revision | Date | Author | Summary |
 |---|---|---|---|
 | rev 1 | April 2026 | Internal (pre-external-review) | Initial findings for enforcement gate; pre-implementation requirements for `unsafe_legacy` and CS-11 |
+| rev 2 | April 2026 | Engineering | F-01 mitigated via documentation: added "Production Deployment" section to `docs/installation.md` covering `OPENAUTH_FORCE_ACTIVE=1` for Docker and systemd |
