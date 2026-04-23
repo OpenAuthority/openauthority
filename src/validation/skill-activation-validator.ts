@@ -28,6 +28,7 @@ import { editFileManifest } from '../tools/edit_file/manifest.js';
 import { readFileManifest } from '../tools/read_file/manifest.js';
 import { writeFileManifest } from '../tools/write_file/manifest.js';
 import { listDirManifest } from '../tools/list_dir/manifest.js';
+import { listDirectoryManifest } from '../tools/list_directory/manifest.js';
 import { deleteFileManifest } from '../tools/delete_file/manifest.js';
 import { createDirectoryManifest } from '../tools/create_directory/manifest.js';
 
@@ -51,6 +52,7 @@ export const FIRST_PARTY_MANIFESTS: readonly ToolManifest[] = [
   readFileManifest,
   writeFileManifest,
   listDirManifest,
+  listDirectoryManifest,
   deleteFileManifest,
   createDirectoryManifest,
 ];
