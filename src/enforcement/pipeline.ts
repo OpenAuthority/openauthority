@@ -41,6 +41,8 @@ export interface PipelineContext {
   rule_context: RuleContext;
   /** Trust level of the source initiating this action ('user', 'agent', or 'untrusted'). */
   sourceTrustLevel?: string;
+  /** Raw source string from the hook event; used by Stage 1 to compute trust level when sourceTrustLevel is absent. */
+  source?: string;
   /** Effective risk level of the normalized action. */
   risk?: RiskLevel;
   /** Intent group of the normalized action, used for broad intent-based policy matching. */

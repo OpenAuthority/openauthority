@@ -147,7 +147,6 @@ import { resolve, dirname, basename } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUILD_VERSION, BUILD_COMMIT, BUILD_DIRTY, BUILD_AT } from "./build-info.js";
 import { normalize_action, sortedJsonStringify, getRegistryEntry } from "./enforcement/normalize.js";
-import { buildEnvelope } from "./envelope.js";
 import { defaultAgentIdentityRegistry } from "./identity.js";
 import { BudgetTracker, createBudgetTracker } from "./budget/tracker.js";
 import { EventEmitter } from "node:events";
@@ -853,20 +852,6 @@ async function logHitlDecision(
 }
 
 /**
- * Determines the source trust level from the event source field.
- *
- * Mapping:
- *   'user'               → 'user'      (direct user instruction)
- *   'agent' | undefined  → 'agent'     (autonomous agent reasoning)
- *   anything else        → 'untrusted' (external content: web, file, email, etc.)
- */
-function determineSourceTrustLevel(source?: string): 'user' | 'agent' | 'untrusted' {
-  if (source === 'user') return 'user';
-  if (source === 'agent' || source === undefined) return 'agent';
-  return 'untrusted';
-}
-
-/**
  * Priority at or above which a Cedar `forbid` rule is treated as an
  * unconditional block. Rules below this threshold that carry an explicit
  * priority are treated as "HITL-gated forbids" — they block unless an HITL
@@ -913,11 +898,9 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     identity.channel,
   );
 
-  // ── 0. Source trust level determination ───────────────────────────────────
   const normalizedParams = (params !== null && typeof params === 'object' && !Array.isArray(params))
     ? (params as Record<string, unknown>)
     : {};
-  const sourceTrustLevel = determineSourceTrustLevel(source);
 
   // ── 0a. Tool registry gate — pre-normalization check ─────────────────────
   // Check whether the tool is present in the @openclaw/action-registry alias
@@ -942,29 +925,13 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   }
 
   const normalizedAction = normalize_action(toolName, normalizedParams);
-  console.log(`[clawthority] │ [trust] source=${source ?? "undefined"} → trustLevel=${sourceTrustLevel}  actionClass=${normalizedAction.action_class}  risk=${normalizedAction.risk}`);
+  console.log(`[clawthority] │ [trust] source=${source ?? "undefined"}  actionClass=${normalizedAction.action_class}  risk=${normalizedAction.risk}`);
 
   // Rules 4–8 (command-regex reclassification) were retired in commit 403cb72.
   // The `NormalizedAction.reclassification` field no longer exists; the
   // telemetry hook is dead code and has been removed.
 
-  // Build envelope to propagate trust context for audit and pipeline tracing.
   const payloadHash = createHash('sha256').update(sortedJsonStringify(normalizedParams)).digest('hex');
-  const _envelope = buildEnvelope(
-    {
-      action_class: normalizedAction.action_class,
-      target: normalizedAction.target,
-      summary: `tool call: ${toolName}`,
-      payload_hash: payloadHash,
-      parameters: normalizedParams,
-    },
-    null,
-    sourceTrustLevel,
-    ctx.agentId ?? 'unknown',
-    '',
-    0,
-    '',
-  );
 
   // Common audit-entry scaffolding — every block path fills these fields in
   // addition to its stage-specific details.
@@ -992,7 +959,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     payload_hash: payloadHash,
     hitl_mode: 'none',
     rule_context: ruleContext,
-    sourceTrustLevel,
+    source,
     risk: normalizedAction.risk,
     ...(normalizedAction.intent_group !== undefined && { intent_group: normalizedAction.intent_group }),
   };
@@ -1225,7 +1192,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
         resource: 'tool',
         match: toolName,
         reason: blockReason,
-        rule: `trust:${sourceTrustLevel}+${normalizedAction.risk}`,
+        rule: `trust:untrusted+${normalizedAction.risk}`,
         ...auditBase,
       });
       return { block: true, blockReason };
