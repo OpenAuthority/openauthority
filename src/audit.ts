@@ -74,6 +74,66 @@ export interface HitlDecisionEntry {
   verified?: boolean;
 }
 
+/**
+ * Audit entry emitted when a tool name cannot be resolved to a known action
+ * class and falls back to `unknown_sensitive_action`. Used for taxonomy drift
+ * detection.
+ */
+export interface NormalizerUnclassifiedEntry {
+  /** ISO 8601 timestamp. */
+  ts: string;
+  /** Entry type marker. */
+  type: 'normalizer-unclassified';
+  /** Audit stage identifier for drift detection. */
+  stage: 'normalizer-unclassified';
+  /** Tool name that could not be classified. */
+  toolName: string;
+  /** Agent ID. */
+  agentId: string;
+  /** Channel. */
+  channel: string;
+  /**
+   * True when the agent identity was verified against the
+   * {@link AgentIdentityRegistry}. Absent for entries written before this
+   * field was introduced.
+   */
+  verified?: boolean;
+}
+
+/**
+ * Audit entry emitted when Rules 4–8 in `normalize_action` reclassify a tool
+ * call to a more specific action class. Used for tracking legacy regex
+ * classification dependency.
+ */
+export interface NormalizerReclassifiedEntry {
+  /** ISO 8601 timestamp. */
+  ts: string;
+  /** Entry type marker. */
+  type: 'normalizer-reclassified';
+  /** Audit stage identifier. */
+  stage: 'normalizer-reclassified';
+  /** Which rule (4–8) triggered the reclassification. */
+  rule: number;
+  /** Tool name that was reclassified. */
+  toolName: string;
+  /** Action class before reclassification. */
+  fromClass: string;
+  /** Action class after reclassification. */
+  toClass: string;
+  /** First 40 chars of the command string, PII-sanitized. */
+  commandPrefix: string;
+  /** Agent ID. */
+  agentId: string;
+  /** Channel. */
+  channel: string;
+  /**
+   * True when the agent identity was verified against the
+   * {@link AgentIdentityRegistry}. Absent for entries written before this
+   * field was introduced.
+   */
+  verified?: boolean;
+}
+
 /** Options for {@link JsonlAuditLogger}. */
 export interface JsonlAuditLoggerOptions {
   /** Absolute or relative path to the JSONL log file. */
@@ -132,7 +192,7 @@ export class JsonlAuditLogger {
    * @param entry  Audit entry to record. Accepts {@link PolicyDecisionEntry},
    *               {@link HitlDecisionEntry}, or any `Record<string, unknown>`.
    */
-  async log(entry: PolicyDecisionEntry | HitlDecisionEntry | Record<string, unknown>): Promise<void> {
+  async log(entry: PolicyDecisionEntry | HitlDecisionEntry | NormalizerUnclassifiedEntry | NormalizerReclassifiedEntry | Record<string, unknown>): Promise<void> {
     const line = JSON.stringify(entry) + "\n";
     try {
       mkdirSync(dirname(this.filePath), { recursive: true });

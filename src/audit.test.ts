@@ -14,6 +14,7 @@ import { existsSync } from 'node:fs';
 import {
   JsonlAuditLogger,
 } from './audit.js';
+import type { NormalizerUnclassifiedEntry } from './audit.js';
 
 describe('JsonlAuditLogger', () => {
   const tmpDir = tmpdir();
@@ -79,6 +80,28 @@ describe('JsonlAuditLogger', () => {
     ).resolves.toBeUndefined();
     expect(errSpy).toHaveBeenCalled();
     errSpy.mockRestore();
+  });
+
+  it('logs normalizer-unclassified entries', async () => {
+    const logger = new JsonlAuditLogger({ logFile });
+    const entry: NormalizerUnclassifiedEntry = {
+      ts: new Date().toISOString(),
+      type: 'normalizer-unclassified',
+      stage: 'normalizer-unclassified',
+      toolName: 'some_unknown_tool',
+      agentId: 'agent-1',
+      channel: 'default',
+      verified: false,
+    };
+    await logger.log(entry);
+
+    const content = await readFile(logFile, 'utf-8');
+    const parsed = JSON.parse(content.trim());
+    expect(parsed.type).toBe('normalizer-unclassified');
+    expect(parsed.stage).toBe('normalizer-unclassified');
+    expect(parsed.toolName).toBe('some_unknown_tool');
+    expect(parsed.agentId).toBe('agent-1');
+    expect(parsed.verified).toBe(false);
   });
 
   it('logs HITL decision entries', async () => {

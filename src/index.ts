@@ -3,6 +3,8 @@ export { JsonlAuditLogger } from "./audit.js";
 export type {
   PolicyDecisionEntry,
   HitlDecisionEntry,
+  NormalizerUnclassifiedEntry,
+  NormalizerReclassifiedEntry,
   JsonlAuditLoggerOptions,
 } from "./audit.js";
 
@@ -125,7 +127,7 @@ export type {
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
 import { JsonlAuditLogger } from "./audit.js";
-import type { HitlDecisionEntry, PolicyDecisionEntry } from "./audit.js";
+import type { HitlDecisionEntry, NormalizerReclassifiedEntry, NormalizerUnclassifiedEntry, PolicyDecisionEntry } from "./audit.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules, { OPEN_MODE_RULES } from "./policy/rules.js";
@@ -145,7 +147,7 @@ import { existsSync } from "node:fs";
 import { resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
 import { BUILD_VERSION, BUILD_COMMIT, BUILD_DIRTY, BUILD_AT } from "./build-info.js";
-import { normalize_action, sortedJsonStringify } from "./enforcement/normalize.js";
+import { normalize_action, sortedJsonStringify, getRegistryEntry } from "./enforcement/normalize.js";
 import { buildEnvelope } from "./envelope.js";
 import { defaultAgentIdentityRegistry } from "./identity.js";
 import { BudgetTracker, createBudgetTracker } from "./budget/tracker.js";
@@ -764,6 +766,32 @@ async function logPolicyDecision(entry: Omit<PolicyDecisionEntry, 'ts' | 'type'>
   });
 }
 
+/** Log a normalizer-unclassified event to the JSONL audit file. */
+async function logNormalizerUnclassified(
+  entry: Omit<NormalizerUnclassifiedEntry, 'ts' | 'type' | 'stage'>,
+): Promise<void> {
+  if (!hitlAuditLogger) return;
+  await hitlAuditLogger.log({
+    ts: new Date().toISOString(),
+    type: 'normalizer-unclassified',
+    stage: 'normalizer-unclassified',
+    ...entry,
+  } satisfies NormalizerUnclassifiedEntry);
+}
+
+/** Log a normalizer-reclassified event (Rules 4–8 activation) to the JSONL audit file. */
+async function logNormalizerReclassified(
+  entry: Omit<NormalizerReclassifiedEntry, 'ts' | 'type' | 'stage'>,
+): Promise<void> {
+  if (!hitlAuditLogger) return;
+  await hitlAuditLogger.log({
+    ts: new Date().toISOString(),
+    type: 'normalizer-reclassified',
+    stage: 'normalizer-reclassified',
+    ...entry,
+  } satisfies NormalizerReclassifiedEntry);
+}
+
 /** Log a HITL decision to the JSONL audit file. */
 async function logHitlDecision(
   decision: HitlDecisionEntry['decision'],
@@ -856,8 +884,35 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     ? (params as Record<string, unknown>)
     : {};
   const sourceTrustLevel = determineSourceTrustLevel(source);
+
+  // ── 0a. Tool registry gate — pre-normalization check ─────────────────────
+  // Check whether the tool is present in the @openclaw/action-registry alias
+  // index before normalization. Tools not found in the index, and registered
+  // entries that lack a valid action_class, are classified as
+  // unknown_sensitive_action by normalize_action (fail-closed). A warning is
+  // emitted in both cases so operators can identify unrecognised tools early.
+  const preRegistryEntry = getRegistryEntry(toolName);
+  const toolIsRegistered =
+    !!preRegistryEntry.action_class &&
+    preRegistryEntry.action_class !== 'unknown_sensitive_action';
+  if (!toolIsRegistered) {
+    console.warn(
+      `[clawthority] │ [registry] ⚠ tool="${toolName}" is not registered in the action registry — will be classified as unknown_sensitive_action`,
+    );
+    await logNormalizerUnclassified({
+      toolName,
+      agentId: identity.auditAgentId,
+      channel: identity.auditChannel,
+      verified: identity.verified,
+    });
+  }
+
   const normalizedAction = normalize_action(toolName, normalizedParams);
   console.log(`[clawthority] │ [trust] source=${source ?? "undefined"} → trustLevel=${sourceTrustLevel}  actionClass=${normalizedAction.action_class}  risk=${normalizedAction.risk}`);
+
+  // Rules 4–8 (command-regex reclassification) were retired in commit 403cb72.
+  // The `NormalizedAction.reclassification` field no longer exists; the
+  // telemetry hook is dead code and has been removed.
 
   // Build envelope to propagate trust context for audit and pipeline tracing.
   const _envelope = buildEnvelope(
@@ -941,8 +996,17 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
       const blockReason = decision.reason ?? "Tool call denied by Cedar policy";
       const priority = decision.matchedRule?.priority;
       const ruleTag = formatRuleTag(decision.matchedRule);
-      if (isHitlGatedForbid(decision.matchedRule)) {
-        console.log(`[clawthority] │ [cedar] ⏸ HITL-gated forbid (priority=${priority} rule=${ruleTag}) — will defer to HITL policy`);
+      // Closed-mode implicit deny (no matchedRule) is treated as HITL-gated:
+      // HITL is the operator's escape hatch for action classes without an
+      // explicit permit. If no HITL policy matches, the HITL stage still
+      // upholds the forbid, so closed-mode safety is preserved.
+      const isImplicitDeny = decision.matchedRule === undefined;
+      if (isHitlGatedForbid(decision.matchedRule) || isImplicitDeny) {
+        if (isImplicitDeny) {
+          console.log(`[clawthority] │ [cedar] ⏸ implicit-deny (closed mode, no matching rule) — will defer to HITL policy`);
+        } else {
+          console.log(`[clawthority] │ [cedar] ⏸ HITL-gated forbid (priority=${priority} rule=${ruleTag}) — will defer to HITL policy`);
+        }
         pendingHitlGatedBlockReason = blockReason;
         pendingHitlGatedSource = 'cedar';
         pendingHitlGatedRule = decision.matchedRule;

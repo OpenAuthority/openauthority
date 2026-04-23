@@ -21,7 +21,7 @@ Agent tool call  ─►  Clawthority  ─►  Allow  │  Deny  │  Ask human  
 ```
 
 > [!NOTE]
-> **v1.0 — stable API.** The plugin API and policy bundle schema follow [semantic versioning](https://semver.org); breaking changes ship in a future major release. The version badge above reflects the current release.
+> **v1.x — stable API.** The plugin API and policy bundle schema follow [semantic versioning](https://semver.org); breaking changes ship in a future major release. The version badge above reflects the current release (1.2.0).
 
 ---
 
@@ -234,6 +234,7 @@ Full schema and environment-variable overrides: [docs/configuration.md](docs/con
 - [Rule Deletion](docs/rule-deletion.md) — safe rule removal via the impact-preview modal
 - [Troubleshooting](docs/troubleshooting.md) — common errors, log prefixes, fail-closed diagnostics
 - [Roadmap](docs/roadmap.md) — what's shipped, what's next
+- [Security Review v2](docs/security-review-v2.md) — enforcement gate findings, unsafe\_legacy and CS-11 pre-implementation requirements
 
 **Contributing**
 - [Contributing guide](docs/contributing.md) — dev setup, test layout, commit conventions

@@ -473,4 +473,184 @@ describe('ApprovalManager', () => {
       expect(handle.token).toMatch(UUID_V7_RE);
     });
   });
+
+  describe('listPending', () => {
+    it('returns empty array when no requests are pending', () => {
+      expect(manager.listPending()).toEqual([]);
+    });
+
+    it('returns a snapshot of all pending requests', () => {
+      manager.createApprovalRequest({
+        toolName: 'email.send',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+      manager.createApprovalRequest({
+        toolName: 'file.delete',
+        agentId: 'agent-2',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      const list = manager.listPending();
+      expect(list).toHaveLength(2);
+      expect(list.map((e) => e.toolName)).toContain('email.send');
+      expect(list.map((e) => e.toolName)).toContain('file.delete');
+    });
+
+    it('returns entries sorted oldest-first by createdAt', () => {
+      manager.createApprovalRequest({
+        toolName: 'first',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+      manager.createApprovalRequest({
+        toolName: 'second',
+        agentId: 'agent-2',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      const list = manager.listPending();
+      expect(list.length).toBeGreaterThanOrEqual(2);
+      // createdAt should be non-decreasing
+      for (let i = 1; i < list.length; i++) {
+        expect(list[i]!.createdAt).toBeGreaterThanOrEqual(list[i - 1]!.createdAt);
+      }
+    });
+
+    it('omits entries that have been resolved', async () => {
+      const h1 = manager.createApprovalRequest({
+        toolName: 'email.send',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+      manager.createApprovalRequest({
+        toolName: 'file.delete',
+        agentId: 'agent-2',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      manager.resolveApproval(h1.token, 'approved');
+      await h1.promise;
+
+      const list = manager.listPending();
+      expect(list).toHaveLength(1);
+      expect(list[0]!.toolName).toBe('file.delete');
+    });
+
+    it('returned entries do not expose resolve or timer internals', () => {
+      manager.createApprovalRequest({
+        toolName: 'email.send',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      const [entry] = manager.listPending();
+      expect(entry).toBeDefined();
+      expect('resolve' in entry!).toBe(false);
+      expect('timer' in entry!).toBe(false);
+    });
+  });
+
+  describe('batchResolve', () => {
+    it('resolves all supplied tokens and returns the count', async () => {
+      const h1 = manager.createApprovalRequest({
+        toolName: 'email.send',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+      const h2 = manager.createApprovalRequest({
+        toolName: 'file.delete',
+        agentId: 'agent-2',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      const count = manager.batchResolve([h1.token, h2.token], 'approved');
+      expect(count).toBe(2);
+      expect(await h1.promise).toBe('approved');
+      expect(await h2.promise).toBe('approved');
+      expect(manager.size).toBe(0);
+    });
+
+    it('returns 0 for an empty token list', () => {
+      expect(manager.batchResolve([], 'approved')).toBe(0);
+    });
+
+    it('skips unknown tokens without throwing', () => {
+      manager.createApprovalRequest({
+        toolName: 'email.send',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      const count = manager.batchResolve(['UNKNOWN_TOKEN'], 'denied');
+      expect(count).toBe(0);
+      expect(manager.size).toBe(1);
+    });
+
+    it('skips already-consumed tokens', async () => {
+      const h1 = manager.createApprovalRequest({
+        toolName: 'email.send',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      manager.resolveApproval(h1.token, 'approved');
+      await h1.promise;
+
+      const count = manager.batchResolve([h1.token], 'denied');
+      expect(count).toBe(0);
+    });
+
+    it('resolves a mix of valid and invalid tokens, counting only successes', async () => {
+      const h1 = manager.createApprovalRequest({
+        toolName: 'email.send',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+      const h2 = manager.createApprovalRequest({
+        toolName: 'file.delete',
+        agentId: 'agent-2',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      const count = manager.batchResolve([h1.token, 'UNKNOWN_', h2.token], 'denied');
+      expect(count).toBe(2);
+      expect(await h1.promise).toBe('denied');
+      expect(await h2.promise).toBe('denied');
+    });
+
+    it('marks all resolved tokens as consumed', async () => {
+      const h1 = manager.createApprovalRequest({
+        toolName: 'email.send',
+        agentId: 'agent-1',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+      const h2 = manager.createApprovalRequest({
+        toolName: 'file.delete',
+        agentId: 'agent-2',
+        channelId: 'default',
+        policy: makePolicy(),
+      });
+
+      manager.batchResolve([h1.token, h2.token], 'approved');
+      await Promise.all([h1.promise, h2.promise]);
+
+      expect(manager.isConsumed(h1.token)).toBe(true);
+      expect(manager.isConsumed(h2.token)).toBe(true);
+    });
+  });
 });

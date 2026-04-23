@@ -262,12 +262,12 @@ describe('filesystem policy enforcement', () => {
     async () => {
       const SSH_KEY_PATH = '~/.ssh/id_rsa';
       const normalized = normalize_action('write_file', { path: SSH_KEY_PATH });
-      // Before normalizer Rule 5 (credential path detection) this resolved
-      // to `filesystem.write`. Writing to a known private-key path is now
-      // reclassified to `credential.write`, which matches the semantic
-      // better. The Stage 2 policy above handles both classes for the SSH
-      // path so operators keep their path-based protection either way.
-      expect(normalized.action_class).toBe('credential.write');
+      // Rule 5 (credential-path reclassification) was retired in commit
+      // 403cb72, so `write_file` stays `filesystem.write` regardless of the
+      // target. The Stage 2 policy below covers both `filesystem.write` and
+      // `credential.write` against the SSH path, so path-based protection is
+      // preserved.
+      expect(normalized.action_class).toBe('filesystem.write');
       expect(normalized.target).toBe(SSH_KEY_PATH);
 
       const HASH = 'hash-fs-04';

@@ -9,32 +9,16 @@
  * deterministic SHA-256 hashes over `Record<string, unknown>` payloads.
  */
 
-export type RiskLevel = 'low' | 'medium' | 'high' | 'critical';
-export type HitlModeNorm = 'none' | 'per_request' | 'session_approval';
-export type IntentGroup =
-  | 'destructive_fs'
-  | 'external_send'
-  | 'data_exfiltration'
-  | 'credential_access'
-  | 'payment'
-  | 'web_access';
+import { REGISTRY } from '@openclaw/action-registry';
+import type {
+  RiskLevel,
+  HitlModeNorm,
+  IntentGroup,
+  ActionRegistryEntry,
+} from '@openclaw/action-registry';
 
-/** A single entry in the action normalization registry. */
-export interface ActionRegistryEntry {
-  /** Canonical dot-separated action class (e.g. 'filesystem.read'). */
-  readonly action_class: string;
-  /** Default risk level before parameter-level reclassification. */
-  readonly default_risk: RiskLevel;
-  /** Default HITL mode for this action class. */
-  readonly default_hitl_mode: HitlModeNorm;
-  /**
-   * Lowercase tool name aliases that map to this action class.
-   * All stored in lowercase; matching is case-insensitive.
-   */
-  readonly aliases: readonly string[];
-  /** Optional intent group for broader policy targeting. */
-  readonly intent_group?: IntentGroup;
-}
+// Re-export types from the shared registry package for backward compatibility.
+export type { RiskLevel, HitlModeNorm, IntentGroup, ActionRegistryEntry };
 
 /** Result of normalizing a tool call. */
 export interface NormalizedAction {
@@ -49,286 +33,6 @@ export interface NormalizedAction {
   /** Intent group for broader policy targeting, if applicable. */
   intent_group?: IntentGroup;
 }
-
-// ---------------------------------------------------------------------------
-// Registry — 20 entries, aliases stored lowercase
-// ---------------------------------------------------------------------------
-
-const REGISTRY: readonly ActionRegistryEntry[] = [
-  {
-    action_class: 'filesystem.read',
-    default_risk: 'low',
-    default_hitl_mode: 'none',
-    aliases: [
-      'read',
-      'read_file',
-      'readfile',
-      'read_files',
-      'cat_file',
-      'view_file',
-      'open_file',
-      'get_file_contents',
-    ],
-  },
-  {
-    action_class: 'filesystem.write',
-    default_risk: 'medium',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'write',
-      'edit',
-      'write_file',
-      'writefile',
-      'create_file',
-      'save_file',
-      'update_file',
-      'edit_file',
-      'patch_file',
-    ],
-  },
-  {
-    action_class: 'filesystem.delete',
-    default_risk: 'high',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'delete_file',
-      'deletefile',
-      'remove_file',
-      'rm_file',
-      'unlink_file',
-      'rm',
-      'rm_rf',
-      'unlink',
-      'delete',
-      'remove',
-      'move_to_trash',
-      'trash',
-      'shred',
-      'rmdir',
-      'format',
-      'empty_trash',
-      'purge',
-    ],
-    intent_group: 'destructive_fs',
-  },
-  {
-    action_class: 'filesystem.list',
-    default_risk: 'low',
-    default_hitl_mode: 'none',
-    aliases: [
-      'list',
-      'list_files',
-      'listfiles',
-      'list_directory',
-      'list_dir',
-      'read_directory',
-      'ls',
-    ],
-  },
-  {
-    action_class: 'web.search',
-    default_risk: 'medium',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'web_search',
-      'google_search',
-      'bing_search',
-      'duckduckgo_search',
-      'ddg_search',
-      'search_web',
-      'web_research',
-      'news_search',
-    ],
-  },
-  {
-    action_class: 'web.fetch',
-    default_risk: 'medium',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'fetch',
-      'browser',
-      'http_get',
-      'web_fetch',
-      'get_url',
-      'fetch_url',
-      'http_request',
-      'curl',
-      'wget',
-      'download_url',
-      'http_head',
-      'head_url',
-      'http_options',
-    ],
-    intent_group: 'data_exfiltration',
-  },
-  {
-    action_class: 'browser.scrape',
-    default_risk: 'medium',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'scrape_page',
-      'extract_page',
-      'read_url',
-    ],
-  },
-  {
-    action_class: 'web.post',
-    default_risk: 'medium',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'http_post',
-      'post_url',
-      'web_post',
-      'post_request',
-      'submit_form',
-      'http_put',
-      'put_url',
-      'web_put',
-      'put_request',
-      'http_patch',
-      'patch_url',
-      'web_patch',
-      'patch_request',
-    ],
-    intent_group: 'web_access',
-  },
-  {
-    action_class: 'shell.exec',
-    default_risk: 'high',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'bash',
-      'shell_exec',
-      'run_command',
-      'execute_command',
-      'run_terminal_cmd',
-      'terminal_exec',
-      'cmd',
-    ],
-  },
-  {
-    action_class: 'communication.email',
-    default_risk: 'high',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'send_email',
-      'email_send',
-      'send_mail',
-      'compose_email',
-      'email',
-    ],
-    intent_group: 'external_send',
-  },
-  {
-    action_class: 'communication.slack',
-    default_risk: 'medium',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'send_slack',
-      'slack_message',
-      'slack_send',
-      'post_slack',
-    ],
-    intent_group: 'external_send',
-  },
-  {
-    action_class: 'communication.webhook',
-    default_risk: 'medium',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'call_webhook',
-      'webhook',
-      'trigger_webhook',
-      'post_webhook',
-    ],
-    intent_group: 'external_send',
-  },
-  {
-    action_class: 'memory.read',
-    default_risk: 'low',
-    default_hitl_mode: 'none',
-    aliases: [
-      'memory_get',
-      'read_memory',
-      'get_memory',
-      'recall',
-      'retrieve_memory',
-    ],
-  },
-  {
-    action_class: 'memory.write',
-    default_risk: 'medium',
-    default_hitl_mode: 'none',
-    aliases: [
-      'memory_set',
-      'write_memory',
-      'set_memory',
-      'store_memory',
-      'save_memory',
-      'remember',
-    ],
-  },
-  {
-    action_class: 'credential.read',
-    default_risk: 'high',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'read_secret',
-      'get_secret',
-      'get_credential',
-      'retrieve_secret',
-      'read_credential',
-    ],
-    intent_group: 'credential_access',
-  },
-  {
-    action_class: 'credential.write',
-    default_risk: 'critical',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'write_secret',
-      'set_secret',
-      'set_credential',
-      'store_secret',
-      'create_secret',
-    ],
-    intent_group: 'credential_access',
-  },
-  {
-    action_class: 'code.execute',
-    default_risk: 'high',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'run_code',
-      'execute_code',
-      'eval_code',
-      'python',
-      'javascript',
-      'node_exec',
-      'code_runner',
-    ],
-  },
-  {
-    action_class: 'payment.initiate',
-    default_risk: 'critical',
-    default_hitl_mode: 'per_request',
-    aliases: [
-      'pay',
-      'payment',
-      'initiate_payment',
-      'create_payment',
-      'charge',
-      'stripe_payment',
-    ],
-    intent_group: 'payment',
-  },
-  {
-    action_class: 'unknown_sensitive_action',
-    default_risk: 'critical',
-    default_hitl_mode: 'per_request',
-    aliases: [],
-  },
-] as const;
 
 // ---------------------------------------------------------------------------
 // Internal alias index — built once at module load for O(1) lookup
@@ -362,214 +66,20 @@ function hasShellMetacharsInParams(params: Record<string, unknown>): boolean {
   return false;
 }
 
-/**
- * Leading destructive commands we recognise inside a shell `command` param.
- * Matches at the start of the command string, optionally preceded by `sudo`.
- * Kept conservative to avoid false positives — only real Unix destructive
- * commands, not English words like `remove` or `purge`.
- */
-const DESTRUCTIVE_SHELL_CMD_RE =
-  /^\s*(?:sudo\s+)?(?:rm|rmdir|unlink|shred|trash-put|trash)\b/i;
-
-/** Tool names that are generic shell-execution wrappers. */
-const SHELL_WRAPPER_TOOL_NAMES = new Set<string>([
-  'exec',
-  'bash',
-  'shell_exec',
-  'run_command',
-  'execute_command',
-  'run_terminal_cmd',
-  'terminal_exec',
-  'cmd',
-  'sh',
-  'zsh',
-]);
-
-/**
- * Well-known credential file paths. Conservative — only paths where the
- * file contents are almost certainly secret. Matching is case-insensitive
- * and works against absolute paths, `~`-prefixed paths, and paths embedded
- * inside longer shell command strings. Public counterparts (`.pub` files,
- * `known_hosts`, `authorized_keys`) are explicitly NOT matched.
- */
-const CREDENTIAL_PATH_PATTERNS: readonly string[] = [
-  // AWS
-  String.raw`\.aws/credentials\b`,
-  String.raw`\.aws/config\b`,
-  // SSH private keys — anchor on common algorithm names, exclude .pub
-  String.raw`\.ssh/id_(?:rsa|ed25519|ecdsa|dsa)\b(?!\.pub)`,
-  String.raw`\.ssh/[a-z0-9_-]+_(?:rsa|ed25519|ecdsa|dsa)\b(?!\.pub)`,
-  // Kubernetes / Docker
-  String.raw`\.kube/config\b`,
-  String.raw`\.docker/config\.json\b`,
-  // GCP application default credentials
-  String.raw`\.config/gcloud/application_default_credentials\.json\b`,
-  String.raw`\.config/gcloud/legacy_credentials\b`,
-  // Generic home-directory credentials
-  String.raw`\.netrc\b`,
-  String.raw`\.pgpass\b`,
-  String.raw`\.npmrc\b`,
-  String.raw`\.gnupg(?:/|\b)`,
-  // Dotenv files: .env, .env.local, .env.production, etc.
-  String.raw`(?:^|[\s"'=/])\.env(?:\.[a-z0-9_-]+)?(?![a-z0-9_])`,
-  // /etc/shadow
-  String.raw`/etc/shadow\b`,
-];
-/**
- * Optional extra credential-path patterns supplied by operators via the
- * `CLAWTHORITY_CREDENTIAL_PATHS` environment variable. Format: a
- * comma-separated list of regex source strings. Each entry is compiled
- * once at module load and ORed with the built-in patterns above.
- *
- * Example:
- *   CLAWTHORITY_CREDENTIAL_PATHS='\\.company/secrets\\b,/var/run/my-secrets/\\w+'
- *
- * Invalid regex sources log a warning and are skipped; the rest of the
- * list is still loaded. Keep patterns narrow — matching is case-insensitive
- * and searches anywhere in the `target` or `command` string, so a loose
- * pattern like `password` will produce false positives on any tool call
- * that happens to mention the word.
- */
-function loadExtraCredentialPathPatterns(): string[] {
-  const raw = process.env['CLAWTHORITY_CREDENTIAL_PATHS'];
-  if (raw === undefined || raw.trim() === '') return [];
-  const patterns: string[] = [];
-  for (const entry of raw.split(',')) {
-    const source = entry.trim();
-    if (source === '') continue;
-    try {
-      // Compile-test each entry so a syntactically broken pattern cannot
-      // take down the combined regex below.
-      new RegExp(source);
-      patterns.push(source);
-    } catch (err) {
-      console.warn(
-        `[clawthority] CLAWTHORITY_CREDENTIAL_PATHS skipping invalid pattern ${JSON.stringify(source)}: ${(err as Error).message}`,
-      );
-    }
-  }
-  return patterns;
-}
-
-const CREDENTIAL_PATH_RE = new RegExp(
-  [...CREDENTIAL_PATH_PATTERNS, ...loadExtraCredentialPathPatterns()].join('|'),
-  'i',
-);
-
-/**
- * Leading commands that indicate a write/copy into the target path (when the
- * target is a credential path, this flips Rule 5 to `credential.write`).
- */
-const CREDENTIAL_WRITE_CMD_RE =
-  /^\s*(?:sudo\s+)?(?:cp|mv|scp|install|rsync|ln)\b/i;
-
-/**
- * Shell output redirect (`>`, `>>`) — flips Rule 5 to credential.write.
- * Excludes fd redirects like `2>&1` by requiring the `>` to be preceded
- * by whitespace or start-of-string and not followed by `&`.
- */
-const SHELL_REDIRECT_RE = /(?:^|\s)>{1,2}(?!&)/;
-
-/**
- * Leading CLI invocations that emit credentials without touching a file path.
- * Powers Rule 6. These are commands that interact with a secret store or
- * identity provider and return the secret material on stdout, so they should
- * be classified as `credential.read` regardless of how the host wraps them.
- *
- * Kept to well-known, unambiguous subcommands to avoid false positives on
- * generic tool invocations (e.g. `aws s3 ls` must NOT match).
- */
-const CREDENTIAL_CLI_PATTERNS: readonly RegExp[] = [
-  // AWS STS / Secrets Manager / SSM (SecureString with decryption)
-  /^\s*(?:sudo\s+)?aws\s+sts\s+(?:get-session-token|get-caller-identity|assume-role(?:-with-(?:web-identity|saml))?|get-federation-token)\b/i,
-  /^\s*(?:sudo\s+)?aws\s+configure\s+get\b/i,
-  /^\s*(?:sudo\s+)?aws\s+secretsmanager\s+get-secret-value\b/i,
-  /^\s*(?:sudo\s+)?aws\s+ssm\s+get-parameters?\b[^|;&<>]*--with-decryption\b/i,
-  // GitHub CLI
-  /^\s*(?:sudo\s+)?gh\s+auth\s+(?:token|status\s+.*--show-token)\b/i,
-  // Google Cloud
-  /^\s*(?:sudo\s+)?gcloud\s+auth\s+(?:print-access-token|print-identity-token|application-default\s+print-access-token)\b/i,
-  // Azure
-  /^\s*(?:sudo\s+)?az\s+account\s+get-access-token\b/i,
-  // HashiCorp Vault
-  /^\s*(?:sudo\s+)?vault\s+(?:kv\s+get|read|token\s+lookup|print\s+token|login)\b/i,
-  // Kubernetes — reading secrets or raw kubeconfig
-  /^\s*(?:sudo\s+)?kubectl\s+get\s+secret(?:s)?\b/i,
-  /^\s*(?:sudo\s+)?kubectl\s+config\s+view\b[^|;&<>]*--raw\b/i,
-  // 1Password CLI
-  /^\s*(?:sudo\s+)?op\s+(?:read|item\s+get)\b/i,
-  // pass (Unix password manager)
-  /^\s*(?:sudo\s+)?pass\s+show\b/i,
-  // Doppler
-  /^\s*(?:sudo\s+)?doppler\s+secrets\s+get\b/i,
-  // Heroku
-  /^\s*(?:sudo\s+)?heroku\s+config:get\b/i,
-];
-
-/**
- * Detects shell commands that read credentials from environment variables.
- * Powers Rule 8. Covers the common exfiltration patterns:
- *
- *   - `echo $AWS_SECRET_ACCESS_KEY` / `echo ${OPENAI_API_KEY}`
- *   - `printenv GITHUB_TOKEN`
- *   - `env | grep -i token` (and variants)
- *   - `cat /proc/<pid>/environ`
- *
- * "Credential-named" variables match either a known cloud-vendor prefix
- * (AWS_*, GITHUB_*, OPENAI_*, ...) or a suffix naming the secret material
- * (_TOKEN, _KEY, _SECRET, _PASSWORD, _CREDENTIAL[S]). Names like `$HOME` or
- * `$PATH` deliberately do NOT match.
- */
-const CRED_VAR_NAME_SOURCE = String.raw`(?:(?:AWS|GCP|GOOGLE|AZURE|GITHUB|GITLAB|STRIPE|OPENAI|ANTHROPIC|HEROKU|TWILIO|SENDGRID|SLACK|DISCORD|TELEGRAM|NPM|DOCKER|KUBE|VAULT|CIRCLECI|TRAVIS|DATADOG)_[A-Z0-9_]+|[A-Z][A-Z0-9_]*_(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL|CREDENTIALS))`;
-
-const CREDENTIAL_ENV_PATTERNS: readonly RegExp[] = [
-  // $VAR or ${VAR} referenced anywhere in the command
-  new RegExp(String.raw`\$\{?${CRED_VAR_NAME_SOURCE}\}?`),
-  // printenv VAR
-  new RegExp(
-    String.raw`(?:^|[;|&])\s*(?:sudo\s+)?printenv\b[^|;&<>]*\b${CRED_VAR_NAME_SOURCE}\b`,
-  ),
-  // env | grep <credential-ish>
-  /(?:^|[;|&])\s*(?:sudo\s+)?(?:env|printenv)\s*(?:\s+[-\w]+)*\s*\|\s*grep\b[^|;&]*?(?:token|key|secret|password|credential|api|aws|github|openai|anthropic)/i,
-  // /proc/<pid>/environ — dumps the process env
-  /\/proc\/[^/\s]+\/environ\b/,
-];
-
-/**
- * Detects outbound file-upload patterns in shell commands. Powers Rule 7.
- *
- * Covers the common transports agents use to exfiltrate data to an external
- * host: curl with an upload body from a file (`-F @path`, `--data @path`,
- * `--data-binary @path`, `-T path`, `--upload-file path`), and wget with
- * `--post-file=path`.
- *
- * scp / rsync are intentionally NOT matched — both have syntactically
- * ambiguous arg orders (`scp remote:/f local` is a download, `scp local
- * remote:/f` is an upload) and directional heuristics produce false
- * positives too easily. Operators who want to gate those should add
- * explicit `resource: tool` rules for `scp` / `rsync` in `data/rules.json`.
- */
-const DATA_EXFIL_UPLOAD_PATTERNS: readonly RegExp[] = [
-  // curl -F field=@path  OR  curl -F @path
-  /\bcurl\b[^|;&<>]*\s-F\s+[^\s|;&<>]*@[^\s|;&<>]+/i,
-  // curl --form (long form of -F)
-  /\bcurl\b[^|;&<>]*\s--form\s+[^\s|;&<>]*@[^\s|;&<>]+/i,
-  // curl -d @path / --data @path / --data-binary @path / --data-raw @path / --data-urlencode @path
-  /\bcurl\b[^|;&<>]*\s(?:-d|--data|--data-binary|--data-raw|--data-urlencode)\s+@[^\s|;&<>]+/i,
-  // curl -T path / --upload-file path
-  /\bcurl\b[^|;&<>]*\s(?:-T|--upload-file)\s+[^\s|;&<>]+/i,
-  // wget --post-file=path
-  /\bwget\b[^|;&<>]*\s--post-file=[^\s|;&<>]+/i,
-];
-
 // ---------------------------------------------------------------------------
 // Target extraction
 // ---------------------------------------------------------------------------
 
-/** Ordered list of param keys inspected when extracting the target resource. */
+/**
+ * Generic fallback param keys inspected when no per-class override exists.
+ * Checked in priority order — first non-empty string wins.
+ */
 const TARGET_PARAM_KEYS = [
+  'file_path',
   'path',
   'file',
+  'repo_url',
+  'package_name',
   'url',
   'destination',
   'to',
@@ -577,8 +87,75 @@ const TARGET_PARAM_KEYS = [
   'email',
 ] as const;
 
-function extractTarget(params: Record<string, unknown>): string {
-  for (const key of TARGET_PARAM_KEYS) {
+/**
+ * Per-action-class ordered param key lists for typed target extraction.
+ * Each list is self-contained — it includes all generic keys relevant to that
+ * class. When an action class has an entry here it is used in full; the
+ * generic TARGET_PARAM_KEYS fallback is not consulted.
+ */
+const TARGET_KEYS_BY_CLASS: Readonly<Record<string, readonly string[]>> = {
+  // Filesystem classes: typed `file_path` field takes priority over generic `path`/`file`.
+  'filesystem.read':   ['file_path', 'path', 'file'],
+  'filesystem.write':  ['file_path', 'path', 'file', 'destination', 'url', 'to', 'recipient', 'email'],
+  'filesystem.delete': ['file_path', 'path', 'file'],
+  'filesystem.list':   ['file_path', 'path', 'file'],
+  // System read operations identify the target by variable name or info key.
+  'system.read':       ['variable_name', 'name', 'key'],
+  // VCS read operations (status, log, diff) target a file path or branch/ref.
+  'vcs.read':          ['path', 'file_path', 'branch', 'ref', 'revision'],
+  // VCS write operations (stage, commit) target a file path or working directory.
+  'vcs.write':         ['path', 'file_path', 'working_dir'],
+  // Remote VCS operations carry the target repository as `repo_url`.
+  'vcs.remote':        ['repo_url', 'url', 'remote_url', 'remote'],
+  // Package installation operations identify the target via `package_name`.
+  'package.install':   ['package_name', 'package', 'name'],
+  // Package run operations identify the target script name.
+  'package.run':       ['script', 'script_name', 'name', 'package_name'],
+  // Package read operations optionally filter by `package_name`.
+  'package.read':      ['package_name', 'package', 'name'],
+  // Build operations identify the target by working directory or specific file/target.
+  'build.compile':     ['target', 'path', 'file_path', 'working_dir'],
+  'build.test':        ['target', 'path', 'working_dir'],
+  'build.lint':        ['target', 'path', 'file_path', 'working_dir'],
+  // Archive operations: create/extract use output path; read uses archive path.
+  'archive.create':    ['output_path', 'destination', 'archive_path', 'path', 'file_path'],
+  'archive.extract':   ['destination', 'output_dir', 'archive_path', 'path', 'file_path'],
+  'archive.read':      ['archive_path', 'path', 'file_path'],
+};
+
+/**
+ * Sanitizes a command string for telemetry by redacting common credential
+ * patterns, then truncates to the first 40 characters.
+ *
+ * Redacted patterns:
+ *   - `$VAR` / `${VAR}` references to credential-named environment variables
+ *   - `key=value`, `token=value`, `password=value` inline assignments
+ *   - `Bearer <token>` authorization headers
+ */
+export function sanitizeCommandPrefix(cmd: string): string {
+  const sanitized = cmd
+    // $VAR and ${VAR} for credential-named env vars
+    .replace(
+      /\$\{?(?:AWS|GCP|GOOGLE|AZURE|GITHUB|GITLAB|STRIPE|OPENAI|ANTHROPIC|HEROKU|TWILIO|SENDGRID|SLACK|DISCORD|TELEGRAM|NPM|DOCKER|KUBE|VAULT|CIRCLECI|TRAVIS|DATADOG)_[A-Z0-9_]+\}?/g,
+      '[REDACTED]',
+    )
+    .replace(
+      /\$\{?[A-Z][A-Z0-9_]*_(?:TOKEN|KEY|SECRET|PASSWORD|PASS|CREDENTIAL|CREDENTIALS)\}?/g,
+      '[REDACTED]',
+    )
+    // key=value / token=value / password=value patterns
+    .replace(
+      /\b(?:token|key|secret|password|passwd|pass|api_?key|auth(?:_?token)?|credential)\s*[=:]\s*\S+/gi,
+      (m) => m.replace(/[=:]\s*\S+$/, '=[REDACTED]'),
+    )
+    // Bearer <token>
+    .replace(/\bBearer\s+\S+/gi, 'Bearer [REDACTED]');
+  return sanitized.slice(0, 40);
+}
+
+function extractTarget(actionClass: string, params: Record<string, unknown>): string {
+  const keys = TARGET_KEYS_BY_CLASS[actionClass] ?? TARGET_PARAM_KEYS;
+  for (const key of keys) {
     const val = params[key];
     if (typeof val === 'string' && val.length > 0) {
       return val;
@@ -618,43 +195,6 @@ export function normalizeActionClass(toolName: string): string {
  *      reclassified to `communication.external.send`
  *   3. Any action class where a param value contains shell metacharacters
  *      → risk raised to `critical`
- *   4. Shell-wrapper tools (`exec`, `bash`, `cmd`, ...) whose `command` param
- *      begins with a destructive Unix command (`rm`, `rmdir`, `unlink`,
- *      `shred`, `trash`, optionally `sudo`-prefixed) → reclassified to
- *      `filesystem.delete`. Lets operators put `filesystem.delete` in HITL
- *      policy and have it actually fire for hosts that expose only a
- *      generic shell-exec tool (e.g. OpenClaw's `exec`).
- *   5. Any tool whose `target` or shell-wrapper `command` references a
- *      well-known credential file path (AWS creds, SSH private keys, kube
- *      config, .env*, /etc/shadow, ...) → reclassified to `credential.read`
- *      or `credential.write`. Write is picked when the starting class is
- *      already `filesystem.write`, when the command uses a shell redirect
- *      (`>`, `>>`), or when the command starts with `cp`/`mv`/`scp`/
- *      `rsync`/`install`/`ln`. Skipped when Rule 4 already reclassified to
- *      `filesystem.delete` — deleting a credential file stays a destructive
- *      fs action.
- *   6. Shell-wrapper tools invoking a credential-emitting CLI subcommand
- *      that returns the secret on stdout without touching a file path
- *      (`aws sts …`, `gh auth token`, `gcloud auth print-access-token`,
- *      `vault kv get`, `kubectl get secret`, `op read`, `pass show`,
- *      `doppler secrets get`, `heroku config:get`, `az account
- *      get-access-token`) → reclassified to `credential.read`. Skipped if
- *      Rule 4 or Rule 5 already reclassified.
- *   7. Shell-wrapper tools invoking an outbound file upload — `curl -F
- *      @path`, `curl -d @path`, `curl --data-binary @path`, `curl -T path`,
- *      `curl --upload-file path`, `wget --post-file=path` — → reclassified
- *      to `web.post` with `intent_group: 'data_exfiltration'` and `risk:
- *      'critical'`. The handler's intent-group evaluation pass lets
- *      operators gate all `data_exfiltration`-tagged calls via a single
- *      rules.json entry (or a HITL policy). Skipped when Rule 4 (destructive)
- *      or Rule 5 (credential) already reclassified, so `rm ... | curl -F
- *      @-` stays `filesystem.delete` and `curl -F @~/.aws/credentials`
- *      stays `credential.read`. scp / rsync are NOT matched — their arg
- *      order makes direction ambiguous.
- *   8. Shell-wrapper tools reading credentials from the environment —
- *      `echo $AWS_SECRET_ACCESS_KEY`, `printenv GITHUB_TOKEN`, `env |
- *      grep token`, `cat /proc/<pid>/environ` — → reclassified to
- *      `credential.read`. Skipped if Rule 4/5/6 already reclassified.
  *
  * @param toolName  Name of the tool being invoked (case-insensitive).
  * @param params    Tool call parameters used for target extraction and
@@ -670,7 +210,7 @@ export function normalize_action(
   let risk: RiskLevel = entry.default_risk;
   let hitl_mode: HitlModeNorm = entry.default_hitl_mode;
   let intent_group: IntentGroup | undefined = entry.intent_group;
-  const target = extractTarget(params);
+  const target = extractTarget(entry.action_class, params);
 
   // Rule 1: filesystem.write with a URL target → web.post
   if (
@@ -693,105 +233,13 @@ export function normalize_action(
     risk = 'critical';
   }
 
-  // Rule 4: shell-wrapper tool + destructive command → filesystem.delete
-  const toolKey = toolName.toLowerCase();
-  const command = params['command'];
-  const commandStr = typeof command === 'string' ? command : '';
-  if (
-    SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    commandStr !== '' &&
-    DESTRUCTIVE_SHELL_CMD_RE.test(commandStr)
-  ) {
-    const deleteEntry = ALIAS_INDEX.get('rm') ?? UNKNOWN_ENTRY;
-    action_class = deleteEntry.action_class;
-    hitl_mode = deleteEntry.default_hitl_mode;
-    intent_group = deleteEntry.intent_group;
-    if (risk !== 'critical') risk = deleteEntry.default_risk;
-  }
-
-  // Rule 5: reference to a well-known credential path → credential.read / .write
-  // Skip when Rule 4 already reclassified to filesystem.delete — a destructive
-  // action on a credential file stays filesystem.delete.
-  if (action_class !== 'filesystem.delete') {
-    const targetHasCredPath = target !== '' && CREDENTIAL_PATH_RE.test(target);
-    const commandHasCredPath = commandStr !== '' && CREDENTIAL_PATH_RE.test(commandStr);
-    if (targetHasCredPath || commandHasCredPath) {
-      const looksLikeWrite =
-        action_class === 'filesystem.write' ||
-        (commandStr !== '' &&
-          (SHELL_REDIRECT_RE.test(commandStr) ||
-            CREDENTIAL_WRITE_CMD_RE.test(commandStr)));
-      const credAliasKey = looksLikeWrite ? 'write_secret' : 'read_secret';
-      const credEntry = ALIAS_INDEX.get(credAliasKey) ?? UNKNOWN_ENTRY;
-      action_class = credEntry.action_class;
-      hitl_mode = credEntry.default_hitl_mode;
-      intent_group = credEntry.intent_group;
-      if (risk !== 'critical') risk = credEntry.default_risk;
-    }
-  }
-
-  // Rule 6: shell-wrapper invoking a credential-emitting CLI subcommand →
-  // credential.read. Skipped when an earlier rule already picked a more
-  // specific class (filesystem.delete, credential.read/write).
-  const alreadyReclassified =
-    action_class === 'filesystem.delete' ||
-    action_class === 'credential.read' ||
-    action_class === 'credential.write';
-  if (
-    !alreadyReclassified &&
-    SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    commandStr !== '' &&
-    CREDENTIAL_CLI_PATTERNS.some((re) => re.test(commandStr))
-  ) {
-    const credEntry = ALIAS_INDEX.get('read_secret') ?? UNKNOWN_ENTRY;
-    action_class = credEntry.action_class;
-    hitl_mode = credEntry.default_hitl_mode;
-    intent_group = credEntry.intent_group;
-    if (risk !== 'critical') risk = credEntry.default_risk;
-  }
-
-  // Rule 8: shell-wrapper reading credentials from the environment →
-  // credential.read. Same skip semantics as Rule 6.
-  const stillUnclassifiedAfter6 =
-    action_class !== 'filesystem.delete' &&
-    action_class !== 'credential.read' &&
-    action_class !== 'credential.write';
-  if (
-    stillUnclassifiedAfter6 &&
-    SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    commandStr !== '' &&
-    CREDENTIAL_ENV_PATTERNS.some((re) => re.test(commandStr))
-  ) {
-    const credEntry = ALIAS_INDEX.get('read_secret') ?? UNKNOWN_ENTRY;
-    action_class = credEntry.action_class;
-    hitl_mode = credEntry.default_hitl_mode;
-    intent_group = credEntry.intent_group;
-    if (risk !== 'critical') risk = credEntry.default_risk;
-  }
-
-  // Rule 7: shell-wrapper invoking an outbound file upload → web.post with
-  // intent_group: 'data_exfiltration'. Skipped when an earlier rule already
-  // produced a more specific class — destructive (Rule 4) or credential
-  // (Rules 5/6/8) take precedence.
-  const stillUnclassifiedAfter8 =
-    action_class !== 'filesystem.delete' &&
-    action_class !== 'credential.read' &&
-    action_class !== 'credential.write';
-  if (
-    stillUnclassifiedAfter8 &&
-    SHELL_WRAPPER_TOOL_NAMES.has(toolKey) &&
-    commandStr !== '' &&
-    DATA_EXFIL_UPLOAD_PATTERNS.some((re) => re.test(commandStr))
-  ) {
-    action_class = 'web.post';
-    intent_group = 'data_exfiltration';
-    risk = 'critical';
-    // HITL mode follows web.post's default (per_request).
-    const webPostEntry = ALIAS_INDEX.get('http_post') ?? UNKNOWN_ENTRY;
-    hitl_mode = webPostEntry.default_hitl_mode;
-  }
-
-  return { action_class, risk, hitl_mode, target, ...(intent_group !== undefined && { intent_group }) };
+  return {
+    action_class,
+    risk,
+    hitl_mode,
+    target,
+    ...(intent_group !== undefined && { intent_group }),
+  };
 }
 
 // ---------------------------------------------------------------------------
