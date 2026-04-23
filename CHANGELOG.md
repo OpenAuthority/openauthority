@@ -25,9 +25,9 @@ First release to ship the two-stage enforcement pipeline, 23 registered first-pa
 - **`buildPipelineContext`**: constructs a typed `PipelineContext` from a raw tool call, computing the SHA-256 `payload_hash` used by the Stage 1 binding check.
 - **Install-phase bypass**: tool calls originating from npm lifecycle scripts (`install`, `preinstall`, `postinstall`, `prepare`) are permitted unconditionally to prevent activation-time lockout.
 
-#### First-party tool library — 17 registered tools
+#### First-party tool library — 23 registered tools
 
-All 17 tools ship with TypeBox-validated manifests (schema, action class, risk tier, HITL mode) and full execution layers.
+All 23 tools ship with TypeBox-validated manifests (schema, action class, risk tier, HITL mode) and full execution layers.
 
 **Git / VCS (7):** `git_add`, `git_commit`, `git_diff`, `git_log`, `git_merge`, `git_reset`, `git_status`
 
@@ -59,28 +59,32 @@ All 17 tools ship with TypeBox-validated manifests (schema, action class, risk t
 
 ### ⚠️ Known gaps — deferred to v1.3
 
-- **Normalizer Rules 4–8** — shell-wrapper reclassification for `filesystem.delete` (Rule 4), `credential.read/write` via file path (Rule 5), credential-emitting CLI patterns (Rule 6), file-upload exfiltration (Rule 7), and environment-variable exfiltration (Rule 8) are **not implemented** in v1.2.1. The v1.2.0 entry documents these rules as shipped; see the correction note below.
+- **Normalizer Rules 4–8** — shell-wrapper reclassification for `filesystem.delete` (Rule 4), `credential.read/write` via file path (Rule 5), credential-emitting CLI patterns (Rule 6), file-upload exfiltration (Rule 7), and environment-variable exfiltration (Rule 8) are **not implemented** in v1.2.1 or v1.2.0. See the v1.2.0 Deferred section.
 - **Cloud vault providers** — HashiCorp Vault, AWS Secrets Manager, and 1Password are not yet supported. `FileCredentialVault` is the only vault implementation.
 - **Remote / multi-party capability management** — `FileAuthorityAdapter` stores capabilities in-process with no cross-process sharing, revocation stream, or cloud authority backend.
 - **SMTP-only email** — `send_email` does not support OAuth-based providers (Gmail API, Microsoft 365, SendGrid, Mailgun, Postmark, AWS SES). Capability TTL defaults to 3 600 s; override via `capabilityTtlSeconds` in the adapter config.
 
----
+### Migration (from v1.2.0)
 
-> **⚠️ Correction to the v1.2.0 entry below:** The v1.2.0 changelog entry documents normalizer Rules 4–8 as shipped features of that release. **These rules were not implemented and do not ship in v1.2.0 or v1.2.1.** Affected rules: shell-wrapper reclassification for `filesystem.delete` (Rule 4), `credential.read/write` via file path (Rule 5), credential-emitting CLI patterns (Rule 6), file-upload exfiltration (Rule 7), and environment-variable exfiltration (Rule 8). They are deferred to v1.3. The remainder of the v1.2.0 entry — HITL gating fixes, priority-90 routing, structured audit log, `CLAWTHORITY_RULES_FILE`, intent-group evaluation, and documentation updates — is accurate.
+**Two-stage pipeline — capability gate is now active.** v1.2.1 adds Stage 1 (TTL + SHA-256 payload-hash binding + single-use replay prevention) ahead of the existing Cedar Stage 2. Operators who wrote custom `IAuthorityAdapter` implementations against the v1.2.0 stub interface must implement `issueCapability`, `getCapability`, and `consumeCapability`; the production `FileAuthorityAdapter` is the reference. No action is required for operators using the built-in adapter.
+
+**HITL approval flow is now fully round-tripped.** v1.2.0 dispatched HITL approval requests but did not re-run the pipeline after approval. v1.2.1 completes the flow: approval → capability issue → `runWithHitl` re-run. Operators who relied on v1.2.0 HITL dispatch should upgrade to v1.2.1 to get the complete flow.
+
+**`data/bundle.json` is now watched for live policy updates.** `FileAuthorityAdapter` watches `data/bundle.json` (300 ms debounce, monotonic version enforcement). Operators who previously managed policy only via `data/rules.json` may continue doing so unchanged. To adopt the bundle format, write a `{ "version": <n>, "rules": [...], "checksum": "<sha256>" }` JSON file at `data/bundle.json`.
+
+**Install-phase bypass for containerised deployments.** Tool calls from npm lifecycle scripts (`install`, `preinstall`, `postinstall`, `prepare`) are permitted unconditionally to prevent activation-time lockout. Docker and systemd deployments that invoke the agent outside a lifecycle script must set `OPENAUTH_FORCE_ACTIVE=1` — see [docs/installation.md](docs/installation.md) for complete examples.
+
+**Tool library env vars.** If you enable `send_email`, configure `SMTP_HOST`, `SMTP_PORT` (default 587), `SMTP_USER`, `SMTP_PASS`, and `SMTP_FROM`. If you enable `send_slack`, set `SLACK_BOT_TOKEN` to a bot token with `chat:write` scope.
+
+**No rule-bundle format changes.** The `data/rules.json` plain-array format and all existing Cedar rule files continue to work unchanged.
+
+---
 
 ## [1.2.0] — 2026-04-23
 
-Addresses a class of tester-reported classification gaps on hosts that expose a single generic shell-exec tool (e.g. OpenClaw's `exec`). Destructive commands and credential-file access now normalise to the right semantic action class, so the policies Clawthority ships for `filesystem.delete`, `credential.read`, and `credential.write` actually fire instead of silently falling through to `unknown_sensitive_action`.
+Delivers the enforcement engine: HITL gating fixes, priority-90 routing to HITL, structured audit logging, intent-group evaluation in `data/rules.json`, and the `CLAWTHORITY_RULES_FILE` env var. The first-party tool library and two-stage capability pipeline ship in v1.2.1.
 
 ### Fixed
-
-- **`filesystem.delete` now fires for destructive shell commands (Rule 4).** `normalize_action` previously only recognised destructive intent when the tool name itself was an alias (`rm`, `delete_file`, …). Hosts like OpenClaw route every filesystem operation through a single generic `exec` tool with a `command` parameter, so `exec({command: "rm /tmp/x"})` normalised to `unknown_sensitive_action` and HITL policies keyed on `filesystem.delete` never fired. A new post-lookup reclassification rule now reclassifies calls to shell-wrapper tools (`exec`, `bash`, `cmd`, `sh`, `run_command`, …) whose `command` begins with `rm`/`rmdir`/`unlink`/`shred`/`trash`/`trash-put` (optionally `sudo`-prefixed) to `filesystem.delete` with the registry's default `per_request` HITL mode and `destructive_fs` intent group. Non-destructive shell commands are unaffected.
-
-- **`credential.read` / `credential.write` now fire for shell access to credential files (Rule 5).** Same symptom as above for secrets: `exec({command: "cat ~/.aws/credentials"})` normalised to `unknown_sensitive_action`, so in OPEN mode the call passed through unblocked even though Clawthority ships a critical-forbid for `credential.read`. A new post-lookup rule reclassifies any tool call whose `target` (path/file param) or shell-wrapper `command` references a well-known credential path — AWS creds/config, SSH private keys, `.kube/config`, `.docker/config.json`, gcloud application-default credentials, `.netrc`, `.pgpass`, `.npmrc`, `.gnupg/`, dotenv files (`.env`, `.env.local`, `.env.*`), `/etc/shadow`. Public counterparts (`.pub` files) are explicitly excluded. Write is picked when the starting class is already `filesystem.write`, when the command uses a shell redirect (`>`, `>>`, excluding fd redirects like `2>&1`), or when the command starts with `cp`/`mv`/`scp`/`rsync`/`install`/`ln`; otherwise `credential.read`. Rule 4 (destructive) wins over Rule 5 — `rm ~/.aws/credentials` stays `filesystem.delete`.
-
-- **`credential.read` now fires for credential-emitting CLIs that don't touch a file path (Rule 6).** Rule 5 only catches credential *files* — many real-world CLIs return secrets on stdout without ever mentioning a path (`aws sts get-session-token`, `aws secretsmanager get-secret-value`, `aws ssm get-parameter --with-decryption`, `gh auth token`, `gcloud auth print-access-token`, `az account get-access-token`, `vault kv get` / `vault read` / `vault login`, `kubectl get secret`, `kubectl config view --raw`, `op read` / `op item get`, `pass show`, `doppler secrets get`, `heroku config:get`). Shell-wrapper invocations whose `command` starts with any of these — optionally `sudo`-prefixed — now reclassify to `credential.read`. Patterns are deliberately narrow so unrelated subcommands (`aws s3 ls`, `gh pr list`, `kubectl get pods`, generic `aws ssm get-parameter` without `--with-decryption`) are unaffected.
-
-- **`credential.read` now fires for environment-variable credential exfiltration (Rule 8).** `echo $AWS_SECRET_ACCESS_KEY`, `echo ${OPENAI_API_KEY}`, `printenv GITHUB_TOKEN`, `env | grep -i token`, `cat /proc/<pid>/environ` — all previously fell through to `unknown_sensitive_action`. The new rule matches shell-wrapper commands referencing a credential-named variable (uppercase identifier ending in `_TOKEN` / `_KEY` / `_SECRET` / `_PASSWORD` / `_CREDENTIAL[S]`, or prefixed by a known cloud-vendor: `AWS_`, `GITHUB_`, `OPENAI_`, `ANTHROPIC_`, `GCP_`, `AZURE_`, `STRIPE_`, etc.), or piping `env`/`printenv` to `grep` against credential-ish patterns, or reading `/proc/*/environ` directly. Benign vars (`$HOME`, `$PATH`, `$USER`, bare `env`) deliberately do NOT match.
 
 - **Warn when a HITL policy matches `unknown_sensitive_action`.** Putting `unknown_sensitive_action` (or a bare `*`) in `hitl-policy.yaml` routes every unrecognised tool — including read-only operations like `read` and `list` that aren't registered as aliases — through human approval, which locks the agent into an approval loop it cannot recover from. `parseHitlPolicyFile` now logs a `[hitl-policy] ⚠` warning at load time naming the offending policy and pointing operators at the right fix (register the tool alias, or match `filesystem.delete` instead).
 
@@ -88,9 +92,7 @@ Addresses a class of tester-reported classification gaps on hosts that expose a 
 
 ### Added
 
-- **Bare-verb tool aliases in the normalizer registry.** Common tool names that hosts expose directly now map to their canonical action class: `read` → `filesystem.read`, `write` → `filesystem.write`, `edit` → `filesystem.write`, `list` → `filesystem.list`. Previously these fell through to `unknown_sensitive_action`, which in CLOSED mode blocks outright and in OPEN mode masks any real classification Rules 4/5 would have done. `exec` is intentionally NOT added as a `shell.exec` alias — reclassifying it unconditionally would regress OpenClaw-style hosts where `exec` is the primary tool surface; the smart Rules 4/5 handle it via command-param inspection instead.
-
-- **End-to-end test suite for shell-wrapper reclassification.** [`src/exec-reclassification.e2e.ts`](src/exec-reclassification.e2e.ts) drives `exec({command: …})` and bare-verb tool calls through the production `beforeToolCallHandler` in both OPEN and CLOSED modes. Asserts Rules 4/5 reach the right Cedar decision (permit vs forbid with the right reason) rather than silently returning `unknown_sensitive_action`. Complements the existing unit tests on `normalize_action` in isolation — this is the integration layer that has regressed before.
+- **Bare-verb tool aliases in the normalizer registry.** Common tool names that hosts expose directly now map to their canonical action class: `read` → `filesystem.read`, `write` → `filesystem.write`, `edit` → `filesystem.write`, `list` → `filesystem.list`. Previously these fell through to `unknown_sensitive_action`, which in CLOSED mode blocks outright. `exec` is intentionally NOT added as a `shell.exec` alias — reclassifying it unconditionally would regress OpenClaw-style hosts where `exec` is the primary tool surface.
 
 - **End-to-end test suite for HITL-gated forbid routing.** [`src/hitl-gated-forbid.e2e.ts`](src/hitl-gated-forbid.e2e.ts) exercises the priority-90 / HITL integration directly: blocks when no HITL is configured, blocks when a HITL policy is configured but doesn't match the action, permits when a matching policy approves, blocks when dispatch falls back to deny, and verifies that priority-100 rules (`shell.exec`) still block unconditionally even when a HITL policy claims to approve them. Injects synthetic HITL configs via a module mock on the parser so the tests don't depend on YAML files in the repo root.
 
@@ -98,25 +100,20 @@ Addresses a class of tester-reported classification gaps on hosts that expose a 
 
 - **`DECISION: ✕ BLOCKED` console line enriched with priority and rule identifier.** Operators triaging a block in stdout logs can now tell at a glance whether they hit a hard forbid (`priority=100`), a HITL-gated rule that never found a matching policy (`priority=90 rule=action:filesystem.delete; no HITL policy matches`), or a Stage-1 trust-gate rejection — without cross-referencing `data/audit.jsonl`.
 
-- **Rule 7 — file-upload exfiltration detection.** Shell-wrapper commands invoking an outbound file upload now reclassify to `web.post` with `intent_group: 'data_exfiltration'` and `risk: 'critical'`. Patterns covered: `curl -F field=@path` / `curl -F @path`, `curl --form ...@path`, `curl -d @path` / `--data @path` / `--data-binary @path` / `--data-raw @path` / `--data-urlencode @path`, `curl -T path` / `--upload-file path`, and `wget --post-file=path`. Rule 4 (destructive) and Rule 5 (credential path) still win — `rm ... | curl -F @...` stays `filesystem.delete` and `curl -F @~/.aws/credentials` stays `credential.write`. `scp` / `rsync` are deliberately NOT matched — their arg order makes upload-vs-download ambiguous; operators who want to gate them should add explicit `resource: tool` rules in `data/rules.json`.
-
 - **Handler evaluates rules by `intent_group` (after action-class evaluation).** Before this change, rules targeting an intent group — e.g. `{"intent_group": "data_exfiltration", "effect": "forbid"}` — were parsed but never consulted by `beforeToolCallHandler`; only rules keyed on `action_class` or `resource`/`match` fired. The handler now runs a second pass across both engines (TS defaults and `data/rules.json`) when the normalised action carries an intent_group, using the existing `evaluateByIntentGroup` engine method. Forbids there participate in the same priority-90 HITL-gated / priority-100 unconditional split as action-class forbids, so operators can gate entire threat-model clusters (all data-exfiltration transports, all credential-access patterns, etc.) with a single rule instead of enumerating every action class.
 
 - **Side-effect ordering in `activate()`: `loadJsonRules()` is now awaited.** The JSON rule load was dispatched as a fire-and-forget promise, so a host that dispatched its very first tool call before the microtask flushed saw an empty JSON engine. Awaiting makes it deterministic. Errors are still swallowed — the rules file is optional.
 
 - **`CLAWTHORITY_RULES_FILE` env var overrides the data/rules.json path.** Default stays `dist/../data/rules.json`; operators running a non-standard install layout (or writing a tempfile fixture in a test) can now point the loader at any path via this env var. Fixes a pre-existing quirk where the hardcoded relative path resolved outside the repo under vitest, so tests could not exercise JSON-rule behaviour.
 
-### Added
-
 - **`browser` alias for `web.fetch`.** OpenClaw's generic `browser` tool now normalises to `web.fetch` (with the existing `data_exfiltration` intent group) instead of falling through to `unknown_sensitive_action`.
-
-- **Operator-extensible credential-path patterns via `CLAWTHORITY_CREDENTIAL_PATHS`.** Rule 5 matches a hardcoded list of well-known secret-bearing paths (AWS, SSH, kube, etc.). Operators can now append environment-specific patterns without forking: set the env var to a comma-separated list of regex sources (e.g. `'\\.company/secrets\\b,/var/run/my-secrets/\\w+'`). Each entry is compile-tested at module load; invalid patterns log a warning and are skipped, so one bad pattern does not break the regex for the rest.
 
 - **`intent_group` and `priority` fields in `data/rules.json` records.** The JSON rule format previously supported only `resource`+`match` and `action_class` matching. Adds a third matching form — `{"intent_group": "data_exfiltration", "effect": "forbid", "priority": 90}` — plus an optional `priority` field on all three forms. `priority` is how operators opt into the HITL-gated tier; rules without it default to unconditional (fail-closed for user-written forbids).
 
 ### Deferred
 
-_(nothing deferred in this release — Rule 7 and intent-group evaluation previously in this list have now landed)_
+- **Normalizer Rules 4–8** — shell-wrapper reclassification for `filesystem.delete` (Rule 4), `credential.read/write` via file path (Rule 5), credential-emitting CLI patterns (Rule 6), file-upload exfiltration (Rule 7), and environment-variable exfiltration (Rule 8). These rules were planned for v1.2.0 but are **not implemented**. Deferred to v1.3.
+- **Operator-extensible credential-path patterns** (`CLAWTHORITY_CREDENTIAL_PATHS`) — dependent on Rule 5; also deferred to v1.3.
 
 ### Documentation
 
@@ -128,9 +125,9 @@ _(nothing deferred in this release — Rule 7 and intent-group evaluation previo
 
 ### ⚠️ v1.2.0 Addendum — What Does Not Ship {#v120-addendum--what-does-not-ship}
 
-v1.2.0 shipped the enforcement engine (normalizer rules, Cedar policy routing, HITL gating, audit logging). The following capabilities were **not included** and were completed in v1.2.1:
+v1.2.0 shipped the enforcement engine (normalizer registry, Cedar policy routing, HITL gating, audit logging). The following capabilities were **not included** and were completed in v1.2.1:
 
-- **No first-party tool library.** v1.2.0 ships the enforcement layer but zero runnable tools. The 44-tool library (`check_exists`, `read_file`, `git_commit`, `http_patch`, `send_email`, etc.) and the two-stage pipeline that gates them are not present. Clawthority in v1.2.0 intercepts and classifies inbound tool calls from the host (e.g. OpenClaw's `exec`); it does not itself expose tools the agent can call.
+- **No first-party tool library.** v1.2.0 ships the enforcement layer but zero runnable tools. The 23-tool library (`read_file`, `git_commit`, `http_get`, `send_email`, `fetch_url`, `scrape_page`, `send_slack`, `send_webhook`, etc.) and the two-stage pipeline that gates them are not present. Clawthority in v1.2.0 intercepts and classifies inbound tool calls from the host (e.g. OpenClaw's `exec`); it does not itself expose tools the agent can call.
 
 - **No `FileAuthorityAdapter` / capability system.** The `IAuthorityAdapter` interface and the UUID v7 + SHA-256 binding capability token flow are absent in v1.2.0. Stage 1 of the enforcement pipeline (TTL expiration, payload binding, replay prevention) does not exist yet. Only Stage 2 (Cedar policy evaluation) is present.
 
@@ -138,7 +135,7 @@ v1.2.0 shipped the enforcement engine (normalizer rules, Cedar policy routing, H
 
 - **No HITL pipeline re-run flow.** v1.2.0 routes priority-90 forbids to a HITL approval dispatch but does not re-run the pipeline after approval — the re-run path (`runWithHitl`) ships in v1.2.1. Operators on v1.2.0 who configure HITL should upgrade to v1.2.1 to get the full approval → capability-issue → re-run flow.
 
-> **Recommendation:** point release tweets and blog posts at v1.2.1, which is the first self-contained, fully operational release. v1.2.0 is a valid upgrade for pure enforcement-engine improvements (normalizer rules 4–8, intent-group evaluation, audit log enrichment) but is incomplete as a standalone release.
+> **Recommendation:** point release tweets and blog posts at v1.2.1, which is the first self-contained, fully operational release. v1.2.0 is a valid upgrade for pure enforcement-engine improvements (HITL gating, priority-90 routing, intent-group evaluation, audit log enrichment) but is incomplete as a standalone release.
 
 ---
 
