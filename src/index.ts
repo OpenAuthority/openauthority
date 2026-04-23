@@ -4,7 +4,6 @@ export type {
   PolicyDecisionEntry,
   HitlDecisionEntry,
   NormalizerUnclassifiedEntry,
-  NormalizerReclassifiedEntry,
   JsonlAuditLoggerOptions,
 } from "./audit.js";
 
@@ -127,7 +126,7 @@ export type {
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
 import { JsonlAuditLogger } from "./audit.js";
-import type { HitlDecisionEntry, NormalizerReclassifiedEntry, NormalizerUnclassifiedEntry, PolicyDecisionEntry } from "./audit.js";
+import type { HitlDecisionEntry, NormalizerUnclassifiedEntry, PolicyDecisionEntry } from "./audit.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules, { OPEN_MODE_RULES } from "./policy/rules.js";
@@ -777,19 +776,6 @@ async function logNormalizerUnclassified(
     stage: 'normalizer-unclassified',
     ...entry,
   } satisfies NormalizerUnclassifiedEntry);
-}
-
-/** Log a normalizer-reclassified event (Rules 4–8 activation) to the JSONL audit file. */
-async function logNormalizerReclassified(
-  entry: Omit<NormalizerReclassifiedEntry, 'ts' | 'type' | 'stage'>,
-): Promise<void> {
-  if (!hitlAuditLogger) return;
-  await hitlAuditLogger.log({
-    ts: new Date().toISOString(),
-    type: 'normalizer-reclassified',
-    stage: 'normalizer-reclassified',
-    ...entry,
-  } satisfies NormalizerReclassifiedEntry);
 }
 
 /** Log a HITL decision to the JSONL audit file. */

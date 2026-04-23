@@ -1,4 +1,4 @@
-# Security Review v2 — Clawthority
+# Security Review — Clawthority
 
 **Review date:** April 2026
 **Scope:** Enforcement gate, `unsafe_legacy` escape hatch, CS-11 emergency exec
@@ -303,6 +303,6 @@ The following steps are required to complete the external security review proces
 
 ## 8. Document History
 
-| Version | Date | Author | Summary |
+| Revision | Date | Author | Summary |
 |---|---|---|---|
-| v2 | April 2026 | Internal (pre-external-review) | Initial findings for enforcement gate; pre-implementation requirements for `unsafe_legacy` and CS-11 |
+| rev 1 | April 2026 | Internal (pre-external-review) | Initial findings for enforcement gate; pre-implementation requirements for `unsafe_legacy` and CS-11 |

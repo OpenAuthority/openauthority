@@ -437,7 +437,6 @@ export class SpecAlignmentValidator {
     // Meta-level validators that must reference the forbidden API names
     // as strings/regex sources to detect them in other files.
     /^src\/validation\/spec-alignment-validator\.ts$/,
-    /^src\/validation\/release-validator\.ts$/,
   ];
 
   private static isAllowlisted(relPath: string): boolean {
