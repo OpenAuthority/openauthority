@@ -525,6 +525,7 @@ export function normalize_action(
       intent_group = deleteEntry.intent_group;
       if (risk !== 'critical') risk = deleteEntry.default_risk;
       reclassification = { rule: 4, toolName, fromClass, toClass: action_class, commandPrefix: sanitizeCommandPrefix(commandStr) };
+      console.warn(`[clawthority][deprecated-pattern] exec reclassification via command-string regex — rule=4 tool=${toolName}`);
     }
 
     // Rule 5: reference to a well-known credential path → credential.read / .write
@@ -547,6 +548,7 @@ export function normalize_action(
         intent_group = credEntry.intent_group;
         if (risk !== 'critical') risk = credEntry.default_risk;
         reclassification = { rule: 5, toolName, fromClass, toClass: action_class, commandPrefix: sanitizeCommandPrefix(commandStr) };
+        console.warn(`[clawthority][deprecated-pattern] exec reclassification via command-string regex — rule=5 tool=${toolName}`);
       }
     }
 
@@ -570,6 +572,7 @@ export function normalize_action(
       intent_group = credEntry.intent_group;
       if (risk !== 'critical') risk = credEntry.default_risk;
       reclassification = { rule: 6, toolName, fromClass, toClass: action_class, commandPrefix: sanitizeCommandPrefix(commandStr) };
+      console.warn(`[clawthority][deprecated-pattern] exec reclassification via command-string regex — rule=6 tool=${toolName}`);
     }
 
     // Rule 8: shell-wrapper reading credentials from the environment →
@@ -591,6 +594,7 @@ export function normalize_action(
       intent_group = credEntry.intent_group;
       if (risk !== 'critical') risk = credEntry.default_risk;
       reclassification = { rule: 8, toolName, fromClass, toClass: action_class, commandPrefix: sanitizeCommandPrefix(commandStr) };
+      console.warn(`[clawthority][deprecated-pattern] exec reclassification via command-string regex — rule=8 tool=${toolName}`);
     }
 
     // Rule 7: shell-wrapper invoking an outbound file upload → web.post with
@@ -615,6 +619,7 @@ export function normalize_action(
       const webPostEntry = ALIAS_INDEX.get('http_post') ?? UNKNOWN_ENTRY;
       hitl_mode = webPostEntry.default_hitl_mode;
       reclassification = { rule: 7, toolName, fromClass, toClass: action_class, commandPrefix: sanitizeCommandPrefix(commandStr) };
+      console.warn(`[clawthority][deprecated-pattern] exec reclassification via command-string regex — rule=7 tool=${toolName}`);
     }
   } // end COMMAND_REGEX_LAYER_ENABLED
 
