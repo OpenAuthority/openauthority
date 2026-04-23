@@ -12,6 +12,7 @@
  *   TC-HPO-06: Result shape — status_code and body fields present
  *   TC-HPO-07: Non-2xx response — returns status_code without throwing
  *   TC-HPO-08: Empty body — accepts undefined body
+ *   TC-HPO-09: timeout — AbortError surfaces as code 'timeout'
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -225,5 +226,53 @@ describe('TC-HPO-08: empty body — accepts undefined body param', () => {
     stubFetch(201, 'ok');
     const result = await httpPost({ url: 'http://api.example.com/resources' });
     expect(result.status_code).toBe(201);
+  });
+});
+
+// ─── TC-HPO-09: timeout ───────────────────────────────────────────────────────
+
+describe('TC-HPO-09: timeout — AbortError surfaces as code timeout', () => {
+  it('throws HttpPostError with code timeout when fetch is aborted', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPostError | undefined;
+    try {
+      await httpPost({ url: 'https://slow.example.com/resources' });
+    } catch (e) {
+      err = e as HttpPostError;
+    }
+    expect(err).toBeInstanceOf(HttpPostError);
+    expect(err!.code).toBe('timeout');
+  });
+
+  it('timeout error message includes the URL', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPostError | undefined;
+    try {
+      await httpPost({ url: 'https://slow.example.com/resources' });
+    } catch (e) {
+      err = e as HttpPostError;
+    }
+    expect(err!.message).toContain('https://slow.example.com/resources');
+  });
+
+  it('timeout error is distinct from network-error', async () => {
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpPostError | undefined;
+    try {
+      await httpPost({ url: 'https://slow.example.com/resources' });
+    } catch (e) {
+      err = e as HttpPostError;
+    }
+    expect(err!.code).not.toBe('network-error');
+    expect(err!.code).toBe('timeout');
   });
 });

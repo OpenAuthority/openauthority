@@ -8,6 +8,10 @@
  * Action class: web.post
  */
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const REQUEST_TIMEOUT_MS = 30_000;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Input parameters for the http_post tool. */
@@ -35,11 +39,12 @@ export interface HttpPostResult {
  *
  * - `invalid-url`    — the provided URL is not a valid http/https URL.
  * - `network-error`  — a network-level failure occurred during the request.
+ * - `timeout`        — the request exceeded the 30 s timeout.
  */
 export class HttpPostError extends Error {
   constructor(
     message: string,
-    public readonly code: 'invalid-url' | 'network-error',
+    public readonly code: 'invalid-url' | 'network-error' | 'timeout',
   ) {
     super(message);
     this.name = 'HttpPostError';
@@ -56,6 +61,7 @@ export class HttpPostError extends Error {
  *
  * @throws {HttpPostError} code `invalid-url`   — URL is not http/https.
  * @throws {HttpPostError} code `network-error` — network failure.
+ * @throws {HttpPostError} code `timeout`       — request exceeded 30 s.
  */
 export async function httpPost(params: HttpPostParams): Promise<HttpPostResult> {
   const { url, body, headers } = params;
@@ -67,14 +73,25 @@ export async function httpPost(params: HttpPostParams): Promise<HttpPostResult> 
     );
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(url, {
       method: 'POST',
       body: body ?? undefined,
       headers: headers ?? {},
+      signal: controller.signal,
     });
   } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new HttpPostError(
+        `http_post: request to '${url}' timed out after ${REQUEST_TIMEOUT_MS}ms.`,
+        'timeout',
+      );
+    }
     const cause = err instanceof Error ? err.message : String(err);
     throw new HttpPostError(
       `http_post: network error while requesting '${url}': ${cause}`,
@@ -82,6 +99,7 @@ export async function httpPost(params: HttpPostParams): Promise<HttpPostResult> 
     );
   }
 
+  clearTimeout(timeoutId);
   const responseBody = await response.text();
   return {
     status_code: response.status,
