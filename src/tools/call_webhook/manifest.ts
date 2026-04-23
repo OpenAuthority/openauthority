@@ -11,7 +11,7 @@ import type { ToolManifest } from '../../validation/skill-manifest-validator.js'
 
 export const callWebhookManifest: ToolManifest = {
   name: 'call_webhook',
-  version: '1.0.0',
+  version: '1.1.0',
   action_class: 'communication.webhook',
   risk_tier: 'medium',
   default_hitl_mode: 'per_request',
@@ -21,16 +21,21 @@ export const callWebhookManifest: ToolManifest = {
     properties: {
       url: {
         type: 'string',
-        description: 'Webhook endpoint URL to POST the payload to.',
+        description: 'Webhook endpoint URL.',
+      },
+      method: {
+        type: 'string',
+        description: 'HTTP method to use. Defaults to POST.',
+        enum: ['GET', 'POST', 'PUT', 'PATCH', 'DELETE'],
       },
       payload: {
         type: 'object',
-        description: 'JSON payload to include in the webhook request body.',
+        description: 'JSON payload to include in the request body (POST, PUT, PATCH). Ignored for GET and DELETE.',
         additionalProperties: true,
       },
       headers: {
         type: 'object',
-        description: 'Optional HTTP headers to include in the webhook request.',
+        description: 'Optional HTTP headers to include in the request.',
         additionalProperties: { type: 'string' },
       },
     },
@@ -47,6 +52,10 @@ export const callWebhookManifest: ToolManifest = {
       response_body: {
         type: 'string',
         description: 'Response body returned by the webhook endpoint.',
+      },
+      content_type: {
+        type: 'string',
+        description: 'Value of the Content-Type response header, if present.',
       },
     },
   },
