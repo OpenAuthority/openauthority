@@ -39,6 +39,7 @@ import { deleteFileManifest } from '../tools/delete_file/manifest.js';
 import { createDirectoryManifest } from '../tools/create_directory/manifest.js';
 import { appendFileManifest } from '../tools/append_file/manifest.js';
 import { sendEmailManifest } from '../tools/send_email/manifest.js';
+import { httpGetManifest } from '../tools/http_get/manifest.js';
 
 // ─── Fixture helpers ──────────────────────────────────────────────────────────
 
@@ -598,6 +599,7 @@ describe('TC-SMV-Contract: first-party tool manifests validate against F-05 sche
     { name: 'createDirectoryManifest', manifest: createDirectoryManifest },
     { name: 'appendFileManifest', manifest: appendFileManifest },
     { name: 'sendEmailManifest', manifest: sendEmailManifest },
+    { name: 'httpGetManifest', manifest: httpGetManifest },
   ];
 
   for (const { name, manifest } of firstPartyManifests) {
