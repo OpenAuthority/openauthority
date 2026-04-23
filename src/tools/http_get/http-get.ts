@@ -8,6 +8,10 @@
  * Action class: web.fetch
  */
 
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const REQUEST_TIMEOUT_MS = 30_000;
+
 // ─── Types ────────────────────────────────────────────────────────────────────
 
 /** Input parameters for the http_get tool. */
@@ -35,11 +39,12 @@ export interface HttpGetResult {
  *
  * - `invalid-url`    — the provided URL is not a valid http/https URL.
  * - `network-error`  — a network-level failure occurred during the request.
+ * - `timeout`        — the request exceeded the 30 s timeout.
  */
 export class HttpGetError extends Error {
   constructor(
     message: string,
-    public readonly code: 'invalid-url' | 'network-error',
+    public readonly code: 'invalid-url' | 'network-error' | 'timeout',
   ) {
     super(message);
     this.name = 'HttpGetError';
@@ -56,6 +61,7 @@ export class HttpGetError extends Error {
  *
  * @throws {HttpGetError} code `invalid-url`   — URL is not http/https.
  * @throws {HttpGetError} code `network-error` — network failure.
+ * @throws {HttpGetError} code `timeout`       — request exceeded 30 s.
  */
 export async function httpGet(params: HttpGetParams): Promise<HttpGetResult> {
   const { url, headers } = params;
@@ -67,19 +73,32 @@ export async function httpGet(params: HttpGetParams): Promise<HttpGetResult> {
     );
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(url, {
       method: 'GET',
       headers: headers ?? {},
+      signal: controller.signal,
     });
   } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new HttpGetError(
+        `http_get: request to '${url}' timed out after ${REQUEST_TIMEOUT_MS}ms.`,
+        'timeout',
+      );
+    }
     const cause = err instanceof Error ? err.message : String(err);
     throw new HttpGetError(
       `http_get: network error while requesting '${url}': ${cause}`,
       'network-error',
     );
   }
+
+  clearTimeout(timeoutId);
 
   const responseBody = await response.text();
   const contentType = response.headers.get('content-type') ?? undefined;

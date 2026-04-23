@@ -12,6 +12,7 @@
  *   TC-HGE-06: Result shape — status_code, body, content_type fields present
  *   TC-HGE-07: Non-2xx response — returns status_code without throwing
  *   TC-HGE-08: No request body / http scheme edge cases
+ *   TC-HGE-09: Timeout — AbortController fires after 30 s
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -237,5 +238,38 @@ describe('TC-HGE-08: no request body — GET uses method GET / http scheme edge 
     stubFetch(200, 'ok');
     const result = await httpGet({ url: 'http://api.example.com/resource' });
     expect(result.status_code).toBe(200);
+  });
+});
+
+// ─── TC-HGE-09: Timeout ───────────────────────────────────────────────────────
+
+describe('TC-HGE-09: timeout — AbortController fires after 30 s', () => {
+  it('throws HttpGetError with code timeout when fetch is aborted', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpGetError | undefined;
+    try {
+      await httpGet({ url: 'https://slow.example.com/resource' });
+    } catch (e) {
+      err = e as HttpGetError;
+    }
+    expect(err).toBeInstanceOf(HttpGetError);
+    expect(err!.code).toBe('timeout');
+  });
+
+  it('timeout error message includes the URL', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpGetError | undefined;
+    try {
+      await httpGet({ url: 'https://slow.example.com/resource' });
+    } catch (e) {
+      err = e as HttpGetError;
+    }
+    expect(err!.message).toContain('https://slow.example.com/resource');
   });
 });
