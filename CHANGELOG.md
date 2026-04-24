@@ -21,6 +21,24 @@ Key behaviours:
 - A pre-constructed `envVault` singleton is exported for use by credential tools that resolve to the `env` store.
 - `@experimental` — same stability guarantee as `FileCredentialVault`; avoid hard dependencies outside the W2 workstream.
 
+#### `list_secrets` — credential enumeration tool (T89)
+
+`list_secrets` enumerates the names of secrets present in a configured backend store and maps to the `credential.list` action class (`risk_tier: 'high'`, `default_hitl_mode: 'per_request'`). Only key names are returned — values are never retrieved or exposed. Supported built-in backends: `env` (checks `process.env`) and any injected `SecretBackend`.
+
+Security invariants:
+
+- Secret values are **never** retrieved or written to the audit log — only key names and counts appear in log entries.
+- Only keys that appear in **both** the allowlist and the backend are returned. Keys absent from either are silently excluded.
+- An absent or empty allowlist results in an empty key list (fail-closed; controlled by `CLAWTHORITY_SECRET_ALLOWLIST` env var or the `allowlist` option).
+- The HITL capability token is consumed **before** enumeration begins so it cannot be replayed even if the process is killed during listing.
+- Backends are injected via options, enabling tests to supply lightweight in-memory stubs (`MemorySecretBackend`) without touching `process.env` or external services.
+
+Gate order: HITL token presence → replay protection → enumerate (allowlist ∩ backend) → return.
+
+#### `credential.list` action class registration (T89)
+
+`credential.list` is now registered in `@openclaw/action-registry` with `default_risk: 'high'` and `default_hitl_mode: 'per_request'`, under the `credential_access` intent group. Aliases: `list_secrets`, `list_credentials`, `list_credential_keys`.
+
 #### `read_secret` and `write_secret` manifest registration (T75)
 
 `readSecretManifest` (`credential.read`, `risk_tier: 'high'`, `default_hitl_mode: 'per_request'`) and `writeSecretManifest` (`credential.write`, `risk_tier: 'critical'`, `default_hitl_mode: 'per_request'`) are now included in `FIRST_PARTY_MANIFESTS` and validated at activation time alongside the other registered first-party tools.

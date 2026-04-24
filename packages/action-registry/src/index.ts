@@ -65,6 +65,7 @@ export const ActionClass = {
   CredentialRead: 'credential.read',
   CredentialWrite: 'credential.write',
   CredentialRotate: 'credential.rotate',
+  CredentialList: 'credential.list',
   CodeExecute: 'code.execute',
   PaymentInitiate: 'payment.initiate',
   SystemRead: 'system.read',
@@ -367,6 +368,17 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
     aliases: [
       'rotate_secret',
       'rotate_credential',
+    ],
+    intent_group: 'credential_access',
+  },
+  {
+    action_class: ActionClass.CredentialList,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'list_secrets',
+      'list_credentials',
+      'list_credential_keys',
     ],
     intent_group: 'credential_access',
   },
