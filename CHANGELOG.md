@@ -22,6 +22,26 @@ Security invariants:
 
 Gate order: allowlist check → HITL token presence → replay protection → key existence check → generate + consume token → write.
 
+#### `webhook` — audited webhook delivery tool (HC-08)
+
+`webhook` posts a JSON payload to a webhook URL via HTTP POST and maps to the `communication.webhook` action class (`risk_tier: 'medium'`, `default_hitl_mode: 'per_request'`). Unlike `send_webhook`, it includes automatic retry logic for transient failures.
+
+Key behaviours:
+
+- Accepts `url` (required) and `payload` (required) parameters; optional `headers` and `max_retries` (default: 3).
+- Automatically sets `Content-Type: application/json` unless the caller supplies a `Content-Type` header (checked case-insensitively).
+- Retries on `network-error` and `timeout` only — HTTP error responses (4xx, 5xx) are returned immediately without retrying, since those represent a definitive server response.
+- Exponential backoff between retries: 500 ms × 2^(attempt−1).
+- Returns `{ status_code, response_body, content_type?, attempts }` — `attempts` records the total number of requests made, providing an audit trail of retry activity.
+- Throws `WebhookError` (typed `code`: `invalid-url` | `network-error` | `timeout`) only when all attempts are exhausted or the URL scheme is invalid.
+
+Security invariants:
+
+- URL scheme validation rejects anything that is not `http://` or `https://` at call time, before any retry loop runs.
+- The `attempts` field in the result is always present and audited, giving operators visibility into retry activity.
+
+Gate order: URL scheme validation → HITL token check (pipeline) → retry loop (network-error / timeout) → return.
+
 #### `unsafe_admin_exec` — emergency admin shell escape hatch (CS-11)
 
 `unsafe_admin_exec` is a privileged tool that maps to the `shell.exec` action class and provides an audited emergency escape hatch for administrative shell access. It is inert by default and requires all of the following to execute:
