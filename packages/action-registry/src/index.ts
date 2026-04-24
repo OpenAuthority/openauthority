@@ -295,6 +295,7 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'slack_message',
       'slack_send',
       'post_slack',
+      'post_message',
     ],
     intent_group: 'external_send',
   },
