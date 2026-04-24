@@ -9,6 +9,22 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+#### `EnvCredentialVault` — environment variable credential provider (T75)
+
+`EnvCredentialVault` (`src/vault/env-vault.ts`) is the second `ICredentialVault` / `SecretBackend` implementation, complementing `FileCredentialVault` for the v1.2.1 env + file only approach. It reads secrets directly from `process.env` with no async loading step — values are resolved at call time so late-injected env vars are always visible.
+
+Key behaviours:
+
+- Implements both `ICredentialVault` (`get` / `has` / `keys`) and `SecretBackend` (`get` / `has` / `set`), making it a drop-in replacement wherever either interface is expected.
+- `set(key, value)` writes to `process.env[key]`; changes are immediately visible to subsequent calls on any env-backed instance in the same process.
+- `keys()` returns a snapshot of all currently-set environment variable names via `Object.keys(process.env)`.
+- A pre-constructed `envVault` singleton is exported for use by credential tools that resolve to the `env` store.
+- `@experimental` — same stability guarantee as `FileCredentialVault`; avoid hard dependencies outside the W2 workstream.
+
+#### `read_secret` and `write_secret` manifest registration (T75)
+
+`readSecretManifest` (`credential.read`, `risk_tier: 'high'`, `default_hitl_mode: 'per_request'`) and `writeSecretManifest` (`credential.write`, `risk_tier: 'critical'`, `default_hitl_mode: 'per_request'`) are now included in `FIRST_PARTY_MANIFESTS` and validated at activation time alongside the other registered first-party tools.
+
 #### `http_delete` — HTTP DELETE request tool (HC-04)
 
 `http_delete` sends an HTTP DELETE request to a URL and maps to the `web.post` action class (`risk_tier: 'medium'`, `default_hitl_mode: 'per_request'`). DELETE is grouped with other state-mutating HTTP verbs under `web.post`.

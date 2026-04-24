@@ -41,6 +41,8 @@ import { scrapePageManifest } from '../tools/scrape_page/manifest.js';
 import { sendSlackManifest } from '../tools/send_slack/manifest.js';
 import { sendWebhookManifest } from '../tools/send_webhook/manifest.js';
 import { unsafeAdminExecManifest } from '../tools/unsafe_admin_exec/manifest.js';
+import { readSecretManifest } from '../tools/read_secret/manifest.js';
+import { writeSecretManifest } from '../tools/write_secret/manifest.js';
 import { rotateSecretManifest } from '../tools/rotate_secret/manifest.js';
 import { webhookManifest } from '../tools/webhook/manifest.js';
 import { httpPatchManifest } from '../tools/http_patch/manifest.js';
@@ -81,6 +83,8 @@ export const FIRST_PARTY_MANIFESTS: readonly ToolManifest[] = [
   sendSlackManifest,
   sendWebhookManifest,
   unsafeAdminExecManifest,
+  readSecretManifest,
+  writeSecretManifest,
   rotateSecretManifest,
   webhookManifest,
   httpPatchManifest,
