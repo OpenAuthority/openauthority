@@ -151,7 +151,7 @@ import { defaultAgentIdentityRegistry } from "./identity.js";
 import { BudgetTracker, createBudgetTracker } from "./budget/tracker.js";
 import { EventEmitter } from "node:events";
 import { runPipeline, isInstallPhase } from "./enforcement/pipeline.js";
-import type { PipelineContext, Stage1Fn, Stage2Fn } from "./enforcement/pipeline.js";
+import type { PipelineContext, Stage1Fn, Stage2Fn, CeeDecision } from "./enforcement/pipeline.js";
 import { validateCapability } from "./enforcement/stage1-capability.js";
 import { FileAuthorityAdapter } from "./adapter/file-adapter.js";
 
@@ -600,7 +600,7 @@ let telegramListener: TelegramListener | null = null;
 let slackInteractionServer: SlackInteractionServer | null = null;
 const approvalManager = new ApprovalManager();
 
-/** Event emitter for pipeline execution events (audit trail and metrics). */
+/** @deprecated Use per-call EventEmitter inside beforeToolCallHandler instead. */
 const pipelineEmitter = new EventEmitter();
 
 /** Maps HITL token → Slack message timestamp for chat.update on decision. */
@@ -1017,17 +1017,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
         } else {
           console.log(`[clawthority] │ DECISION: ✕ BLOCKED (cedar/${decision.effect} priority=${priority ?? '?'} rule=${ruleTag}) — ${blockReason}`);
           console.log(`[clawthority] └──────────────────────────────────────────────────────`);
-          await logPolicyDecision({
-            effect: 'forbid',
-            stage: 'cedar',
-            resource: 'tool',
-            match: toolName,
-            reason: blockReason,
-            rule: ruleTag,
-            ...(priority !== undefined && { priority }),
-            ...auditBase,
-          });
-          return { effect: 'forbid', reason: blockReason, stage: 'stage2' };
+          return { effect: 'forbid', reason: blockReason, stage: 'cedar', rule: ruleTag, ...(priority !== undefined && { priority }) };
         }
       } else {
         console.log(`[clawthority] │ [cedar] ✓ passed`);
@@ -1035,16 +1025,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
     } catch (err) {
       console.error(`[clawthority] │ [cedar] ✕ ERROR — fail closed`, err);
       console.log(`[clawthority] └──────────────────────────────────────────────────────`);
-      await logPolicyDecision({
-        effect: 'forbid',
-        stage: 'cedar',
-        resource: 'tool',
-        match: toolName,
-        reason: 'Cedar policy evaluation error — fail closed',
-        rule: '<error>',
-        ...auditBase,
-      });
-      return { effect: 'forbid', reason: 'Cedar policy evaluation error — fail closed', stage: 'stage2' };
+      return { effect: 'forbid', reason: 'Cedar policy evaluation error — fail closed', stage: 'cedar', rule: '<error>' };
     }
 
     // ── JSON Cedar engine (data/rules.json, loaded at startup) ────────────
@@ -1070,17 +1051,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
           } else {
             console.log(`[clawthority] │ DECISION: ✕ BLOCKED (json-rules/${jsonDecision.effect} priority=${priority ?? '?'} rule=${ruleTag}) — ${blockReason}`);
             console.log(`[clawthority] └──────────────────────────────────────────────────────`);
-            await logPolicyDecision({
-              effect: 'forbid',
-              stage: 'json-rules',
-              resource: 'tool',
-              match: toolName,
-              reason: blockReason,
-              rule: ruleTag,
-              ...(priority !== undefined && { priority }),
-              ...auditBase,
-            });
-            return { effect: 'forbid', reason: blockReason, stage: 'stage2' };
+            return { effect: 'forbid', reason: blockReason, stage: 'json-rules', rule: ruleTag, ...(priority !== undefined && { priority }) };
           }
         } else {
           console.log(`[clawthority] │ [json-rules] ✓ passed`);
@@ -1088,16 +1059,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
       } catch (err) {
         console.error(`[clawthority] │ [json-rules] ✕ ERROR — fail closed`, err);
         console.log(`[clawthority] └──────────────────────────────────────────────────────`);
-        await logPolicyDecision({
-          effect: 'forbid',
-          stage: 'json-rules',
-          resource: 'tool',
-          match: toolName,
-          reason: 'JSON rule evaluation error — fail closed',
-          rule: '<error>',
-          ...auditBase,
-        });
-        return { effect: 'forbid', reason: 'JSON rule evaluation error — fail closed', stage: 'stage2' };
+        return { effect: 'forbid', reason: 'JSON rule evaluation error — fail closed', stage: 'json-rules', rule: '<error>' };
       }
     }
 
@@ -1140,17 +1102,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
           } else {
             console.log(`[clawthority] │ DECISION: ✕ BLOCKED (intent/${intentSource} forbid priority=${priority ?? '?'} rule=${ruleTag}) — ${blockReason}`);
             console.log(`[clawthority] └──────────────────────────────────────────────────────`);
-            await logPolicyDecision({
-              effect: 'forbid',
-              stage: intentSource,
-              resource: 'tool',
-              match: toolName,
-              reason: blockReason,
-              rule: ruleTag,
-              ...(priority !== undefined && { priority }),
-              ...auditBase,
-            });
-            return { effect: 'forbid', reason: blockReason, stage: 'stage2' };
+            return { effect: 'forbid', reason: blockReason, stage: intentSource, rule: ruleTag, ...(priority !== undefined && { priority }) };
           }
           intentBlockHandled = true;
           break; // first forbid wins; don't keep scanning
@@ -1159,16 +1111,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
       } catch (err) {
         console.error(`[clawthority] │ [intent] ✕ ERROR — fail closed`, err);
         console.log(`[clawthority] └──────────────────────────────────────────────────────`);
-        await logPolicyDecision({
-          effect: 'forbid',
-          stage: 'cedar',
-          resource: 'tool',
-          match: toolName,
-          reason: 'Intent-group evaluation error — fail closed',
-          rule: '<error>',
-          ...auditBase,
-        });
-        return { effect: 'forbid', reason: 'Intent-group evaluation error — fail closed', stage: 'stage2' };
+        return { effect: 'forbid', reason: 'Intent-group evaluation error — fail closed', stage: 'cedar', rule: '<error>' };
       }
     }
 
@@ -1179,27 +1122,41 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   // stage1 validates source trust level; stage2 evaluates Cedar, JSON, and
   // intent-group policies. HITL-gated forbids are deferred to the resolution
   // stage below via pendingHitlGatedBlockReason captured in the stage2 closure.
-  const { decision: pipelineDecision } = await runPipeline(pipelineCtx, stage1, stage2, pipelineEmitter);
+  //
+  // A per-call EventEmitter is used instead of the module-level pipelineEmitter
+  // to prevent cross-call listener interference under concurrent invocations.
+  const callEmitter = new EventEmitter();
+  callEmitter.once('executionEvent', ({ decision }: { decision: CeeDecision }) => {
+    // Permits are intentionally not logged (see logPolicyDecision comment above).
+    // pipeline_error fails closed without an audit entry — the error is already
+    // visible on stderr and a logged forbid with no rule context would be noise.
+    if (decision.effect !== 'forbid' || decision.reason === 'pipeline_error') return;
+    const entry: Omit<PolicyDecisionEntry, 'ts' | 'type'> = {
+      effect: 'forbid',
+      resource: 'tool',
+      match: toolName,
+      reason: decision.reason,
+      ...auditBase,
+    };
+    const policyStage = decision.stage as PolicyDecisionEntry['stage'];
+    if (policyStage !== undefined) entry.stage = policyStage;
+    if (decision.rule !== undefined) entry.rule = decision.rule;
+    if (decision.priority !== undefined) entry.priority = decision.priority;
+    void logPolicyDecision(entry);
+  });
+  const { decision: pipelineDecision } = await runPipeline(pipelineCtx, stage1, stage2, callEmitter);
 
   if (pipelineDecision.effect === 'forbid') {
     if (pipelineDecision.reason === 'untrusted_source_high_risk') {
       const blockReason = 'untrusted_source_high_risk';
       console.log(`[clawthority] │ DECISION: ✕ BLOCKED (stage1/untrusted_source_high_risk) — actionClass=${normalizedAction.action_class} risk=${normalizedAction.risk}`);
       console.log(`[clawthority] └──────────────────────────────────────────────────────`);
-      await logPolicyDecision({
-        effect: 'forbid',
-        stage: 'stage1-trust',
-        resource: 'tool',
-        match: toolName,
-        reason: blockReason,
-        rule: `trust:untrusted+${normalizedAction.risk}`,
-        ...auditBase,
-      });
+      // Audit entry written by the callEmitter listener above.
       return { block: true, blockReason };
     }
-    // For stage2 forbids (cedar / json-rules / intent-group): the stage2 closure
-    // already emitted the BLOCKED console lines and JSONL audit entry.
-    // For pipeline_error (unexpected stage exception): fail closed.
+    // For stage2 forbids (cedar / json-rules / intent-group): the callEmitter
+    // listener above already wrote the JSONL audit entry when runPipeline emitted.
+    // For pipeline_error (unexpected stage exception): fail closed without logging.
     return { block: true, blockReason: pipelineDecision.reason };
   }
 

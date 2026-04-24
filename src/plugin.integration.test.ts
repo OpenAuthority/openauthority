@@ -761,9 +761,9 @@ describe('plugin integration suite', () => {
 
     expect(denied.decision.effect).toBe('forbid');
     expect(denied.decision.reason).toBe('untrusted_source_high_risk');
-    // stage1 (not hitl) confirms trust check fired after the HITL pre-check
+    // stage1-trust confirms trust check fired after the HITL pre-check
     // but before capability validation — i.e. trust validation precedes capability check.
-    expect(denied.decision.stage).toBe('stage1');
+    expect(denied.decision.stage).toBe('stage1-trust');
 
     // ── Part 2: same action from trusted source with approval → permitted ──────
     // Issue a fresh capability so each path is independent.

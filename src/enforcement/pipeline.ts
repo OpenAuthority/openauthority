@@ -65,6 +65,13 @@ export interface CeeDecision {
    * unconditional forbids (priority >= 100 or absent).
    */
   priority?: number;
+  /**
+   * Human-readable rule identifier forwarded from the stage that produced
+   * this decision (e.g. `cedar:deny_file_delete`, `trust:untrusted+high`,
+   * `intent:data_exfiltration`). Populated by stage closures so the audit
+   * event listener can log it without needing inline access to rule metadata.
+   */
+  rule?: string;
 }
 
 /** Stage 1: capability gate — validates an issued capability token. */

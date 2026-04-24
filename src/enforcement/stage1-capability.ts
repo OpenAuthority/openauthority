@@ -51,7 +51,7 @@ export async function validateCapability(
       effectiveTrustLevel === 'untrusted' &&
       (ctx.risk === 'high' || ctx.risk === 'critical')
     ) {
-      return { effect: 'forbid', reason: 'untrusted_source_high_risk', stage: 'stage1' };
+      return { effect: 'forbid', reason: 'untrusted_source_high_risk', stage: 'stage1-trust', rule: `trust:untrusted+${ctx.risk}` };
     }
 
     // 1. Low-risk bypass: hitl_mode none skips all capability checks.

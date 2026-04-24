@@ -74,7 +74,8 @@ describe('validateCapability', () => {
     const result = await validateCapability(ctx, makeApprovalManager(), () => undefined);
     expect(result.effect).toBe('forbid');
     expect(result.reason).toBe('untrusted_source_high_risk');
-    expect(result.stage).toBe('stage1');
+    expect(result.stage).toBe('stage1-trust');
+    expect(result.rule).toBe('trust:untrusted+high');
   });
 
   it('forbids when source is untrusted and risk is critical', async () => {
@@ -82,7 +83,8 @@ describe('validateCapability', () => {
     const result = await validateCapability(ctx, makeApprovalManager(), () => undefined);
     expect(result.effect).toBe('forbid');
     expect(result.reason).toBe('untrusted_source_high_risk');
-    expect(result.stage).toBe('stage1');
+    expect(result.stage).toBe('stage1-trust');
+    expect(result.rule).toBe('trust:untrusted+critical');
   });
 
   it('permits when source is untrusted but risk is low', async () => {
