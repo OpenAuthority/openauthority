@@ -147,7 +147,7 @@ If you see `install_phase_bypass` in a production log after setting `OPENAUTH_FO
 ## F-02: In-Memory Token Consumption — Production Considerations
 
 **Finding severity:** Medium
-**Status:** Open — see [Security Review §3.2](security-review.md#f-02--in-memory-token-consumption-tracking)
+**Status:** Documented limit; persistent revocation deferred — see [Security Review §3.2](security-review.md#f-02--in-memory-token-consumption-tracking)
 
 ### The limitation
 
