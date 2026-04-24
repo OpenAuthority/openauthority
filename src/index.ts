@@ -1590,6 +1590,7 @@ const plugin: OpenclawPlugin = {
       await adapterBundleWatchHandle.stop();
       adapterBundleWatchHandle = null;
     }
+    adapterRef = null;
     activated = false;
     console.log("[plugin:clawthority] deactivated");
   },
