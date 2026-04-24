@@ -246,6 +246,28 @@ With `OPENAUTH_FORCE_ACTIVE=1` set, the bypass is suppressed and enforcement rem
 
 ---
 
+### F-02: In-Memory Token Consumption — Production Considerations
+
+> **Security note (F-02):** The `ApprovalManager` tracks consumed HITL capability tokens in memory only. If the plugin process restarts, the consumed-token set is lost. A token issued immediately before a restart but not yet consumed can be replayed within its TTL window (default: 120 seconds). See [Security Review §3.2](security-review.md#f-02--in-memory-token-consumption-tracking) for full details.
+
+**For production deployments:**
+
+- Configure your process manager with a restart backoff of at least the configured capability TTL (default: `RestartSec=120s` in systemd) to reduce replay window exposure.
+- Consider lowering the capability TTL to 30–60 seconds to further limit the replay window.
+- Alert on unexpected process restarts that follow recent HITL approvals.
+- When the Firma remote adapter ships, migrate to it for persistent server-side token revocation.
+
+The file adapter (default) emits a startup warning when in-memory-only revocation is active:
+
+```
+[clawthority] WARNING: Using file adapter — capability token revocation is in-memory only.
+              Production deployments should use the Firma remote adapter for persistent revocation.
+```
+
+For a full mitigation guide, see [Operator Security Guide — F-02](operator-security-guide.md#f-02-in-memory-token-consumption--production-considerations).
+
+---
+
 ## Development Setup
 
 Use this setup when working on the plugin or dashboard locally.

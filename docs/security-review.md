@@ -280,10 +280,12 @@ The following findings are classified as requiring resolution before the v1 rele
 
 | Finding | Description | Owner | Due |
 |---|---|---|---|
-| F-01 | ~~Add `OPENAUTH_FORCE_ACTIVE=1` to production deployment docs~~ (done); add audit log warning for install-phase bypass | Engineering | Partially resolved — deployment docs updated |
-| F-02 | Document in-memory consumption limitation in `docs/installation.md`; production deployments must use persistent revocation via Firma remote adapter | Engineering | Before v1 |
+| F-01 | ~~Add `OPENAUTH_FORCE_ACTIVE=1` to production deployment docs~~ (done); ~~add to `docs/configuration.md` env-vars table and production example~~ (done); add audit log warning for install-phase bypass | Engineering | Partially resolved — deployment docs updated; audit log warning outstanding |
+| F-02 | ~~Document in-memory consumption limitation in `docs/installation.md`~~ (done); production deployments must use persistent revocation via Firma remote adapter when adapter ships | Engineering | Before v1 |
 | F-05 (blocker) | `unsafe_legacy` must not be implemented without satisfying §4.3 requirements | Engineering | Before any `unsafe_legacy` PR |
 | F-06 (blocker) | CS-11 must not be implemented without satisfying §5.3 requirements | Engineering | Before any CS-11 PR |
+
+Ongoing security posture is reviewed quarterly via the G-06 process documented in `docs/operator-security-guide.md`.
 
 ---
 
@@ -310,3 +312,4 @@ The following steps are required to complete the external security review proces
 |---|---|---|---|
 | rev 1 | April 2026 | Internal (pre-external-review) | Initial findings for enforcement gate; pre-implementation requirements for `unsafe_legacy` and CS-11 |
 | rev 2 | April 2026 | Engineering | F-01 mitigated via documentation: added "Production Deployment" section to `docs/installation.md` covering `OPENAUTH_FORCE_ACTIVE=1` for Docker and systemd |
+| rev 3 | April 2026 | Engineering | W8+W9 operator documentation (T92): created `docs/operator-security-guide.md` covering F-01 config, F-02 production guidance, `unsafe_admin_exec` operator procedures, and G-06 quarterly security audit process; added F-02 notice to `docs/installation.md`; added `OPENAUTH_FORCE_ACTIVE` to `docs/configuration.md` env-var table and production example; updated §6 remediation tracking |
