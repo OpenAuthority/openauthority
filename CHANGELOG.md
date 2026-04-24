@@ -18,7 +18,7 @@ Key behaviours:
 - Accepts `url` (required) and `headers` (optional key-value pairs). DELETE requests carry no body.
 - Validates that the URL uses the `http://` or `https://` scheme before making any network request; throws `HttpDeleteError` with `code: 'invalid-url'` otherwise.
 - Returns `{ status_code, body }` — HTTP error responses (4xx, 5xx) are returned without throwing, since those represent a definitive server answer.
-- Throws `HttpDeleteError` (typed `code`: `invalid-url` | `network-error`) on transport failures.
+- Throws `HttpDeleteError` (typed `code`: `invalid-url` | `network-error` | `timeout`) on transport failures; the 30 s timeout maps to `code: 'timeout'`.
 
 Gate order: URL scheme validation → HITL token check (pipeline) → network request → return.
 

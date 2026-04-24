@@ -1,16 +1,16 @@
 /**
  * http_delete tool implementation.
  *
- * Sends an HTTP DELETE request to a URL.
+ * Sends an HTTP DELETE request to a URL with optional request headers.
  * Policy enforcement (HITL gating and Cedar stage2 URL policy) is handled
  * at the pipeline layer; this module performs only the network operation.
  *
- * http_delete normalizes to `unknown_sensitive_action` (risk: critical) because
- * the 'http_delete' alias is deliberately absent from @openclaw/action-registry,
- * ensuring maximum caution by default.
- *
- * Action class: unknown_sensitive_action (fail-closed)
+ * Action class: web.post
  */
+
+// ─── Constants ────────────────────────────────────────────────────────────────
+
+const REQUEST_TIMEOUT_MS = 30_000;
 
 // ─── Types ────────────────────────────────────────────────────────────────────
 
@@ -37,11 +37,12 @@ export interface HttpDeleteResult {
  *
  * - `invalid-url`    — the provided URL is not a valid http/https URL.
  * - `network-error`  — a network-level failure occurred during the request.
+ * - `timeout`        — the request exceeded the 30 s timeout.
  */
 export class HttpDeleteError extends Error {
   constructor(
     message: string,
-    public readonly code: 'invalid-url' | 'network-error',
+    public readonly code: 'invalid-url' | 'network-error' | 'timeout',
   ) {
     super(message);
     this.name = 'HttpDeleteError';
@@ -58,6 +59,7 @@ export class HttpDeleteError extends Error {
  *
  * @throws {HttpDeleteError} code `invalid-url`   — URL is not http/https.
  * @throws {HttpDeleteError} code `network-error` — network failure.
+ * @throws {HttpDeleteError} code `timeout`       — request exceeded 30 s.
  */
 export async function httpDelete(params: HttpDeleteParams): Promise<HttpDeleteResult> {
   const { url, headers } = params;
@@ -69,13 +71,24 @@ export async function httpDelete(params: HttpDeleteParams): Promise<HttpDeleteRe
     );
   }
 
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS);
+
   let response: Response;
   try {
     response = await fetch(url, {
       method: 'DELETE',
       headers: headers ?? {},
+      signal: controller.signal,
     });
   } catch (err: unknown) {
+    clearTimeout(timeoutId);
+    if (err instanceof Error && err.name === 'AbortError') {
+      throw new HttpDeleteError(
+        `http_delete: request to '${url}' timed out after ${REQUEST_TIMEOUT_MS}ms.`,
+        'timeout',
+      );
+    }
     const cause = err instanceof Error ? err.message : String(err);
     throw new HttpDeleteError(
       `http_delete: network error while requesting '${url}': ${cause}`,
@@ -83,6 +96,7 @@ export async function httpDelete(params: HttpDeleteParams): Promise<HttpDeleteRe
     );
   }
 
+  clearTimeout(timeoutId);
   const responseBody = await response.text();
   return {
     status_code: response.status,

@@ -11,6 +11,7 @@
  *   TC-HDL-05: Result shape — status_code and body fields present
  *   TC-HDL-06: Non-2xx response — returns status_code without throwing
  *   TC-HDL-07: No body param — DELETE has no request body
+ *   TC-HDL-08: timeout — AbortError surfaces as code 'timeout'
  */
 
 import { describe, it, expect, vi, afterEach } from 'vitest';
@@ -202,5 +203,53 @@ describe('TC-HDL-07: no body param — DELETE request has no body', () => {
     stubFetch(204, '');
     const result = await httpDelete({ url: 'http://api.example.com/resource/1' });
     expect(result.status_code).toBe(204);
+  });
+});
+
+// ─── TC-HDL-08: timeout ───────────────────────────────────────────────────────
+
+describe('TC-HDL-08: timeout — AbortError surfaces as code timeout', () => {
+  it('throws HttpDeleteError with code timeout when fetch is aborted', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpDeleteError | undefined;
+    try {
+      await httpDelete({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpDeleteError;
+    }
+    expect(err).toBeInstanceOf(HttpDeleteError);
+    expect(err!.code).toBe('timeout');
+  });
+
+  it('timeout error message includes the URL', async () => {
+    const abortError = new Error('The operation was aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpDeleteError | undefined;
+    try {
+      await httpDelete({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpDeleteError;
+    }
+    expect(err!.message).toContain('https://slow.example.com/resource/1');
+  });
+
+  it('timeout error is distinct from network-error', async () => {
+    const abortError = new Error('aborted');
+    abortError.name = 'AbortError';
+    vi.stubGlobal('fetch', vi.fn().mockRejectedValue(abortError));
+
+    let err: HttpDeleteError | undefined;
+    try {
+      await httpDelete({ url: 'https://slow.example.com/resource/1' });
+    } catch (e) {
+      err = e as HttpDeleteError;
+    }
+    expect(err!.code).not.toBe('network-error');
+    expect(err!.code).toBe('timeout');
   });
 });
