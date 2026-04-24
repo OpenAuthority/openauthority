@@ -74,7 +74,7 @@ export {
 } from "./budget/pricing.js";
 export type { ModelPricing as BudgetModelPricing } from "./budget/pricing.js";
 export { BudgetTracker, createBudgetTracker } from "./budget/tracker.js";
-export type { BudgetEntry, BudgetTrackerOptions } from "./budget/tracker.js";
+export type { BudgetEntry, BudgetTrackerOptions, BudgetCheckResult } from "./budget/tracker.js";
 
 // ─── Human-in-the-loop policy configuration ──────────────────────────────────
 export {
@@ -880,13 +880,30 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   console.log(`[clawthority] ┌─ before_tool_call ──────────────────────────────────`);
   console.log(`[clawthority] │ tool=${toolName}  agent=${ctx.agentId ?? "unknown"}  channel=${ctx.channelId ?? "unknown"}`);
 
-  // ── Budget tracking — log every hook event to data/budget.jsonl ───────────
+  // ── Budget tracking + enforcement ──────────────────────────────────────────
   if (budgetTracker !== null) {
     // Estimate input tokens from serialised params (rough: 1 token ≈ 4 UTF-16
     // code units). Output tokens are not available pre-call; recorded as 0.
     const paramJson = params !== undefined ? JSON.stringify(params) : '';
     const estimatedInputTokens = Math.max(1, Math.round(paramJson.length / 4));
     budgetTracker.append(estimatedInputTokens, 0);
+
+    // Hard limit enforcement — block tool calls when daily budget is exceeded.
+    const budgetCheck = budgetTracker.check();
+    if (budgetCheck.exceeded) {
+      const tokenInfo = `${budgetCheck.dailyTokens}/${budgetCheck.dailyTokenLimit} tokens`;
+      const costInfo = budgetCheck.dailyCostLimit !== undefined
+        ? `, $${budgetCheck.dailyCost.toFixed(4)}/$${budgetCheck.dailyCostLimit.toFixed(4)}`
+        : '';
+      console.log(`[clawthority] │ DECISION: ✕ BLOCKED (budget/daily_limit_exceeded) — ${tokenInfo}${costInfo}`);
+      console.log(`[clawthority] └──────────────────────────────────────────────────────`);
+      return { block: true, blockReason: 'daily_budget_exceeded' };
+    }
+
+    // Warn when approaching the limit.
+    if (budgetCheck.dailyTokens >= budgetTracker.warnAt) {
+      console.warn(`[clawthority] ⚠ budget warning — ${budgetCheck.dailyTokens}/${budgetCheck.dailyTokenLimit} tokens used today`);
+    }
   }
 
   // ── Identity verification (V-03 v0.1 follow-up) ──────────────────────────
