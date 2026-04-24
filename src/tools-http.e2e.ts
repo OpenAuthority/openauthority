@@ -499,11 +499,11 @@ describe('http_put — web.post (web_access) enforcement', () => {
 
 // ─── http_delete — TC-HTT-10..12 ──────────────────────────────────────────────
 //
-// http_delete is not registered in @openclaw/action-registry and therefore
-// normalizes to unknown_sensitive_action (risk: critical, hitl_mode: per_request).
-// The pipeline still enforces HITL gating and stage2 URL policy correctly.
+// http_delete is registered in @openclaw/action-registry as web.post (web_access).
+// risk: medium, hitl_mode: per_request.  The pipeline enforces HITL gating and
+// stage2 URL policy correctly.
 
-describe('http_delete — unknown_sensitive_action enforcement (unregistered alias)', () => {
+describe('http_delete — web.post (web_access) enforcement', () => {
   let emitter: EventEmitter;
   let harness: HitlTestHarness;
 
@@ -519,9 +519,9 @@ describe('http_delete — unknown_sensitive_action enforcement (unregistered ali
   it('TC-HTT-10: PERMIT — valid HITL token, permissive stage2, pipeline permits http_delete', async () => {
     const normalized = normalize_action('http_delete', { url: TRUSTED_URL });
 
-    // Unregistered alias falls closed to unknown_sensitive_action.
-    expect(normalized.action_class).toBe('unknown_sensitive_action');
-    expect(normalized.risk).toBe('critical');
+    // http_delete is registered as web.post (web_access), medium risk.
+    expect(normalized.action_class).toBe('web.post');
+    expect(normalized.intent_group).toBe('web_access');
     expect(normalized.hitl_mode).toBe('per_request');
     expect(normalized.target).toBe(TRUSTED_URL);
 
