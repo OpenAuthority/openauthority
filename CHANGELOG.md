@@ -48,6 +48,20 @@ Key behaviours:
 
 Gate order: URL scheme validation → HITL token check (pipeline) → network request → return.
 
+#### `http_post` — HTTP POST request tool (T79)
+
+`http_post` sends an HTTP POST request to a URL with an optional request body and maps to the `web.post` action class (`risk_tier: 'medium'`, `default_hitl_mode: 'per_request'`). POST is the canonical state-mutating HTTP verb; it triggers side effects and resource creation on external services.
+
+Key behaviours:
+
+- Accepts `url` (required), `body` (optional string — serialise JSON before passing), and `headers` (optional key-value pairs).
+- Supports `application/json` and `application/x-www-form-urlencoded` bodies. `multipart/*` content types are rejected before any network request with `HttpPostError` code `invalid-content-type` (file uploads are out of scope).
+- Validates that the URL uses the `http://` or `https://` scheme before making any network request; throws `HttpPostError` with `code: 'invalid-url'` otherwise.
+- Returns `{ status_code, body, content_type? }` — HTTP error responses (4xx, 5xx) are returned without throwing, since those represent a definitive server answer. `content_type` is included when the response carries a `Content-Type` header.
+- Throws `HttpPostError` (typed `code`: `invalid-url` | `invalid-content-type` | `network-error` | `timeout`) on validation or transport failures; the 30 s timeout maps to `code: 'timeout'`.
+
+Gate order: URL scheme validation → content-type validation → HITL token check (pipeline) → network request → return.
+
 #### `rotate_secret` — credential rotation tool (CS-03)
 
 `rotate_secret` generates a cryptographically-random 256-bit hex value for an existing secret and writes it to the configured backend store atomically. It maps to the `credential.rotate` action class (`risk_tier: 'critical'`, `default_hitl_mode: 'per_request'`).

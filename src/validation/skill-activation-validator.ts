@@ -46,6 +46,7 @@ import { webhookManifest } from '../tools/webhook/manifest.js';
 import { httpPatchManifest } from '../tools/http_patch/manifest.js';
 import { httpDeleteManifest } from '../tools/http_delete/manifest.js';
 import { httpPutManifest } from '../tools/http_put/manifest.js';
+import { httpPostManifest } from '../tools/http_post/manifest.js';
 
 // ─── First-party manifest registry ───────────────────────────────────────────
 
@@ -85,6 +86,7 @@ export const FIRST_PARTY_MANIFESTS: readonly ToolManifest[] = [
   httpPatchManifest,
   httpDeleteManifest,
   httpPutManifest,
+  httpPostManifest,
 ];
 
 // ─── Activation validator ─────────────────────────────────────────────────────
