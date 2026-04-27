@@ -133,7 +133,7 @@ import defaultRules, { OPEN_MODE_RULES } from "./policy/rules.js";
 import { resolveMode, modeToDefaultEffect, type ClawMode } from "./policy/mode.js";
 import { startRulesWatcher, type WatcherHandle } from "./watcher.js";
 import { CoverageMap } from "./policy/coverage.js";
-import { checkAction } from "./hitl/matcher.js";
+import { checkAction, matchesActionPattern } from "./hitl/matcher.js";
 import { parseHitlPolicyFile } from "./hitl/parser.js";
 import { startHitlPolicyWatcher, type HitlWatcherHandle } from "./hitl/watcher.js";
 import type { HitlPolicyConfig } from "./hitl/types.js";
@@ -601,6 +601,44 @@ async function loadJsonRules(): Promise<void> {
 
 // ─── HITL state ──────────────────────────────────────────────────────────────
 
+/**
+ * Emits a one-shot warning when operator config has a permit rule targeting
+ * `unknown_sensitive_action` (the catch-all bucket for unregistered tools)
+ * without a matching HITL policy.
+ *
+ * In OPEN mode this is the misconfig that lets agents call raw shell tools
+ * (`exec`, `sh`, `eval`, `process`, …) and have them sail through with no
+ * forbid (OPEN strips the default unknown_sensitive_action forbid) and no
+ * human review (no HITL policy matches the bucket). The permit looks like a
+ * deliberate gate to the operator but is actually an unguarded fall-through.
+ *
+ * Does not change behaviour — only logs at activation time so the misconfig
+ * is loud at boot rather than silent in production.
+ */
+function warnIfPermitOnUnknownToolsWithoutHitl(
+  rules: readonly Rule[],
+  hitlConfig: HitlPolicyConfig | null,
+): void {
+  const permits = rules.filter(
+    (r) => r.effect === 'permit' && r.action_class === 'unknown_sensitive_action',
+  );
+  if (permits.length === 0) return;
+
+  const hitlCovers = hitlConfig?.policies.some((p) =>
+    p.actions.some((a) => matchesActionPattern(a, 'unknown_sensitive_action')),
+  ) ?? false;
+  if (hitlCovers) return;
+
+  console.warn(
+    `[plugin:clawthority] ⚠ ${permits.length} permit rule(s) target ` +
+    `action_class "unknown_sensitive_action" without a matching HITL policy. ` +
+    `Unrecognised tool calls (e.g. exec, sh, eval, process) will execute ` +
+    `without human review. To gate them, add a HITL policy targeting ` +
+    `"unknown_sensitive_action" in your hitl-policy.yaml — note the existing ` +
+    `parser warning about approval-loop lockout when doing so.`,
+  );
+}
+
 /** Mutable ref for the loaded HITL policy config. null until loaded. */
 const hitlConfigRef: { current: HitlPolicyConfig | null } = { current: null };
 let hitlWatcher: HitlWatcherHandle | null = null;
@@ -1025,6 +1063,22 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
 
   // Record tool coverage after pipeline completes.
   coverageMap.record('tool', toolName, pipelineDecision.effect === 'permit' ? 'permit' : 'forbid');
+
+  // When the forbid was issued against the catch-all unknown_sensitive_action
+  // bucket, prepend the original tool name to the reason so operators can
+  // tell which call triggered the forbid. Without this, the user-facing
+  // blockReason and audit reason field name only the bucket
+  // ("Unknown sensitive actions are unconditionally forbidden"), forcing
+  // operators to cross-reference the audit's actionClass+toolName fields to
+  // figure out what was actually blocked.
+  if (
+    pipelineDecision.effect === 'forbid' &&
+    normalizedAction.action_class === 'unknown_sensitive_action' &&
+    pipelineDecision.reason !== undefined &&
+    !pipelineDecision.reason.startsWith(`tool '${toolName}'`)
+  ) {
+    pipelineDecision.reason = `tool '${toolName}' is not registered: ${pipelineDecision.reason}`;
+  }
 
   if (pipelineDecision.effect === 'forbid') {
     if (pipelineDecision.reason === 'untrusted_source_high_risk') {
@@ -1479,6 +1533,18 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
       } else {
         console.warn("[plugin:clawthority] HITL policy not loaded (invalid config):", err);
       }
+    }
+
+    // Cross-check: rules.json + HITL config are both loaded by this point.
+    // Surface the "permit-bypasses-HITL" misconfig the tester walked into.
+    // Look at operator-supplied rules only — the JSON engine, not the default
+    // engine — because defaults never permit unknown_sensitive_action and we
+    // don't want false positives if the default set ever evolves.
+    if (jsonRulesEngineRef.current !== null) {
+      warnIfPermitOnUnknownToolsWithoutHitl(
+        jsonRulesEngineRef.current.rules,
+        hitlConfigRef.current,
+      );
     }
 
     console.log("[plugin:clawthority] activated – lifecycle hooks registered");

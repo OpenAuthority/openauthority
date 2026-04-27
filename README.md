@@ -71,7 +71,7 @@ Skill-based safety (instruct the model to "please check first") fails the moment
 
 - A model-safety or alignment layer. It does not enforce semantic constraints on prompt content, and it does not inspect tool *outputs* for sensitive data.
 - A runtime for agents. OpenClaw still decides *which* tools the agent sees; Clawthority decides *whether those calls run*.
-- A substitute for good action-class registration. Misregistered tools fall through to `unknown_sensitive_action`, which is a critical forbid in **both** modes - a signal you need to register the alias.
+- A substitute for good action-class registration. Misregistered tools fall through to `unknown_sensitive_action`, which is forbidden at priority 100 in `closed` mode but **implicitly permitted in `open` mode** unless you add an explicit forbid rule for it in `data/rules.json` — a signal you need to register the alias.
 - A full process sandbox. Clawthority enforces **in-band tool calls only** - calls routed through OpenClaw's tool dispatcher. Skills or workspace helpers that call `fs`, `child_process`, or network APIs directly bypass the dispatcher and are out of scope. See [docs/threat-model.md](docs/threat-model.md) for the full boundary definition and recommended mitigations.
 
 ---
@@ -98,7 +98,7 @@ Register in `~/.openclaw/config.json`:
 > [!NOTE]
 > The three companion soft-enforcement skills (`human-approval`, `token-budget`, `whatdidyoudo`) live in a separate `clawthority-skills` repository. They are optional and independent of the plugin.
 
-By default Clawthority runs in **`open` mode** - implicit permit, with a critical-forbid safety net (`shell.exec`, `code.execute`, `payment.initiate`, `credential.read`, `credential.write`, `unknown_sensitive_action`). To run in **`closed` mode** (implicit deny, explicit permits required) set the env var before launching your agent:
+By default Clawthority runs in **`open` mode** - implicit permit, with a critical-forbid safety net (`shell.exec`, `code.execute`, `payment.initiate`, `credential.read`, `credential.write`, `credential.rotate`). Note: `unknown_sensitive_action` is *not* in this safety net — unregistered tool names are implicitly permitted in `open` mode unless you add an explicit forbid rule for `unknown_sensitive_action` in `data/rules.json`. To fail closed on unknown tools out of the box, run in **`closed` mode** (implicit deny, explicit permits required) by setting the env var before launching your agent:
 
 ```bash
 export CLAWTHORITY_MODE=closed
