@@ -252,7 +252,7 @@ export function createCombinedStage2(
 
       // ── JSON rules engine (resource/match-based, keyed by toolName) ───────
       if (jsonEngine !== null) {
-        const jsonResult = jsonEngine.evaluate('tool', toolName, ctx.rule_context);
+        const jsonResult = jsonEngine.evaluate('tool', toolName, ctx.rule_context, ctx.target);
         if (jsonResult.effect === 'forbid') {
           if (isHitlGatedDecision(jsonResult)) {
             pendingHitlGated ??= toStagedForbid(jsonResult, 'json-rules');
