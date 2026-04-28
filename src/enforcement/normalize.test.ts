@@ -84,6 +84,8 @@ describe('registry coverage — each action class resolves from at least one ali
     ['chmod',            'permissions.modify'],
     ['sudo',             'permissions.elevate'],
     ['kill',             'process.signal'],
+    ['ping',             'network.diagnose'],
+    ['nmap',             'network.scan'],
     ['git_log',          'vcs.read'],
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
@@ -435,6 +437,77 @@ describe('process.signal aliases and defaults', () => {
 
   it('no intent_group on process.signal', () => {
     const result = normalize_action('kill', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network.diagnose action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('network.diagnose aliases and defaults', () => {
+  it('ping → network.diagnose with low risk and no HITL', () => {
+    const result = normalize_action('ping', {});
+    expect(result.action_class).toBe('network.diagnose');
+    expect(result.risk).toBe('low');
+    expect(result.hitl_mode).toBe('none');
+  });
+
+  it('traceroute → network.diagnose', () => {
+    const result = normalize_action('traceroute', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('nslookup → network.diagnose', () => {
+    const result = normalize_action('nslookup', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('dig → network.diagnose', () => {
+    const result = normalize_action('dig', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('netstat → network.diagnose', () => {
+    const result = normalize_action('netstat', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('ss → network.diagnose', () => {
+    const result = normalize_action('ss', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('PING (uppercase) → network.diagnose via case-insensitive alias lookup', () => {
+    const result = normalize_action('PING', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('no intent_group on network.diagnose', () => {
+    const result = normalize_action('ping', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network.scan action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('network.scan aliases and defaults', () => {
+  it('nmap → network.scan with high risk and per_request HITL', () => {
+    const result = normalize_action('nmap', {});
+    expect(result.action_class).toBe('network.scan');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('NMAP (uppercase) → network.scan via case-insensitive alias lookup', () => {
+    const result = normalize_action('NMAP', {});
+    expect(result.action_class).toBe('network.scan');
+  });
+
+  it('no intent_group on network.scan', () => {
+    const result = normalize_action('nmap', {});
     expect(result.intent_group).toBeUndefined();
   });
 });

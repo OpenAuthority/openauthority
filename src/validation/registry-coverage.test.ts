@@ -76,6 +76,15 @@ const COVERAGE_EXEMPT = new Set<string>([
   // PID resolution to process name+cmdline happens inside the typed tool so
   // HITL messages can show "TERM pid 1234 (/usr/bin/java -jar app.jar)".
   ActionClass.ProcessSignal,
+  // v1.3.x: network.diagnose covers ping/traceroute/nslookup/dig/netstat/ss
+  // — read-only diagnostics. Typed tools deferred indefinitely; the registry
+  // alias + explainer pattern is sufficient and these are HITL-mode 'none'
+  // by default (no operator interruption needed).
+  ActionClass.NetworkDiagnose,
+  // v1.4: typed tool wrapper for nmap is genuinely useful (could constrain
+  // scan types, target ranges, opt-in --script). Deferred to v1.4 — for
+  // v1.3.1 the registry alias + explainer + per_request HITL is enough.
+  ActionClass.NetworkScan,
 ]);
 
 // ─── Scanning helpers ──────────────────────────────────────────────────────────

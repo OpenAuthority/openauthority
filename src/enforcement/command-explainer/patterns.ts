@@ -798,6 +798,144 @@ function killallExplain(args: string[]): ExplainResult {
   };
 }
 
+// ── Network diagnostics ────────────────────────────────────────────────────────
+
+/** Heuristic — host name looks like an internal resolution target. */
+function looksInternal(host: string): boolean {
+  if (host.length === 0) return false;
+  // .internal/.local/.corp/.lan/.intranet TLDs and common internal suffixes.
+  if (/\.(internal|local|corp|lan|intranet|home|test|localdomain)$/i.test(host)) return true;
+  // RFC 1918 / 3927 / link-local literal addresses.
+  if (/^10\./.test(host) || /^192\.168\./.test(host) || /^172\.(1[6-9]|2\d|3[01])\./.test(host)) return true;
+  if (/^169\.254\./.test(host)) return true;
+  // Bare hostnames (no dots) are usually internal — public hosts are FQDNs.
+  if (!host.includes('.')) return true;
+  return false;
+}
+
+function pingExplain(args: string[]): ExplainResult {
+  const positional = positionalArgs(args);
+  const host = positional[positional.length - 1] ?? '<host>';
+  const cIdx = args.findIndex(a => a === '-c');
+  const count = cIdx >= 0 ? args[cIdx + 1] : undefined;
+  const summary = count !== undefined
+    ? `Sends ${count} ICMP echo packets to ${host}`
+    : `Sends ICMP echo packets to ${host}`;
+  return {
+    summary,
+    effects: ['Sends ICMP echo requests over the network'],
+    warnings: [],
+  };
+}
+
+function tracerouteExplain(args: string[]): ExplainResult {
+  const positional = positionalArgs(args);
+  const host = positional[positional.length - 1] ?? '<host>';
+  return {
+    summary: `Traces the network path to ${host}`,
+    effects: ['Probes successive hops via TTL-incremented packets'],
+    warnings: [],
+  };
+}
+
+function dnsLookupExplain(binary: 'dig' | 'nslookup', args: string[]): ExplainResult {
+  // Accept `dig @resolver name [type]`, `nslookup name [resolver]`.
+  const tokens = args.filter(a => !a.startsWith('-') && !a.startsWith('+'));
+  let resolver: string | undefined;
+  const queryTokens: string[] = [];
+  for (const t of tokens) {
+    if (t.startsWith('@')) resolver = t.slice(1);
+    else queryTokens.push(t);
+  }
+  // nslookup convention: second positional is the resolver (no @ prefix).
+  if (binary === 'nslookup' && resolver === undefined && queryTokens.length >= 2) {
+    resolver = queryTokens[1];
+  }
+  const name = queryTokens[0] ?? '<name>';
+  const recordType = binary === 'dig' ? queryTokens[1] : undefined;
+
+  const warnings: string[] = [];
+  if (resolver !== undefined && !looksInternal(resolver) && looksInternal(name)) {
+    warnings.push(
+      `Querying internal name '${name}' against external resolver ${resolver} — leaks infrastructure detail`,
+    );
+  }
+
+  let summary: string;
+  if (binary === 'dig') {
+    summary = recordType !== undefined
+      ? `Resolves ${recordType} records for ${name}`
+      : `Resolves DNS records for ${name}`;
+    if (resolver !== undefined) summary += ` against ${resolver}`;
+  } else {
+    summary = `Resolves DNS for ${name}`;
+    if (resolver !== undefined) summary += ` against ${resolver}`;
+  }
+
+  return {
+    summary,
+    effects: ['Issues a DNS query'],
+    warnings,
+  };
+}
+
+function netstatExplain(binary: 'netstat' | 'ss', args: string[]): ExplainResult {
+  const flags = args.filter(a => a.startsWith('-')).join('');
+  const showsListening = /-?l/.test(flags);
+  const showsAll = /-?a/.test(flags);
+  const showsProcess = /-?p/.test(flags);
+  const tcpOnly = /-?t/.test(flags) && !/-?u/.test(flags);
+  const udpOnly = /-?u/.test(flags) && !/-?t/.test(flags);
+
+  const parts: string[] = [];
+  if (showsListening) parts.push('listening');
+  else if (showsAll) parts.push('all');
+  if (tcpOnly) parts.push('TCP');
+  else if (udpOnly) parts.push('UDP');
+  parts.push('sockets');
+  if (showsProcess) parts.push('with owning process');
+
+  const summary = `Shows ${parts.join(' ')}`;
+  return {
+    summary,
+    effects: [`Reads kernel socket state via ${binary}`],
+    warnings: [],
+  };
+}
+
+function nmapExplain(args: string[]): ExplainResult {
+  const targets = positionalArgs(args);
+  const targetStr = targets.length > 0 ? targets.join(', ') : '<target>';
+
+  const warnings: string[] = [
+    'Active port scan — may trigger IDS / IPS alerts on the destination network',
+    'May violate the destination network’s acceptable-use policy if not authorised',
+  ];
+
+  // Scan-type detection (informative, not exhaustive).
+  if (args.includes('-sS')) {
+    warnings.push('-sS (SYN scan) requires raw-socket privileges and is detectable by stateful firewalls');
+  }
+  if (args.includes('-sU')) {
+    warnings.push('-sU (UDP scan) is slow and noisy — increases the chance of detection');
+  }
+  if (args.includes('-O')) {
+    warnings.push('-O (OS fingerprinting) sends a distinctive probe sequence — readily detected');
+  }
+  if (args.includes('-A')) {
+    warnings.push('-A enables OS detection, version detection, script scanning and traceroute — high signature');
+  }
+  if (args.includes('--script')) {
+    warnings.push('--script runs NSE scripts which may probe for vulnerabilities');
+  }
+
+  return {
+    summary: `Scans ${targetStr} with nmap`,
+    effects: ['Sends probe packets to one or more remote hosts'],
+    warnings,
+  };
+}
+
 function mkdirExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const path = pos[0] ?? '<directory>';
@@ -1155,6 +1293,14 @@ const rules: CommandRule[] = [
   { match: /^kill\b/,            explain: killExplain },
   { match: /^pkill\b/,           explain: pkillExplain },
   { match: /^killall\b/,         explain: killallExplain },
+  // Network diagnostics
+  { match: /^ping\b/,             explain: pingExplain },
+  { match: /^traceroute\b/,       explain: tracerouteExplain },
+  { match: /^nslookup\b/,         explain: (args) => dnsLookupExplain('nslookup', args) },
+  { match: /^dig\b/,              explain: (args) => dnsLookupExplain('dig', args) },
+  { match: /^netstat\b/,          explain: (args) => netstatExplain('netstat', args) },
+  { match: /^ss\b/,               explain: (args) => netstatExplain('ss', args) },
+  { match: /^nmap\b/,             explain: nmapExplain },
 ];
 
 // ── Public API ─────────────────────────────────────────────────────────────────

@@ -73,6 +73,8 @@ export const ActionClass = {
   PermissionsModify: 'permissions.modify',
   PermissionsElevate: 'permissions.elevate',
   ProcessSignal: 'process.signal',
+  NetworkDiagnose: 'network.diagnose',
+  NetworkScan: 'network.scan',
   VcsRead: 'vcs.read',
   VcsWrite: 'vcs.write',
   VcsRemote: 'vcs.remote',
@@ -91,7 +93,7 @@ export const ActionClass = {
 export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
 
 // ---------------------------------------------------------------------------
-// Registry — 36 entries, aliases stored lowercase
+// Registry — 38 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 export const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -495,6 +497,27 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'kill',
       'pkill',
       'killall',
+    ],
+  },
+  {
+    action_class: ActionClass.NetworkDiagnose,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'ping',
+      'traceroute',
+      'nslookup',
+      'dig',
+      'netstat',
+      'ss',
+    ],
+  },
+  {
+    action_class: ActionClass.NetworkScan,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'nmap',
     ],
   },
   {

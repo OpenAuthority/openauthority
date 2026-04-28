@@ -21,6 +21,8 @@
  *                          (chown, umask, sudo, su, passwd)
  *   TC-CE-139 – TC-CE-150: process-signal patterns
  *                          (kill, pkill, killall)
+ *   TC-CE-151 – TC-CE-167: network diagnostics + scan patterns
+ *                          (ping, traceroute, nslookup, dig, netstat, ss, nmap)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -1790,5 +1792,228 @@ describe('TC-CE-150: pkill / killall — fallback when no pattern is provided', 
   it('killall: falls back gracefully with a placeholder name', () => {
     const result = explain('killall');
     expect(result.summary).toMatch(/<name>/);
+  });
+});
+
+// ── TC-CE-151 – TC-CE-167 : network diagnostics + scan ───────────────────────
+
+describe('TC-CE-151: ping — names host and (optionally) packet count', () => {
+  it('summarises a basic ping invocation', () => {
+    const result = explain('ping example.com');
+    expect(result.summary).toContain('example.com');
+    expect(result.summary).toMatch(/ICMP/i);
+  });
+
+  it('reports the packet count when -c is provided', () => {
+    const result = explain('ping -c 5 example.com');
+    expect(result.summary).toContain('5');
+    expect(result.summary).toContain('example.com');
+  });
+
+  it('emits no warnings for a normal ping', () => {
+    const result = explain('ping -c 3 8.8.8.8');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-152: traceroute — names host and hops', () => {
+  it('summarises a basic traceroute invocation', () => {
+    const result = explain('traceroute example.com');
+    expect(result.summary).toContain('example.com');
+    expect(result.summary).toMatch(/path|trace/i);
+  });
+
+  it('emits no warnings for a normal traceroute', () => {
+    const result = explain('traceroute example.com');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-153: nslookup — names target', () => {
+  it('summarises `nslookup name`', () => {
+    const result = explain('nslookup example.com');
+    expect(result.summary).toContain('example.com');
+    expect(result.summary).toMatch(/DNS|resolve/i);
+  });
+
+  it('reports the resolver when one is supplied', () => {
+    const result = explain('nslookup example.com 1.1.1.1');
+    expect(result.summary).toContain('1.1.1.1');
+  });
+
+  it('emits no warnings for a normal external lookup', () => {
+    const result = explain('nslookup example.com');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-154: dig — names target and (optional) record type', () => {
+  it('summarises `dig example.com` as resolving DNS records', () => {
+    const result = explain('dig example.com');
+    expect(result.summary).toMatch(/DNS|resolve/i);
+    expect(result.summary).toContain('example.com');
+  });
+
+  it('reports the record type when supplied', () => {
+    const result = explain('dig example.com TXT');
+    expect(result.summary).toContain('TXT');
+  });
+
+  it('reports the resolver when @ syntax is used', () => {
+    const result = explain('dig @1.1.1.1 example.com');
+    expect(result.summary).toContain('1.1.1.1');
+  });
+});
+
+describe('TC-CE-155: dig / nslookup — internal-name leakage warning', () => {
+  it('warns when querying an internal-looking name against an external resolver', () => {
+    const result = explain('dig @8.8.8.8 internal-server.corp');
+    expect(hasWarningMatching(result.warnings, /leaks infrastructure|internal name/i)).toBe(true);
+  });
+
+  it('warns when querying a bare hostname against an external resolver', () => {
+    const result = explain('dig @1.1.1.1 db1');
+    expect(hasWarningMatching(result.warnings, /leaks infrastructure|internal name/i)).toBe(true);
+  });
+
+  it('does not warn when querying an external name against an external resolver', () => {
+    const result = explain('dig @1.1.1.1 example.com');
+    expect(hasWarningMatching(result.warnings, /leaks infrastructure/i)).toBe(false);
+  });
+
+  it('does not warn when no explicit resolver is supplied', () => {
+    const result = explain('dig internal-server.corp');
+    expect(hasWarningMatching(result.warnings, /leaks infrastructure/i)).toBe(false);
+  });
+
+  it('does not warn when both the name and resolver are internal', () => {
+    const result = explain('dig @10.0.0.1 internal-server.corp');
+    expect(hasWarningMatching(result.warnings, /leaks infrastructure/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-156: netstat — flag-driven summary', () => {
+  it('summarises -tnlp as listening TCP sockets with owning process', () => {
+    const result = explain('netstat -tnlp');
+    expect(result.summary).toMatch(/listening/i);
+    expect(result.summary).toMatch(/TCP/i);
+    expect(result.summary).toMatch(/owning process/i);
+  });
+
+  it('summarises -an as showing all sockets', () => {
+    const result = explain('netstat -an');
+    expect(result.summary).toMatch(/all/i);
+  });
+
+  it('emits no warnings (read-only)', () => {
+    const result = explain('netstat -tnlp');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-157: ss — same flag dispatch as netstat', () => {
+  it('summarises `ss -tlnp` as listening TCP sockets with owning process', () => {
+    const result = explain('ss -tlnp');
+    expect(result.summary).toMatch(/listening/i);
+    expect(result.summary).toMatch(/TCP/i);
+    expect(result.summary).toMatch(/owning process/i);
+  });
+
+  it('mentions ss in the effect line', () => {
+    const result = explain('ss -tan');
+    expect(hasEffectMatching(result.effects, /\bss\b/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-158: nmap — names target', () => {
+  it('summarises a basic nmap invocation', () => {
+    const result = explain('nmap 10.0.0.0/24');
+    expect(result.summary).toMatch(/scan/i);
+    expect(result.summary).toContain('10.0.0.0/24');
+  });
+});
+
+describe('TC-CE-159: nmap — always-on IDS / AUP warnings', () => {
+  it('always warns about IDS / IPS detection', () => {
+    const result = explain('nmap example.com');
+    expect(hasWarningMatching(result.warnings, /IDS|IPS|detection/i)).toBe(true);
+  });
+
+  it('always warns about acceptable-use policy', () => {
+    const result = explain('nmap example.com');
+    expect(hasWarningMatching(result.warnings, /acceptable-use|authorised/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-160: nmap -sS — SYN scan warning', () => {
+  it('warns about raw-socket / firewall detection on -sS', () => {
+    const result = explain('nmap -sS 10.0.0.0/24');
+    expect(hasWarningMatching(result.warnings, /SYN scan|raw-socket|stateful firewalls/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-161: nmap -sU — UDP scan warning', () => {
+  it('warns that UDP scan is slow / noisy', () => {
+    const result = explain('nmap -sU 10.0.0.0/24');
+    expect(hasWarningMatching(result.warnings, /UDP scan|slow|noisy/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-162: nmap -O — OS fingerprint warning', () => {
+  it('warns about OS fingerprinting probes', () => {
+    const result = explain('nmap -O 10.0.0.1');
+    expect(hasWarningMatching(result.warnings, /OS fingerprint|distinctive probe/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-163: nmap -A — aggressive-scan warning', () => {
+  it('warns about the aggregate -A scan signature', () => {
+    const result = explain('nmap -A 10.0.0.1');
+    expect(hasWarningMatching(result.warnings, /OS detection|version detection|script scanning|high signature/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-164: nmap --script — NSE warning', () => {
+  it('warns about NSE scripts probing for vulnerabilities', () => {
+    const result = explain('nmap --script vuln 10.0.0.1');
+    expect(hasWarningMatching(result.warnings, /NSE|scripts.*probe|vulnerabilities/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-165: rule routing — netstat vs ss', () => {
+  it('"netstat" routes to netstat (not the ss explainer)', () => {
+    const result = explain('netstat -an');
+    expect(hasEffectMatching(result.effects, /netstat/i)).toBe(true);
+    expect(hasEffectMatching(result.effects, /\bss\b/i)).toBe(false);
+  });
+
+  it('"ss" routes to ss (not the netstat explainer)', () => {
+    const result = explain('ss -an');
+    expect(hasEffectMatching(result.effects, /\bss\b/i)).toBe(true);
+    expect(hasEffectMatching(result.effects, /netstat/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-166: ping / traceroute — fallback with no host', () => {
+  it('ping: falls back gracefully when no host is given', () => {
+    const result = explain('ping');
+    expect(result.summary).toMatch(/<host>/);
+  });
+
+  it('traceroute: falls back gracefully when no host is given', () => {
+    const result = explain('traceroute');
+    expect(result.summary).toMatch(/<host>/);
+  });
+});
+
+describe('TC-CE-167: nmap — fallback with no target', () => {
+  it('falls back gracefully when no target is given', () => {
+    const result = explain('nmap');
+    expect(result.summary).toMatch(/<target>/);
+  });
+
+  it('still emits the always-on IDS / AUP warnings even with no target', () => {
+    const result = explain('nmap');
+    expect(hasWarningMatching(result.warnings, /IDS|IPS|detection/i)).toBe(true);
   });
 });
