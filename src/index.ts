@@ -1045,22 +1045,28 @@ async function dispatchHitlChannel(
   const auditChannel = identity.auditChannel;
 
   // Compute shared fields for all channel send calls.
+  // When CLAWTHORITY_HITL_MINIMAL=1, the explainer is skipped entirely and the
+  // rich-body sections (explanation, effects, warnings, intentHint) are
+  // omitted — channels render only the raw command + buttons, matching the
+  // v1.2.x message style. The §16 rollback escape hatch.
   const expires_at = new Date(Date.now() + policy.approval.timeout * 1000).toISOString();
-  const { summary, effects, warnings, inferred_action_class } = explainCommand(target);
-  const explanation = summary !== `Runs ${target.trim().split(/\s+/)[0]}` && summary !== 'Runs an unrecognised command'
-    ? summary
-    : undefined;
-  const sharedOpts = {
+  const sharedOpts: Record<string, unknown> = {
     action_class,
     target,
     expires_at,
     rawCommand: target,
-    ...(explanation !== undefined ? { explanation } : {}),
-    ...(effects.length > 0 ? { effects } : {}),
-    ...(warnings.length > 0 ? { warnings } : {}),
-    ...(intentHint !== undefined ? { intentHint } : {}),
   };
-  void inferred_action_class; // available for future use
+  if (!FEATURES.hitlMinimal) {
+    const { summary, effects, warnings, inferred_action_class } = explainCommand(target);
+    const explanation = summary !== `Runs ${target.trim().split(/\s+/)[0]}` && summary !== 'Runs an unrecognised command'
+      ? summary
+      : undefined;
+    if (explanation !== undefined) sharedOpts.explanation = explanation;
+    if (effects.length > 0) sharedOpts.effects = effects;
+    if (warnings.length > 0) sharedOpts.warnings = warnings;
+    if (intentHint !== undefined) sharedOpts.intentHint = intentHint;
+    void inferred_action_class; // available for future use
+  }
 
   if (channel === 'telegram') {
     const telegramConfig = resolveTelegramConfig(hitlConfigRef.current?.telegram);
