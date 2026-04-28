@@ -23,6 +23,8 @@
  *                          (kill, pkill, killall)
  *   TC-CE-151 – TC-CE-167: network diagnostics + scan patterns
  *                          (ping, traceroute, nslookup, dig, netstat, ss, nmap)
+ *   TC-CE-168 – TC-CE-181: scheduling / persistence patterns
+ *                          (crontab, at, batch, atq, atrm)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -2015,5 +2017,202 @@ describe('TC-CE-167: nmap — fallback with no target', () => {
   it('still emits the always-on IDS / AUP warnings even with no target', () => {
     const result = explain('nmap');
     expect(hasWarningMatching(result.warnings, /IDS|IPS|detection/i)).toBe(true);
+  });
+});
+
+// ── TC-CE-168 – TC-CE-181 : scheduling / persistence ─────────────────────────
+
+describe('TC-CE-168: crontab -l — read-only listing, no warnings', () => {
+  it('summarises -l as listing the crontab', () => {
+    const result = explain('crontab -l');
+    expect(result.summary).toMatch(/list/i);
+  });
+
+  it('emits no warnings for a list operation', () => {
+    const result = explain('crontab -l');
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('reports the user when -u is supplied with -l', () => {
+    const result = explain('crontab -u alice -l');
+    expect(result.summary).toContain('alice');
+  });
+});
+
+describe('TC-CE-169: crontab -r — destructive removal warning', () => {
+  it('warns about destructive removal', () => {
+    const result = explain('crontab -r');
+    expect(hasWarningMatching(result.warnings, /destructive|removed without prompt/i)).toBe(true);
+  });
+
+  it('warns about persistence / recovery cost', () => {
+    const result = explain('crontab -r');
+    expect(hasWarningMatching(result.warnings, /persistence|reinstalling/i)).toBe(true);
+  });
+
+  it('reports the user when -u is supplied with -r', () => {
+    const result = explain('crontab -u alice -r');
+    expect(result.summary).toContain('alice');
+  });
+});
+
+describe('TC-CE-170: crontab -e — interactive-edit warning', () => {
+  it('warns that the explainer cannot inspect the change content', () => {
+    const result = explain('crontab -e');
+    expect(hasWarningMatching(result.warnings, /interactive|cannot be inspected/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-171: crontab <file> — install-from-file, replace warning', () => {
+  it('reports the file in the summary', () => {
+    const result = explain('crontab /etc/cron.daily/mycron');
+    expect(result.summary).toContain('/etc/cron.daily/mycron');
+  });
+
+  it('warns that existing entries are replaced', () => {
+    const result = explain('crontab /tmp/new-cron');
+    expect(hasWarningMatching(result.warnings, /destructive|replaced/i)).toBe(true);
+  });
+
+  it('warns about persistence semantics', () => {
+    const result = explain('crontab /tmp/new-cron');
+    expect(hasWarningMatching(result.warnings, /persistence|run unattended/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-172: at <time> — schedules a job, persistence warning', () => {
+  it('reports the time spec in the summary', () => {
+    const result = explain('at now + 10 minutes');
+    expect(result.summary).toMatch(/now \+ 10 minutes|now/i);
+  });
+
+  it('warns about unattended execution', () => {
+    const result = explain('at 2am');
+    expect(hasWarningMatching(result.warnings, /persistence|unattended/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-173: at -f <file> <time> — schedule from file', () => {
+  it('reports the file in the summary', () => {
+    const result = explain('at -f /tmp/job.sh 23:30');
+    expect(result.summary).toContain('/tmp/job.sh');
+  });
+
+  it('reports the time spec when both -f and a time are given', () => {
+    const result = explain('at -f /tmp/job.sh 23:30');
+    expect(result.summary).toContain('23:30');
+  });
+});
+
+describe('TC-CE-174: at -l — equivalent to atq, no warnings', () => {
+  it('summarises as listing scheduled jobs', () => {
+    const result = explain('at -l');
+    expect(result.summary).toMatch(/list/i);
+  });
+
+  it('emits no warnings for a list operation', () => {
+    const result = explain('at -l');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-175: at -c <id> — show scheduled job script', () => {
+  it('reports the job id in the summary', () => {
+    const result = explain('at -c 7');
+    expect(result.summary).toContain('7');
+  });
+
+  it('emits no warnings for a read operation', () => {
+    const result = explain('at -c 7');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-176: at -d / -r <id> — remove scheduled job', () => {
+  it('reports the job id when -d is used', () => {
+    const result = explain('at -d 12');
+    expect(result.summary).toContain('12');
+  });
+
+  it('reports the job id when -r is used', () => {
+    const result = explain('at -r 12');
+    expect(result.summary).toContain('12');
+  });
+
+  it('warns about persistence cost of cancellation', () => {
+    const result = explain('at -d 12');
+    expect(hasWarningMatching(result.warnings, /persistence|will not run/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-177: atq — listing scheduled jobs', () => {
+  it('summarises as listing scheduled at jobs', () => {
+    const result = explain('atq');
+    expect(result.summary).toMatch(/list/i);
+  });
+
+  it('emits no warnings (read-only)', () => {
+    const result = explain('atq');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-178: atrm — removes scheduled jobs', () => {
+  it('reports the job id in the summary', () => {
+    const result = explain('atrm 5');
+    expect(result.summary).toContain('5');
+  });
+
+  it('reports multiple job ids in the summary', () => {
+    const result = explain('atrm 5 6 7');
+    expect(result.summary).toMatch(/5.*6.*7|5, 6, 7/);
+  });
+
+  it('warns about persistence cost', () => {
+    const result = explain('atrm 5');
+    expect(hasWarningMatching(result.warnings, /persistence|will not run/i)).toBe(true);
+  });
+
+  it('falls back gracefully when no job id is given', () => {
+    const result = explain('atrm');
+    expect(result.summary).toMatch(/<job-id>/);
+  });
+});
+
+describe('TC-CE-179: batch — load-aware scheduling, persistence warning', () => {
+  it('summarises as scheduling when load drops', () => {
+    const result = explain('batch');
+    expect(result.summary).toMatch(/load drops|batch/i);
+  });
+
+  it('warns about unattended execution', () => {
+    const result = explain('batch');
+    expect(hasWarningMatching(result.warnings, /persistence|unattended/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-180: rule routing — atq / atrm vs at', () => {
+  it('"atq" routes to atqExplain (not atExplain)', () => {
+    const result = explain('atq');
+    expect(result.summary).toMatch(/list/i);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('"atrm 5" routes to atrmExplain (not atExplain)', () => {
+    const result = explain('atrm 5');
+    expect(result.summary).toMatch(/Removes/i);
+  });
+
+  it('"at now" routes to atExplain (not atq/atrm)', () => {
+    const result = explain('at now');
+    expect(result.summary).toMatch(/schedules/i);
+  });
+});
+
+describe('TC-CE-181: crontab — fallback when no flag is given', () => {
+  it('falls back gracefully without -l/-r/-e/<file>', () => {
+    const result = explain('crontab');
+    expect(result.summary).toMatch(/crontab/i);
+    expect(result.warnings).toHaveLength(0);
   });
 });

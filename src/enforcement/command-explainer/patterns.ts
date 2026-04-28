@@ -936,6 +936,152 @@ function nmapExplain(args: string[]): ExplainResult {
   };
 }
 
+// ── Scheduling / persistence ───────────────────────────────────────────────────
+
+function crontabExplain(args: string[]): ExplainResult {
+  // Recognise the user / file forms:
+  //   crontab -l            list current user's crontab
+  //   crontab -u <user> -l  list another user's crontab
+  //   crontab -e            interactive edit
+  //   crontab -r            remove the entire crontab
+  //   crontab <file>        install crontab from file (REPLACES existing)
+  const userIdx = args.findIndex(a => a === '-u');
+  const targetUser = userIdx >= 0 ? args[userIdx + 1] : undefined;
+  const userSuffix = targetUser !== undefined ? ` for user ${targetUser}` : '';
+
+  if (args.includes('-l')) {
+    return {
+      summary: `Lists the crontab${userSuffix}`,
+      effects: ['Reads the user’s crontab entries'],
+      warnings: [],
+    };
+  }
+  if (args.includes('-r')) {
+    return {
+      summary: `Removes the entire crontab${userSuffix}`,
+      effects: ['Deletes every scheduled cron job for the user'],
+      warnings: [
+        'Destructive — every existing cron entry is removed without prompt',
+        'Persistence — recovery requires reinstalling each entry',
+      ],
+    };
+  }
+  if (args.includes('-e')) {
+    return {
+      summary: `Opens the crontab${userSuffix} in an editor`,
+      effects: ['Allows interactive modification of the user’s scheduled jobs'],
+      warnings: ['Interactive edit — content of the change cannot be inspected by the explainer'],
+    };
+  }
+  // File-install form: positional arg is the file path. When `-u` is absent
+  // we must NOT exclude index 0 (which would falsely match `userIdx + 1`
+  // when userIdx is -1).
+  const userArgIdx = userIdx >= 0 ? userIdx + 1 : -1;
+  const positional = args.filter((a, i) => !a.startsWith('-') && i !== userArgIdx);
+  const file = positional[0];
+  if (file !== undefined) {
+    return {
+      summary: `Installs crontab${userSuffix} from ${file}`,
+      effects: ['Replaces the entire user crontab with the file contents'],
+      warnings: [
+        'Destructive — every existing cron entry is replaced',
+        'Persistence — installed entries run unattended on the cron schedule',
+      ],
+    };
+  }
+  return {
+    summary: `Runs crontab${userSuffix}`,
+    effects: [],
+    warnings: [],
+  };
+}
+
+function atExplain(args: string[]): ExplainResult {
+  // Common forms:
+  //   at <time>          schedule (commands from stdin)
+  //   at -f <file> <time>schedule from file
+  //   at -l / atq        list scheduled jobs
+  //   at -d <id> / atrm  delete a scheduled job
+  //   at -c <id>         show the script of a scheduled job
+  if (args.includes('-l')) {
+    return {
+      summary: 'Lists scheduled at jobs',
+      effects: ['Reads the at queue'],
+      warnings: [],
+    };
+  }
+  if (args.includes('-c')) {
+    const cIdx = args.findIndex(a => a === '-c');
+    const id = args[cIdx + 1] ?? '<job-id>';
+    return {
+      summary: `Shows the script for at job ${id}`,
+      effects: ['Reads a scheduled job definition'],
+      warnings: [],
+    };
+  }
+  if (args.includes('-d') || args.includes('-r')) {
+    const dIdx = Math.max(args.indexOf('-d'), args.indexOf('-r'));
+    const id = args[dIdx + 1] ?? '<job-id>';
+    return {
+      summary: `Removes at job ${id}`,
+      effects: ['Cancels a scheduled job'],
+      warnings: ['Persistence — the cancelled job will not run as previously scheduled'],
+    };
+  }
+  // Schedule form. Time spec is whatever's not a flag (or its argument).
+  const fIdx = args.findIndex(a => a === '-f');
+  const file = fIdx >= 0 ? args[fIdx + 1] : undefined;
+  const skipIdx = fIdx >= 0 ? fIdx + 1 : -1;
+  const positional = args.filter((a, i) => !a.startsWith('-') && i !== skipIdx);
+  const timeSpec = positional.join(' ').trim();
+
+  let summary: string;
+  if (file !== undefined && timeSpec.length > 0) {
+    summary = `Schedules ${file} to run at '${timeSpec}'`;
+  } else if (file !== undefined) {
+    summary = `Schedules ${file} to run later`;
+  } else if (timeSpec.length > 0) {
+    summary = `Schedules a job to run at '${timeSpec}'`;
+  } else {
+    summary = 'Schedules a job to run later';
+  }
+  return {
+    summary,
+    effects: ['Adds a one-shot job to the at queue'],
+    warnings: [
+      'Persistence — the scheduled job runs unattended at the chosen time',
+    ],
+  };
+}
+
+function atqExplain(_args: string[]): ExplainResult {
+  return {
+    summary: 'Lists scheduled at jobs',
+    effects: ['Reads the at queue'],
+    warnings: [],
+  };
+}
+
+function atrmExplain(args: string[]): ExplainResult {
+  const ids = positionalArgs(args);
+  const idStr = ids.length > 0 ? ids.join(', ') : '<job-id>';
+  return {
+    summary: `Removes at job ${idStr}`,
+    effects: ['Cancels one or more scheduled jobs'],
+    warnings: ['Persistence — cancelled jobs will not run as previously scheduled'],
+  };
+}
+
+function batchExplain(_args: string[]): ExplainResult {
+  return {
+    summary: 'Schedules a job to run when system load drops',
+    effects: ['Adds a job to the batch queue (variant of at)'],
+    warnings: [
+      'Persistence — the scheduled job runs unattended once load conditions are met',
+    ],
+  };
+}
+
 function mkdirExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const path = pos[0] ?? '<directory>';
@@ -1301,6 +1447,12 @@ const rules: CommandRule[] = [
   { match: /^netstat\b/,          explain: (args) => netstatExplain('netstat', args) },
   { match: /^ss\b/,               explain: (args) => netstatExplain('ss', args) },
   { match: /^nmap\b/,             explain: nmapExplain },
+  // Scheduling / persistence
+  { match: /^crontab\b/,          explain: crontabExplain },
+  { match: /^atq\b/,              explain: atqExplain },
+  { match: /^atrm\b/,              explain: atrmExplain },
+  { match: /^at\b/,               explain: atExplain },
+  { match: /^batch\b/,            explain: batchExplain },
 ];
 
 // ── Public API ─────────────────────────────────────────────────────────────────

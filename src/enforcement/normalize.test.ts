@@ -86,6 +86,7 @@ describe('registry coverage — each action class resolves from at least one ali
     ['kill',             'process.signal'],
     ['ping',             'network.diagnose'],
     ['nmap',             'network.scan'],
+    ['crontab',          'scheduling.persist'],
     ['git_log',          'vcs.read'],
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
@@ -508,6 +509,49 @@ describe('network.scan aliases and defaults', () => {
 
   it('no intent_group on network.scan', () => {
     const result = normalize_action('nmap', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scheduling.persist action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('scheduling.persist aliases and defaults', () => {
+  it('crontab → scheduling.persist with high risk and per_request HITL', () => {
+    const result = normalize_action('crontab', {});
+    expect(result.action_class).toBe('scheduling.persist');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('at → scheduling.persist', () => {
+    const result = normalize_action('at', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('batch → scheduling.persist', () => {
+    const result = normalize_action('batch', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('atq → scheduling.persist', () => {
+    const result = normalize_action('atq', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('atrm → scheduling.persist', () => {
+    const result = normalize_action('atrm', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('CRONTAB (uppercase) → scheduling.persist via case-insensitive alias lookup', () => {
+    const result = normalize_action('CRONTAB', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('no intent_group on scheduling.persist', () => {
+    const result = normalize_action('crontab', {});
     expect(result.intent_group).toBeUndefined();
   });
 });

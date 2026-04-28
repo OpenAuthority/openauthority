@@ -85,6 +85,10 @@ const COVERAGE_EXEMPT = new Set<string>([
   // scan types, target ranges, opt-in --script). Deferred to v1.4 — for
   // v1.3.1 the registry alias + explainer + per_request HITL is enough.
   ActionClass.NetworkScan,
+  // v1.3.2: typed tools for crontab/at/batch (see release-plan §9). The
+  // typed wrapper deliberately omits interactive `crontab -e` mode; install-
+  // from-file is the supported persistence path.
+  ActionClass.SchedulingPersist,
 ]);
 
 // ─── Scanning helpers ──────────────────────────────────────────────────────────

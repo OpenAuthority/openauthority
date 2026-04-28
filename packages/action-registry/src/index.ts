@@ -75,6 +75,7 @@ export const ActionClass = {
   ProcessSignal: 'process.signal',
   NetworkDiagnose: 'network.diagnose',
   NetworkScan: 'network.scan',
+  SchedulingPersist: 'scheduling.persist',
   VcsRead: 'vcs.read',
   VcsWrite: 'vcs.write',
   VcsRemote: 'vcs.remote',
@@ -93,7 +94,7 @@ export const ActionClass = {
 export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
 
 // ---------------------------------------------------------------------------
-// Registry — 38 entries, aliases stored lowercase
+// Registry — 39 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 export const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -518,6 +519,18 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
     default_hitl_mode: 'per_request',
     aliases: [
       'nmap',
+    ],
+  },
+  {
+    action_class: ActionClass.SchedulingPersist,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'crontab',
+      'at',
+      'batch',
+      'atq',
+      'atrm',
     ],
   },
   {
