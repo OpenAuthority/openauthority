@@ -379,6 +379,8 @@ describe('fine-grained tools — HITL approve (Telegram stub)', () => {
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });
@@ -525,6 +527,8 @@ describe('fine-grained tools — HITL approve (Slack stub)', () => {
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });

@@ -224,10 +224,12 @@ export function createCombinedStage2(
       // and the command falls through to HITL gating (fail-safe behaviour).
       //
       // Command string selection:
-      //   - Exec-type tools (shell.exec, code.execute): ctx.target IS the
-      //     shell command string (extracted from the `command`/`cmd`/`script`
-      //     param by normalize_action).  Match directly against it so that
-      //     patterns like `git commit *` match incoming shell commands.
+      //   - Exec-type tools (shell.exec, code.execute, unknown_sensitive_action):
+      //     ctx.target IS the shell command string (extracted from the
+      //     `command`/`cmd`/`script` param by normalize_action, or set directly
+      //     when the unregistered tool falls through to the catch-all class).
+      //     Match directly against it so that patterns like `git commit *`
+      //     match incoming shell commands.
       //   - Registered non-exec tools: target is a resource (file path, URL,
       //     etc.), not a shell command.  Match against the tool name so that
       //     tool-name patterns (`read_file *`) match any invocation of that
@@ -236,6 +238,7 @@ export function createCombinedStage2(
         const EXEC_ACTION_CLASSES: ReadonlySet<string> = new Set([
           'shell.exec',
           'code.execute',
+          'unknown_sensitive_action',
         ]);
         const cmdToMatch = EXEC_ACTION_CLASSES.has(ctx.action_class)
           ? ctx.target

@@ -150,6 +150,8 @@ describe('fine-grained tools — HITL deny (Telegram stub, per-class)', () => {
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });
@@ -385,6 +387,8 @@ describe('fine-grained tools — HITL deny (Telegram stub)', () => {
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });
@@ -532,6 +536,8 @@ describe('fine-grained tools — HITL deny (Slack stub)', () => {
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });

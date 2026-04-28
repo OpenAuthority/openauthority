@@ -160,6 +160,8 @@ describe('fine-grained tools — HITL timeout (Telegram, fallback: deny)', () =>
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });
@@ -358,6 +360,8 @@ describe('fine-grained tools — HITL timeout (Telegram, fallback: auto-approve)
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });
@@ -515,6 +519,8 @@ describe('fine-grained tools — HITL timeout (Slack, fallback: deny)', () => {
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });
@@ -679,6 +685,8 @@ describe('fine-grained tools — HITL timeout (Slack, fallback: auto-approve)', 
           getPending() { return undefined; }
           get size() { return 0; }
           shutdown() {}
+          isSessionAutoApproved() { return false; }
+          addSessionAutoApproval() {}
         },
       };
     });

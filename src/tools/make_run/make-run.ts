@@ -116,7 +116,7 @@ export function parseMakefileTargets(makefileContent: string): Set<string> {
   const TARGET_LINE = /^([A-Za-z0-9_.\-/][A-Za-z0-9_.\-/\s]*?)(?:\s*):(?!=)/gm;
   let match: RegExpExecArray | null;
   while ((match = TARGET_LINE.exec(makefileContent)) !== null) {
-    const raw = match[1].trim();
+    const raw = match[1]!.trim();
     // A target declaration may list multiple targets separated by spaces.
     // However, a single colon followed by another colon is a double-colon rule
     // (which we still want to capture). Split on whitespace to handle
