@@ -153,7 +153,7 @@ export type {
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
 import { JsonlAuditLogger } from "./audit.js";
-import type { AutoPermitAddedEntry, HitlDecisionEntry, NormalizerUnclassifiedEntry, PolicyDecisionEntry } from "./audit.js";
+import type { AutoPermitAddedEntry, AutoPermitDerivationSkippedEntry, AutoPermitMatchedEntry, HitlDecisionEntry, NormalizerUnclassifiedEntry, PolicyDecisionEntry } from "./audit.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules, { OPEN_MODE_RULES } from "./policy/rules.js";
@@ -799,7 +799,17 @@ async function persistAutoPermitPattern(
   } catch (err) {
     // Shell metacharacters, empty command, or other derivation failures are
     // expected for compound commands — log and return quietly.
-    console.log(`[hitl-${channel}] auto-permit pattern derivation skipped: ${(err as Error).message}`);
+    const reason = (err as Error).message;
+    console.log(`[hitl-${channel}] auto-permit pattern derivation skipped: ${reason}`);
+    void logAutoPermitDerivationSkipped({
+      reason,
+      command: isExec ? command : toolName,
+      toolName,
+      actionClass,
+      channel,
+      agentId: agentId ?? 'unknown',
+      ...(operatorId !== undefined ? { operatorId } : {}),
+    });
     return;
   }
 
@@ -1163,6 +1173,30 @@ async function logNormalizerUnclassified(
   } satisfies NormalizerUnclassifiedEntry);
 }
 
+/** Log an auto-permit match event to the JSONL audit file. */
+async function logAutoPermitMatched(
+  entry: Omit<AutoPermitMatchedEntry, 'ts' | 'type'>,
+): Promise<void> {
+  if (!hitlAuditLogger) return;
+  await hitlAuditLogger.log({
+    ts: new Date().toISOString(),
+    type: 'auto_permit_matched',
+    ...entry,
+  } satisfies AutoPermitMatchedEntry);
+}
+
+/** Log a skipped auto-permit derivation to the JSONL audit file. */
+async function logAutoPermitDerivationSkipped(
+  entry: Omit<AutoPermitDerivationSkippedEntry, 'ts' | 'type'>,
+): Promise<void> {
+  if (!hitlAuditLogger) return;
+  await hitlAuditLogger.log({
+    ts: new Date().toISOString(),
+    type: 'auto_permit_derivation_skipped',
+    ...entry,
+  } satisfies AutoPermitDerivationSkippedEntry);
+}
+
 /** Log a HITL decision to the JSONL audit file. */
 async function logHitlDecision(
   decision: HitlDecisionEntry['decision'],
@@ -1351,6 +1385,17 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
         `[clawthority] │ [stage2/auto-permit] ✓ matched rule '${patternLabel}' (${normalizedAction.action_class})`,
       );
       coverageMap.record('command', patternLabel, 'permit');
+      // Resolve the full rule object from the in-memory checker so we can
+      // include the derivation method in the audit entry.
+      const matchedRule = autoPermitCheckerRef.current?.matchCommand(
+        normalizedAction.target ?? toolName,
+      ) ?? null;
+      void logAutoPermitMatched({
+        pattern: patternLabel,
+        method: matchedRule?.method ?? 'unknown',
+        command: normalizedAction.target ?? toolName,
+        ...auditBase,
+      });
       return;
     }
     // Session auto-approval: log with source tag so the auto-generated permit
