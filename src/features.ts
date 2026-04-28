@@ -23,6 +23,16 @@ export interface FeatureFlags {
    * Default: `true` (button shown, creation enabled).
    */
   approveAlwaysEnabled: boolean;
+  /**
+   * When true, the "Approve Always" flow skips the pattern confirmation step
+   * and immediately saves the derived auto-permit rule without prompting the
+   * operator to review it first.
+   *
+   * Set `CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM=1` to enable.
+   *
+   * Default: `false` (confirmation prompt shown before saving the rule).
+   */
+  approveAlwaysAutoConfirm: boolean;
 }
 
 /**
@@ -38,5 +48,6 @@ export interface FeatureFlags {
 export function resolveFeatureFlags(): FeatureFlags {
   return {
     approveAlwaysEnabled: process.env.CLAWTHORITY_DISABLE_APPROVE_ALWAYS?.trim() !== '1',
+    approveAlwaysAutoConfirm: process.env.CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM?.trim() === '1',
   };
 }

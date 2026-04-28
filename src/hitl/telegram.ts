@@ -235,7 +235,87 @@ export async function sendConfirmation(
   }
 }
 
-export type TelegramCommand = 'approve' | 'approve_always' | 'deny';
+/** Options for {@link sendApproveAlwaysConfirmation}. */
+export interface SendApproveAlwaysConfirmationOpts {
+  /** The original approval token — used in Save/Cancel callback data. */
+  token: string;
+  /** Human-readable auto-permit pattern derived from the command. */
+  pattern: string;
+  /** The original command string from which the pattern was derived. */
+  originalCommand: string;
+}
+
+/**
+ * Sends a confirmation message asking the operator to save or cancel an
+ * auto-permit pattern derived from an "Approve Always" click.
+ *
+ * The message shows the derived pattern in human-readable form and provides
+ * two inline buttons:
+ *   - ✅ Save  → callback_data `confirm_approve_always:TOKEN`
+ *   - ❌ Cancel → callback_data `cancel_approve_always:TOKEN`
+ *
+ * Cancelling preserves the original approval request so the operator can
+ * still use the original Approve Once / Deny buttons.
+ *
+ * Returns `true` on success, `false` on failure.
+ */
+export async function sendApproveAlwaysConfirmation(
+  config: ResolvedTelegramConfig,
+  opts: SendApproveAlwaysConfirmationOpts,
+  breaker: CircuitBreaker = telegramCircuitBreaker,
+): Promise<boolean> {
+  const lines: string[] = [];
+
+  lines.push(`\uD83D\uDD01 *Approve Always \u2014 Confirm Pattern*`, '');
+  lines.push(`Save the following auto\\-permit rule?`, '');
+  lines.push(`*Pattern:* \`${escapeCodeSpan(opts.pattern)}\``);
+  lines.push(`*Original command:* \`${escapeCodeSpan(truncateCommand(opts.originalCommand))}\``);
+  lines.push('');
+  lines.push(
+    `\u26A0\uFE0F Future commands matching this pattern will be auto\\-approved without human review\\.`,
+  );
+  lines.push('');
+  lines.push(`\uD83D\uDD11 *Approval ID:* \`${escapeCodeSpan(opts.token)}\``);
+
+  const text = lines.join('\n');
+  const row = [
+    { text: '\u2705 Save', callback_data: `confirm_approve_always:${opts.token}` },
+    { text: '\u274C Cancel', callback_data: `cancel_approve_always:${opts.token}` },
+  ];
+  const reply_markup = { inline_keyboard: [row] };
+
+  try {
+    return await withRetry(
+      () =>
+        fetch(`${TELEGRAM_API}/bot${config.botToken}/sendMessage`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            chat_id: config.chatId,
+            text,
+            parse_mode: 'MarkdownV2',
+            reply_markup,
+          }),
+        }),
+      async (res) => {
+        if (!res.ok) {
+          console.error(
+            `[hitl-telegram] sendApproveAlwaysConfirmation failed: ${res.status} ${res.statusText}`,
+          );
+          return false;
+        }
+        return true;
+      },
+      () => false,
+      breaker,
+    );
+  } catch (err) {
+    console.error('[hitl-telegram] sendApproveAlwaysConfirmation error:', err);
+    return false;
+  }
+}
+
+export type TelegramCommand = 'approve' | 'approve_always' | 'deny' | 'confirm_approve_always' | 'cancel_approve_always';
 
 /**
  * Identity of the Telegram operator who triggered a command via an inline
@@ -259,7 +339,9 @@ export interface TelegramOperatorInfo {
 const COMMAND_RE = /^\/(approve_always|approve|deny)\s+([\w.:-]{6,128})$/;
 
 // Same token format but triggered by inline keyboard callback_data ("command:TOKEN").
-const CALLBACK_DATA_RE = /^(approve_always|approve|deny):([\w.:-]{6,128})$/;
+// confirm_approve_always and cancel_approve_always must appear before approve_always
+// so the longer prefixes are tried first in the alternation.
+const CALLBACK_DATA_RE = /^(confirm_approve_always|cancel_approve_always|approve_always|approve|deny):([\w.:-]{6,128})$/;
 
 /**
  * Long-polling listener for Telegram bot updates.

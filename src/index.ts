@@ -119,6 +119,7 @@ export {
   TelegramListener,
   sendApprovalRequest,
   sendConfirmation,
+  sendApproveAlwaysConfirmation,
   resolveTelegramConfig,
   SlackInteractionServer,
   sendSlackApprovalRequest,
@@ -140,6 +141,7 @@ export type {
   ApprovalRequestHandle,
   ResolvedTelegramConfig,
   SendApprovalOpts,
+  SendApproveAlwaysConfirmationOpts,
   TelegramCommand,
   TelegramOperatorInfo,
   ResolvedSlackConfig,
@@ -163,7 +165,7 @@ import { parseHitlPolicyFile } from "./hitl/parser.js";
 import { startHitlPolicyWatcher, type HitlWatcherHandle } from "./hitl/watcher.js";
 import type { HitlPolicyConfig } from "./hitl/types.js";
 import { ApprovalManager } from "./hitl/approval-manager.js";
-import { TelegramListener, sendApprovalRequest, sendConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
+import { TelegramListener, sendApprovalRequest, sendConfirmation, sendApproveAlwaysConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
 import type { TelegramOperatorInfo } from "./hitl/telegram.js";
 import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig } from "./hitl/slack.js";
 import { createHash } from "node:crypto";
@@ -827,6 +829,29 @@ const pipelineEmitter = new EventEmitter();
 
 /** Maps HITL token → Slack message timestamp for chat.update on decision. */
 const slackMessageTimestamps = new Map<string, string>();
+
+/**
+ * How long (ms) an Approve Always confirmation waits for a Save/Cancel
+ * response before timing out.  After timeout the confirmation is silently
+ * discarded; the original approval continues to age toward its own TTL.
+ */
+const APPROVE_ALWAYS_CONFIRM_TIMEOUT_MS = 5 * 60 * 1_000; // 5 minutes
+
+interface PendingApproveAlwaysConfirmation {
+  token: string;
+  pattern: string;
+  method: string;
+  operatorId: string | undefined;
+  agentId: string;
+  timer: ReturnType<typeof setTimeout>;
+}
+
+/**
+ * Maps HITL token → pending Approve Always confirmation state.
+ * Set when the operator clicks "Approve Always" and a pattern confirmation
+ * message is sent.  Cleared on Save, Cancel, or timeout.
+ */
+const pendingApproveAlwaysConfirmations = new Map<string, PendingApproveAlwaysConfirmation>();
 
 /** JSONL audit logger for HITL decisions — initialised in activate(). */
 let hitlAuditLogger: JsonlAuditLogger | null = null;
@@ -1728,31 +1753,122 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
         telegramListener = new TelegramListener(
           telegramConfig.botToken,
           (command, token, from?: TelegramOperatorInfo) => {
+            // Build operator identity string from Telegram callback_query.from.
+            // Format: "<userId>" or "<userId>@<username>" when username is set.
+            const operatorId = from !== undefined
+              ? (from.username !== undefined
+                ? `${from.userId}@${from.username}`
+                : String(from.userId))
+              : undefined;
+
+            // ── confirm_approve_always ────────────────────────────────────
+            if (command === 'confirm_approve_always') {
+              const conf = pendingApproveAlwaysConfirmations.get(token);
+              if (conf) {
+                clearTimeout(conf.timer);
+                pendingApproveAlwaysConfirmations.delete(token);
+                const pending = approvalManager.getPending(token);
+                if (pending) {
+                  approvalManager.addSessionAutoApproval(pending.channelId, pending.action_class);
+                  console.log(
+                    `[hitl-telegram] session auto-approval registered: channel=${pending.channelId} action_class=${pending.action_class}` +
+                    (operatorId !== undefined ? ` operator=${operatorId}` : ''),
+                  );
+                  if (pending.target.length > 0) {
+                    void persistAutoPermitPattern(pending.target, 'telegram', operatorId, conf.agentId);
+                  }
+                }
+              } else {
+                console.log(`[hitl-telegram] confirm_approve_always: no pending confirmation for token=${token}`);
+              }
+              const resolved = approvalManager.resolveApproval(token, 'approved');
+              if (!resolved) {
+                console.log(`[hitl-telegram] confirm_approve_always: unknown or expired token: ${token}`);
+              }
+              return;
+            }
+
+            // ── cancel_approve_always ─────────────────────────────────────
+            if (command === 'cancel_approve_always') {
+              const conf = pendingApproveAlwaysConfirmations.get(token);
+              if (conf) {
+                clearTimeout(conf.timer);
+                pendingApproveAlwaysConfirmations.delete(token);
+              }
+              console.log(`[hitl-telegram] approve-always confirmation cancelled for token=${token}`);
+              // Original approval stays pending — operator can still use the original buttons.
+              return;
+            }
+
+            // ── approve_always ────────────────────────────────────────────
             if (command === 'approve_always' && FEATURES.approveAlwaysEnabled) {
-              // Register session auto-approval before resolving so future
-              // requests of the same action class in this channel skip HITL.
+              // Cancel any stale pending confirmation for this token.
+              const existingConf = pendingApproveAlwaysConfirmations.get(token);
+              if (existingConf) {
+                clearTimeout(existingConf.timer);
+                pendingApproveAlwaysConfirmations.delete(token);
+              }
+
               const pending = approvalManager.getPending(token);
               if (pending) {
+                // Try to derive a pattern for the confirmation message, unless
+                // auto-confirm is enabled (CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM=1).
+                let derived: ReturnType<typeof derivePattern> | undefined;
+                if (pending.target.length > 0 && !FEATURES.approveAlwaysAutoConfirm) {
+                  try {
+                    derived = derivePattern({ command: pending.target });
+                  } catch {
+                    // Shell metacharacters or empty command — skip confirmation.
+                  }
+                }
+
+                if (derived !== undefined) {
+                  // Show confirmation message; do NOT resolve the original approval yet.
+                  const confTimer = setTimeout(() => {
+                    pendingApproveAlwaysConfirmations.delete(token);
+                    console.log(`[hitl-telegram] approve-always confirmation timed out for token=${token}`);
+                  }, APPROVE_ALWAYS_CONFIRM_TIMEOUT_MS);
+                  if (typeof confTimer === 'object' && 'unref' in confTimer) confTimer.unref();
+
+                  pendingApproveAlwaysConfirmations.set(token, {
+                    token,
+                    pattern: derived.pattern,
+                    method: derived.method,
+                    operatorId,
+                    agentId: pending.agentId,
+                    timer: confTimer,
+                  });
+
+                  void sendApproveAlwaysConfirmation(telegramConfig, {
+                    token,
+                    pattern: derived.pattern,
+                    originalCommand: pending.target,
+                  });
+                  return; // Wait for confirm or cancel — do not resolve yet.
+                }
+
+                // Auto-confirm path: CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM=1,
+                // target is empty, or pattern derivation failed.
                 approvalManager.addSessionAutoApproval(pending.channelId, pending.action_class);
-                // Build operator identity string from Telegram callback_query.from.
-                // Format: "<userId>" or "<userId>@<username>" when username is set.
-                const operatorId = from !== undefined
-                  ? (from.username !== undefined
-                    ? `${from.userId}@${from.username}`
-                    : String(from.userId))
-                  : undefined;
                 console.log(
                   `[hitl-telegram] session auto-approval registered: channel=${pending.channelId} action_class=${pending.action_class}` +
                   (operatorId !== undefined ? ` operator=${operatorId}` : ''),
                 );
-                // Derive and persist an auto-permit pattern from the command
-                // target so future matching commands are auto-permitted without
-                // requiring HITL at all. Failures are logged, not thrown.
                 if (pending.target.length > 0) {
                   void persistAutoPermitPattern(pending.target, 'telegram', operatorId, pending.agentId);
                 }
               }
             }
+
+            // ── approve / deny (and approve_always feature-disabled fallthrough) ─
+            // Cancel any stale pending confirmation for this token (operator chose
+            // a different action on the original message).
+            const staleConf = pendingApproveAlwaysConfirmations.get(token);
+            if (staleConf) {
+              clearTimeout(staleConf.timer);
+              pendingApproveAlwaysConfirmations.delete(token);
+            }
+
             // approve_always resolves the current request as approved.
             const decision = command === 'deny' ? 'denied' as const : 'approved' as const;
             const resolved = approvalManager.resolveApproval(token, decision);
@@ -1842,6 +1958,10 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
       slackInteractionServer = null;
     }
     slackMessageTimestamps.clear();
+    for (const conf of pendingApproveAlwaysConfirmations.values()) {
+      clearTimeout(conf.timer);
+    }
+    pendingApproveAlwaysConfirmations.clear();
     approvalManager.shutdown();
     if (hitlWatcher !== null) {
       await hitlWatcher.stop();

@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { resolveTelegramConfig, sendApprovalRequest, TelegramListener, escapeMarkdownV2 } from './telegram.js';
+import { resolveTelegramConfig, sendApprovalRequest, sendApproveAlwaysConfirmation, TelegramListener, escapeMarkdownV2 } from './telegram.js';
 import { CircuitBreaker } from './retry.js';
 import type { TelegramConfig } from './types.js';
 
@@ -904,5 +904,135 @@ describe('TelegramListener', () => {
     await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
     // Called with only two arguments when from is absent.
     expect(onCommand).toHaveBeenCalledWith('approve', 'abc12345');
+  });
+
+  it('handles callback_query confirm_approve_always from inline keyboard', async () => {
+    const updates = {
+      ok: true,
+      result: [
+        { update_id: 70, callback_query: { id: 'cq-confirm', data: 'confirm_approve_always:abc12345' } },
+      ],
+    };
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(updates), { status: 200 }))
+      .mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    listener = new TelegramListener('test-token', onCommand);
+    listener.start();
+
+    await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
+    expect(onCommand).toHaveBeenCalledWith('confirm_approve_always', 'abc12345');
+  });
+
+  it('handles callback_query cancel_approve_always from inline keyboard', async () => {
+    const updates = {
+      ok: true,
+      result: [
+        { update_id: 71, callback_query: { id: 'cq-cancel', data: 'cancel_approve_always:abc12345' } },
+      ],
+    };
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(updates), { status: 200 }))
+      .mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    listener = new TelegramListener('test-token', onCommand);
+    listener.start();
+
+    await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
+    expect(onCommand).toHaveBeenCalledWith('cancel_approve_always', 'abc12345');
+  });
+});
+
+// ─── sendApproveAlwaysConfirmation ───────────────────────────────────────────
+
+describe('sendApproveAlwaysConfirmation', () => {
+  const config = { botToken: 'test-token', chatId: '12345' };
+  const opts = {
+    token: 'abc12345',
+    pattern: 'git commit *',
+    originalCommand: 'git commit -m "initial commit"',
+  };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends a POST to the Telegram sendMessage endpoint', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    const result = await sendApproveAlwaysConfirmation(config, opts);
+    expect(result).toBe(true);
+
+    expect(fetch).toHaveBeenCalledOnce();
+    const [url, init] = vi.mocked(fetch).mock.calls[0]!;
+    expect(url).toBe('https://api.telegram.org/bottest-token/sendMessage');
+    expect(init?.method).toBe('POST');
+  });
+
+  it('uses MarkdownV2 parse mode', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await sendApproveAlwaysConfirmation(config, opts);
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse(init?.body as string);
+    expect(body.parse_mode).toBe('MarkdownV2');
+  });
+
+  it('includes the pattern and original command in the message body', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await sendApproveAlwaysConfirmation(config, opts);
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse(init?.body as string);
+    // pattern is in a code span — no MarkdownV2 escaping needed for these chars
+    expect(body.text).toContain('git commit *');
+    // original command is in a code span
+    expect(body.text).toContain('git commit');
+    expect(body.text).toContain('abc12345');
+  });
+
+  it('includes Save and Cancel inline keyboard buttons', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await sendApproveAlwaysConfirmation(config, opts);
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse(init?.body as string);
+    expect(body.reply_markup).toBeDefined();
+    const row = body.reply_markup.inline_keyboard[0];
+    expect(row).toHaveLength(2);
+    const callbackDatas = row.map((b: { callback_data: string }) => b.callback_data);
+    expect(callbackDatas).toContain('confirm_approve_always:abc12345');
+    expect(callbackDatas).toContain('cancel_approve_always:abc12345');
+  });
+
+  it('returns false when Telegram returns a non-OK status', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('', { status: 400 }));
+
+    const result = await sendApproveAlwaysConfirmation(config, opts);
+    expect(result).toBe(false);
+  });
+
+  it('returns false when fetch throws', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('network error'));
+
+    const result = await sendApproveAlwaysConfirmation(config, opts);
+    expect(result).toBe(false);
+  });
+
+  it('respects an injected circuit breaker', async () => {
+    const breaker = new CircuitBreaker();
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    const result = await sendApproveAlwaysConfirmation(config, opts, breaker);
+    expect(result).toBe(true);
   });
 });
