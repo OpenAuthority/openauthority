@@ -30,6 +30,11 @@
  *                          sftp interactive vs batch)
  *   TC-CE-195 – TC-CE-215: distro / system package-manager patterns
  *                          (apt, yum, dnf, dpkg, snap, brew, pacman)
+ *   TC-CE-216 – TC-CE-217: docker push / docker ps subcommand additions
+ *   TC-CE-218 – TC-CE-232: kubectl subcommand patterns
+ *                          (apply, delete, get, describe, logs, exec,
+ *                          port-forward, rollout, scale)
+ *   TC-CE-233 – TC-CE-237: virsh subcommand patterns
  */
 
 import { describe, it, expect } from 'vitest';
@@ -517,8 +522,10 @@ describe('TC-CE-50: docker unknown subcommand — generic summary', () => {
     expect(result.summary).toMatch(/docker/i);
   });
 
-  it('returns a summary for docker ps', () => {
-    const result = explain('docker ps');
+  it('returns a summary for an unrecognised docker subcommand (login)', () => {
+    // `docker ps` and `docker push` now have their own dispatch; pick
+    // a still-unhandled subcommand so this test exercises the fallback.
+    const result = explain('docker login registry.example.com');
     expect(result.summary).toMatch(/docker/i);
   });
 });
@@ -2640,5 +2647,330 @@ describe('TC-CE-215: rule routing — apt vs apt-get vs yum vs dnf', () => {
   it('"dnf install" routes to yumDnfExplain with dnf binary label', () => {
     const result = explain('dnf install httpd');
     expect(result.summary).toMatch(/dnf packages/);
+  });
+});
+
+// ── TC-CE-216 – TC-CE-217 : docker push / docker ps ──────────────────────────
+
+describe('TC-CE-216: docker push — image-upload warning', () => {
+  it('reports the image in the summary', () => {
+    const result = explain('docker push myorg/myapp:1.0');
+    expect(result.summary).toContain('myorg/myapp:1.0');
+  });
+
+  it('warns about secrets baked into images', () => {
+    const result = explain('docker push myorg/myapp:1.0');
+    expect(hasWarningMatching(result.warnings, /secrets|baked|registry read access/i)).toBe(true);
+  });
+
+  it('--all-tags raises an additional warning', () => {
+    const result = explain('docker push --all-tags myorg/myapp');
+    expect(hasWarningMatching(result.warnings, /every tag/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-217: docker ps — read-only listing', () => {
+  it('summarises bare ps as listing running containers', () => {
+    const result = explain('docker ps');
+    expect(result.summary).toMatch(/running containers/i);
+  });
+
+  it('-a / --all summarises as listing every container', () => {
+    const result = explain('docker ps -a');
+    expect(result.summary).toMatch(/every container|running and stopped/i);
+  });
+
+  it('emits no warnings (read-only)', () => {
+    const result = explain('docker ps -a');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+// ── TC-CE-218 – TC-CE-232 : kubectl ──────────────────────────────────────────
+
+describe('TC-CE-218: kubectl apply — manifest summary + cluster-mutation warning', () => {
+  it('reports the file path when -f is given', () => {
+    const result = explain('kubectl apply -f deploy.yaml');
+    expect(result.summary).toContain('deploy.yaml');
+  });
+
+  it('always warns about cluster mutation', () => {
+    const result = explain('kubectl apply -f deploy.yaml');
+    expect(hasWarningMatching(result.warnings, /Cluster mutation/i)).toBe(true);
+  });
+
+  it('--prune raises an additional warning', () => {
+    const result = explain('kubectl apply -f deploy.yaml --prune');
+    expect(hasWarningMatching(result.warnings, /--prune deletes/i)).toBe(true);
+  });
+
+  it('--force raises an additional warning', () => {
+    const result = explain('kubectl apply -f deploy.yaml --force');
+    expect(hasWarningMatching(result.warnings, /--force overrides/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-219: kubectl delete — resource summary + cluster-mutation warning', () => {
+  it('reports the resource and name in the summary', () => {
+    const result = explain('kubectl delete deployment my-app');
+    expect(result.summary).toContain('deployment');
+    expect(result.summary).toContain('my-app');
+  });
+
+  it('always warns about cluster mutation', () => {
+    const result = explain('kubectl delete deployment my-app');
+    expect(hasWarningMatching(result.warnings, /Cluster mutation/i)).toBe(true);
+  });
+
+  it('--all raises an additional warning', () => {
+    const result = explain('kubectl delete deployment --all');
+    expect(hasWarningMatching(result.warnings, /--all deletes every resource/i)).toBe(true);
+  });
+
+  it('--force / --grace-period=0 raises an additional warning', () => {
+    const result = explain('kubectl delete pod my-app --grace-period=0 --force');
+    expect(hasWarningMatching(result.warnings, /skips graceful shutdown|terminate immediately/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-220: kubectl get / describe — read operations', () => {
+  it('"kubectl get pods" lists pods in summary', () => {
+    const result = explain('kubectl get pods');
+    expect(result.summary).toMatch(/Lists/i);
+    expect(result.summary).toContain('pods');
+  });
+
+  it('"kubectl describe pod my-app" describes a named resource', () => {
+    const result = explain('kubectl describe pod my-app');
+    expect(result.summary).toMatch(/Describes/i);
+    expect(result.summary).toContain('my-app');
+  });
+
+  it('emits no warnings for read operations', () => {
+    const result = explain('kubectl get pods');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-221: kubectl logs — sensitive-data warning', () => {
+  it('reports the pod in the summary', () => {
+    const result = explain('kubectl logs my-pod');
+    expect(result.summary).toContain('my-pod');
+  });
+
+  it('warns about credentials / sensitive data in logs', () => {
+    const result = explain('kubectl logs my-pod');
+    expect(hasWarningMatching(result.warnings, /credentials|sensitive data/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-222: kubectl exec — direct-access warning + interactive TTY', () => {
+  it('reports the pod in the summary', () => {
+    const result = explain('kubectl exec my-pod -- /bin/sh');
+    expect(result.summary).toContain('my-pod');
+  });
+
+  it('always warns about direct access', () => {
+    const result = explain('kubectl exec my-pod -- /bin/sh');
+    expect(hasWarningMatching(result.warnings, /direct access/i)).toBe(true);
+  });
+
+  it('-it raises the interactive-TTY warning', () => {
+    const result = explain('kubectl exec -it my-pod -- /bin/sh');
+    expect(hasWarningMatching(result.warnings, /Interactive TTY|cannot be inspected/i)).toBe(true);
+  });
+
+  it('-i and -t together raise the interactive-TTY warning', () => {
+    const result = explain('kubectl exec -i -t my-pod -- /bin/sh');
+    expect(hasWarningMatching(result.warnings, /Interactive TTY|cannot be inspected/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-223: kubectl port-forward — long-running tunnel warning', () => {
+  it('warns about long-running session', () => {
+    const result = explain('kubectl port-forward pod/my-app 8080:80');
+    expect(hasWarningMatching(result.warnings, /long-running|persists until/i)).toBe(true);
+  });
+
+  it('warns about reaching inside the cluster', () => {
+    const result = explain('kubectl port-forward pod/my-app 8080:80');
+    expect(hasWarningMatching(result.warnings, /reach inside the cluster/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-224: kubectl rollout restart — brief-disruption warning', () => {
+  it('reports the resource', () => {
+    const result = explain('kubectl rollout restart deployment my-app');
+    expect(result.summary).toMatch(/restart/i);
+    expect(result.summary).toContain('my-app');
+  });
+
+  it('warns about brief disruption', () => {
+    const result = explain('kubectl rollout restart deployment my-app');
+    expect(hasWarningMatching(result.warnings, /Brief disruption|replacement pods/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-225: kubectl rollout undo — cluster-mutation warning', () => {
+  it('summarises rollback', () => {
+    const result = explain('kubectl rollout undo deployment my-app');
+    expect(result.summary).toMatch(/Rolls back/i);
+  });
+
+  it('warns about cluster mutation', () => {
+    const result = explain('kubectl rollout undo deployment my-app');
+    expect(hasWarningMatching(result.warnings, /Cluster mutation|previous revision/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-226: kubectl rollout status — read-only, no warnings', () => {
+  it('summarises read-only', () => {
+    const result = explain('kubectl rollout status deployment my-app');
+    expect(result.summary).toMatch(/rollout status/i);
+  });
+
+  it('emits no warnings', () => {
+    const result = explain('kubectl rollout status deployment my-app');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-227: kubectl scale — replica count', () => {
+  it('reports the replicas in the summary when --replicas=N is used', () => {
+    const result = explain('kubectl scale deployment my-app --replicas=3');
+    expect(result.summary).toContain('3 replicas');
+  });
+
+  it('reports the replicas in the summary when --replicas N (space form) is used', () => {
+    const result = explain('kubectl scale deployment my-app --replicas 3');
+    expect(result.summary).toContain('3 replicas');
+  });
+
+  it('warns when scaling to 0 replicas', () => {
+    const result = explain('kubectl scale deployment my-app --replicas=0');
+    expect(hasWarningMatching(result.warnings, /takes the workload offline|0 replicas/i)).toBe(true);
+  });
+
+  it('does not warn for non-zero replica counts', () => {
+    const result = explain('kubectl scale deployment my-app --replicas=5');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-228: kubectl namespace flag — propagates into the summary', () => {
+  it('reports the namespace when -n is used', () => {
+    const result = explain('kubectl get pods -n production');
+    expect(result.summary).toContain('production');
+  });
+
+  it('reports the namespace when --namespace= form is used', () => {
+    const result = explain('kubectl get pods --namespace=staging');
+    expect(result.summary).toContain('staging');
+  });
+
+  it('reports the namespace when --namespace <ns> (space) form is used', () => {
+    const result = explain('kubectl get pods --namespace staging');
+    expect(result.summary).toContain('staging');
+  });
+
+  it('omits the namespace clause when none is provided', () => {
+    const result = explain('kubectl get pods');
+    expect(result.summary).not.toMatch(/in namespace/);
+  });
+});
+
+describe('TC-CE-229: kubectl — fallback for an unknown subcommand', () => {
+  it('summarises gracefully for an unrecognised subcommand', () => {
+    const result = explain('kubectl drain my-node');
+    expect(result.summary).toMatch(/kubectl drain/i);
+  });
+
+  it('emits no warnings for the fallback path', () => {
+    const result = explain('kubectl drain my-node');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-230: kubectl bare invocation', () => {
+  it('summarises gracefully when no subcommand is given', () => {
+    const result = explain('kubectl');
+    expect(result.summary).toMatch(/kubectl/i);
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-231: kubectl rollout fallback', () => {
+  it('falls back gracefully when no rollout action is given', () => {
+    const result = explain('kubectl rollout');
+    expect(result.summary).toMatch(/kubectl rollout/i);
+  });
+
+  it('falls back gracefully for unknown rollout action', () => {
+    const result = explain('kubectl rollout pause deployment my-app');
+    expect(result.summary).toMatch(/rollout pause/i);
+  });
+});
+
+describe('TC-CE-232: kubectl logs — bare invocation falls back without crashing', () => {
+  it('handles bare `kubectl logs` without a pod name', () => {
+    const result = explain('kubectl logs');
+    expect(result.summary).toMatch(/Reads pod logs/i);
+  });
+});
+
+// ── TC-CE-233 – TC-CE-237 : virsh ────────────────────────────────────────────
+
+describe('TC-CE-233: virsh list — read-only, no warnings', () => {
+  it('summarises listing', () => {
+    const result = explain('virsh list');
+    expect(result.summary).toMatch(/Lists virsh/i);
+  });
+
+  it('emits no warnings', () => {
+    const result = explain('virsh list');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-234: virsh start — boot summary, no warnings', () => {
+  it('reports the domain', () => {
+    const result = explain('virsh start db1');
+    expect(result.summary).toContain('db1');
+  });
+
+  it('emits no warnings (boot is benign)', () => {
+    const result = explain('virsh start db1');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-235: virsh shutdown / reboot — service-interruption warning', () => {
+  it('shutdown warns about active services', () => {
+    const result = explain('virsh shutdown db1');
+    expect(hasWarningMatching(result.warnings, /Active services|interrupted/i)).toBe(true);
+  });
+
+  it('reboot warns about brief unavailability', () => {
+    const result = explain('virsh reboot db1');
+    expect(hasWarningMatching(result.warnings, /briefly unavailable|services/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-236: virsh destroy — forceful-termination warning', () => {
+  it('warns about forceful termination', () => {
+    const result = explain('virsh destroy db1');
+    expect(hasWarningMatching(result.warnings, /Forceful termination|killed without cleanup/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-237: virsh undefine — persistence + storage warnings', () => {
+  it('warns about persistence loss on undefine', () => {
+    const result = explain('virsh undefine db1');
+    expect(hasWarningMatching(result.warnings, /Persistent|will not auto-start/i)).toBe(true);
+  });
+
+  it('--remove-all-storage adds an irreversible-deletion warning', () => {
+    const result = explain('virsh undefine db1 --remove-all-storage');
+    expect(hasWarningMatching(result.warnings, /--remove-all-storage|disk image|irreversible/i)).toBe(true);
   });
 });

@@ -338,12 +338,40 @@ function dockerExecExplain(args: string[]): ExplainResult {
   };
 }
 
+function dockerPushExplain(args: string[]): ExplainResult {
+  // args[0] = 'push', positional[0] = image[:tag]
+  const positional = positionalArgs(args.slice(1));
+  const image = positional[0] ?? '<image>';
+  const allTags = args.includes('-a') || args.includes('--all-tags');
+  return {
+    summary: allTags
+      ? `Pushes every tag of ${image} to the registry`
+      : `Pushes ${image} to the registry`,
+    effects: ['Uploads a container image to a remote registry'],
+    warnings: [
+      'Image upload — secrets baked into the image (env vars, credentials, source code) become visible to anyone with registry read access',
+      ...(allTags ? ['--all-tags pushes every tag of the named repository'] : []),
+    ],
+  };
+}
+
+function dockerPsExplain(args: string[]): ExplainResult {
+  const showAll = args.includes('-a') || args.includes('--all');
+  return {
+    summary: showAll ? 'Lists every container (running and stopped)' : 'Lists running containers',
+    effects: ['Reads the local container engine state'],
+    warnings: [],
+  };
+}
+
 function dockerExplain(args: string[]): ExplainResult {
   const sub = args[0];
   switch (sub) {
     case 'run':   return dockerRunExplain(args);
     case 'build': return dockerBuildExplain(args);
     case 'exec':  return dockerExecExplain(args);
+    case 'push':  return dockerPushExplain(args);
+    case 'ps':    return dockerPsExplain(args);
     default:      return { summary: `Runs docker ${sub ?? ''}`.trim(), effects: [], warnings: [] };
   }
 }
@@ -1375,6 +1403,249 @@ function pacmanExplain(args: string[]): ExplainResult {
   };
 }
 
+// ── Cluster management (kubectl) + VM lifecycle (virsh) ──────────────────────
+
+/**
+ * Pulls the namespace argument from a kubectl invocation, when present.
+ * Recognises both `-n <ns>` / `--namespace <ns>` and `--namespace=<ns>`.
+ */
+function kubectlNamespace(args: string[]): string | undefined {
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === '-n' || a === '--namespace') {
+      const next = args[i + 1];
+      if (next !== undefined) return next;
+    }
+    if (a.startsWith('--namespace=')) return a.slice('--namespace='.length);
+  }
+  return undefined;
+}
+
+function kubectlSuffix(args: string[]): string {
+  const ns = kubectlNamespace(args);
+  return ns !== undefined ? ` in namespace ${ns}` : '';
+}
+
+/** kubectl subcommand dispatch. */
+function kubectlExplain(args: string[]): ExplainResult {
+  const sub = args[0];
+  // Strip the leading subcommand and the namespace flag pair (or `=` form)
+  // before isolating the resource / name positionals.
+  const skipIdxs = new Set<number>();
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (a === '-n' || a === '--namespace') {
+      skipIdxs.add(i);
+      skipIdxs.add(i + 1);
+    }
+  }
+  const filtered = args.filter((_, i) => !skipIdxs.has(i));
+  const positional = positionalArgs(filtered.slice(1)); // drop subcommand
+  const resource = positional[0];
+  const name = positional[1];
+
+  switch (sub) {
+    case 'apply': {
+      const fIdx = args.findIndex(a => a === '-f' || a === '--filename');
+      const file = fIdx >= 0 ? args[fIdx + 1] : undefined;
+      return {
+        summary: file !== undefined
+          ? `Applies the manifest at ${file}${kubectlSuffix(args)}`
+          : `Applies a manifest${kubectlSuffix(args)}`,
+        effects: ['Creates or updates Kubernetes resources to match the manifest'],
+        warnings: [
+          'Cluster mutation — affects every resource referenced by the manifest',
+          ...(args.includes('--prune') ? ['--prune deletes existing resources not present in the manifest'] : []),
+          ...(args.includes('--force') ? ['--force overrides conflict detection on already-managed resources'] : []),
+        ],
+      };
+    }
+    case 'delete': {
+      const target = name !== undefined ? `${resource} ${name}` : resource ?? '<resource>';
+      return {
+        summary: `Deletes ${target}${kubectlSuffix(args)}`,
+        effects: ['Removes Kubernetes resources from the cluster'],
+        warnings: [
+          'Cluster mutation — deletion is generally not recoverable without a fresh manifest',
+          ...(args.includes('--all') ? ['--all deletes every resource of the named kind in the namespace'] : []),
+          ...(args.includes('--grace-period=0') || args.includes('--force')
+            ? ['--force / --grace-period=0 skips graceful shutdown — pods terminate immediately']
+            : []),
+        ],
+      };
+    }
+    case 'get':
+    case 'describe': {
+      const target = name !== undefined ? `${resource} ${name}` : resource ?? '<resource>';
+      return {
+        summary: sub === 'get'
+          ? `Lists ${target}${kubectlSuffix(args)}`
+          : `Describes ${target}${kubectlSuffix(args)}`,
+        effects: ['Reads cluster state'],
+        warnings: [],
+      };
+    }
+    case 'logs': {
+      const pod = positional[0];
+      return {
+        summary: pod !== undefined
+          ? `Reads logs from pod ${pod}${kubectlSuffix(args)}`
+          : `Reads pod logs${kubectlSuffix(args)}`,
+        effects: ['Reads container logs from one or more pods'],
+        warnings: ['Logs may contain credentials, request bodies, or other sensitive data'],
+      };
+    }
+    case 'exec': {
+      const pod = positional[0];
+      return {
+        summary: pod !== undefined
+          ? `Executes a command inside pod ${pod}${kubectlSuffix(args)}`
+          : `Executes a command inside a pod${kubectlSuffix(args)}`,
+        effects: ['Runs a process inside a running container'],
+        warnings: [
+          'Provides direct access to a running pod environment',
+          ...(args.includes('-it') || (args.includes('-i') && args.includes('-t'))
+            ? ['Interactive TTY — content of the session cannot be inspected by the explainer']
+            : []),
+        ],
+      };
+    }
+    case 'port-forward': {
+      return {
+        summary: `Forwards local ports to a pod${kubectlSuffix(args)}`,
+        effects: ['Opens a long-running tunnel from the local host to a pod inside the cluster'],
+        warnings: [
+          'Long-running session — the tunnel persists until the command is interrupted',
+          'Local services / browsers connecting to the forwarded port reach inside the cluster',
+        ],
+      };
+    }
+    case 'rollout': {
+      const action = args[1];
+      // For rollout, positionals after the action are <resource> [<name>].
+      // Recompute on a slice that drops both 'rollout' and the action.
+      const rolloutPositional = positionalArgs(filtered.slice(2));
+      const rolloutResource = rolloutPositional[0];
+      const rolloutName = rolloutPositional[1];
+      const target = rolloutName !== undefined
+        ? `${rolloutResource} ${rolloutName}`
+        : rolloutResource ?? '<resource>';
+      switch (action) {
+        case 'restart':
+          return {
+            summary: `Restarts rollout of ${target}${kubectlSuffix(args)}`,
+            effects: ['Triggers a rolling restart of the resource’s pods'],
+            warnings: ['Brief disruption while replacement pods come online'],
+          };
+        case 'undo':
+          return {
+            summary: `Rolls back ${target}${kubectlSuffix(args)}`,
+            effects: ['Reverts the resource to its previous revision'],
+            warnings: ['Cluster mutation — running pods are replaced by the previous revision'],
+          };
+        case 'status':
+          return {
+            summary: `Reports rollout status for ${target}${kubectlSuffix(args)}`,
+            effects: ['Reads cluster state'],
+            warnings: [],
+          };
+        default:
+          return {
+            summary: action !== undefined
+              ? `Runs kubectl rollout ${action}${kubectlSuffix(args)}`
+              : `Runs kubectl rollout${kubectlSuffix(args)}`,
+            effects: [],
+            warnings: [],
+          };
+      }
+    }
+    case 'scale': {
+      const replicas = (() => {
+        const idx = args.findIndex(a => a.startsWith('--replicas'));
+        if (idx < 0) return undefined;
+        const arg = args[idx]!;
+        if (arg.includes('=')) return arg.split('=')[1];
+        return args[idx + 1];
+      })();
+      const target = name !== undefined ? `${resource} ${name}` : resource ?? '<resource>';
+      return {
+        summary: replicas !== undefined
+          ? `Scales ${target} to ${replicas} replicas${kubectlSuffix(args)}`
+          : `Scales ${target}${kubectlSuffix(args)}`,
+        effects: ['Adjusts the replica count for the resource'],
+        warnings: replicas === '0' ? ['Scaling to 0 replicas takes the workload offline'] : [],
+      };
+    }
+    case undefined:
+      return { summary: 'Runs kubectl', effects: [], warnings: [] };
+    default:
+      return {
+        summary: `Runs kubectl ${sub}${kubectlSuffix(args)}`,
+        effects: [],
+        warnings: [],
+      };
+  }
+}
+
+/** virsh (libvirt) subcommand dispatch. */
+function virshExplain(args: string[]): ExplainResult {
+  const sub = args[0];
+  const positional = positionalArgs(args.slice(1));
+  const domain = positional[0];
+
+  switch (sub) {
+    case 'list':
+      return {
+        summary: 'Lists virsh-managed domains',
+        effects: ['Reads libvirt domain state'],
+        warnings: [],
+      };
+    case 'start':
+      return {
+        summary: domain !== undefined ? `Starts VM ${domain}` : 'Starts a VM',
+        effects: ['Boots a libvirt domain'],
+        warnings: [],
+      };
+    case 'shutdown':
+      return {
+        summary: domain !== undefined ? `Gracefully shuts down VM ${domain}` : 'Gracefully shuts down a VM',
+        effects: ['Sends an ACPI shutdown signal to the domain'],
+        warnings: ['Active services on the VM will be interrupted'],
+      };
+    case 'destroy':
+      return {
+        summary: domain !== undefined ? `Forcibly stops VM ${domain}` : 'Forcibly stops a VM',
+        effects: ['Terminates the libvirt domain without graceful shutdown'],
+        warnings: [
+          'Forceful termination — running processes inside the VM are killed without cleanup',
+        ],
+      };
+    case 'reboot':
+      return {
+        summary: domain !== undefined ? `Reboots VM ${domain}` : 'Reboots a VM',
+        effects: ['Triggers a graceful reboot of the libvirt domain'],
+        warnings: ['Active services on the VM will be briefly unavailable'],
+      };
+    case 'undefine':
+      return {
+        summary: domain !== undefined ? `Removes VM definition for ${domain}` : 'Removes a VM definition',
+        effects: ['Deletes the libvirt domain definition (the VM disk image is retained unless --remove-all-storage is used)'],
+        warnings: [
+          'Persistent — the VM will not auto-start at host boot after removal',
+          ...(args.includes('--remove-all-storage') ? ['--remove-all-storage also deletes the VM disk image — irreversible'] : []),
+        ],
+      };
+    case undefined:
+      return { summary: 'Runs virsh', effects: [], warnings: [] };
+    default:
+      return {
+        summary: `Runs virsh ${sub}`,
+        effects: [],
+        warnings: [],
+      };
+  }
+}
+
 function mkdirExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const path = pos[0] ?? '<directory>';
@@ -1832,6 +2103,9 @@ const rules: CommandRule[] = [
   { match: /^snap\b/,             explain: snapExplain },
   { match: /^brew\b/,             explain: brewExplain },
   { match: /^pacman\b/,           explain: pacmanExplain },
+  // Cluster management + VM lifecycle
+  { match: /^kubectl\b/,          explain: kubectlExplain },
+  { match: /^virsh\b/,            explain: virshExplain },
 ];
 
 // ── Public API ─────────────────────────────────────────────────────────────────

@@ -77,6 +77,7 @@ export const ActionClass = {
   NetworkScan: 'network.scan',
   SchedulingPersist: 'scheduling.persist',
   NetworkTransfer: 'network.transfer',
+  ClusterManage: 'cluster.manage',
   VcsRead: 'vcs.read',
   VcsWrite: 'vcs.write',
   VcsRemote: 'vcs.remote',
@@ -95,7 +96,7 @@ export const ActionClass = {
 export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
 
 // ---------------------------------------------------------------------------
-// Registry — 40 entries, aliases stored lowercase
+// Registry — 41 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 export const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -467,6 +468,9 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'init',
       'reboot',
       'shutdown',
+      // virsh manages libvirt VM lifecycles — same operational tier as
+      // systemctl: lifecycle ops on resources that other workloads depend on.
+      'virsh',
     ],
   },
   {
@@ -544,6 +548,14 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'sftp',
     ],
     intent_group: 'data_exfiltration',
+  },
+  {
+    action_class: ActionClass.ClusterManage,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'kubectl',
+    ],
   },
   {
     action_class: ActionClass.VcsRead,

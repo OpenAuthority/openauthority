@@ -90,6 +90,8 @@ describe('registry coverage — each action class resolves from at least one ali
     ['rsync',            'network.transfer'],
     ['apt',              'package.install'],
     ['brew',              'package.install'],
+    ['kubectl',          'cluster.manage'],
+    ['virsh',            'system.service'],
     ['git_log',          'vcs.read'],
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
@@ -635,6 +637,47 @@ describe('package.install — distro / system package manager bare aliases', () 
   it('apt-get (hyphenated alias) is matched verbatim', () => {
     const result = normalize_action('apt-get', {});
     expect(result.action_class).toBe('package.install');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cluster.manage action class — kubectl alias
+// ---------------------------------------------------------------------------
+
+describe('cluster.manage aliases and defaults', () => {
+  it('kubectl → cluster.manage with high risk and per_request HITL', () => {
+    const result = normalize_action('kubectl', {});
+    expect(result.action_class).toBe('cluster.manage');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('KUBECTL (uppercase) → cluster.manage via case-insensitive alias lookup', () => {
+    const result = normalize_action('KUBECTL', {});
+    expect(result.action_class).toBe('cluster.manage');
+  });
+
+  it('no intent_group on cluster.manage', () => {
+    const result = normalize_action('kubectl', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// system.service — virsh alias (libvirt VM lifecycle)
+// ---------------------------------------------------------------------------
+
+describe('system.service — virsh alias', () => {
+  it('virsh → system.service with critical risk and per_request HITL', () => {
+    const result = normalize_action('virsh', {});
+    expect(result.action_class).toBe('system.service');
+    expect(result.risk).toBe('critical');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('VIRSH (uppercase) → system.service via case-insensitive alias lookup', () => {
+    const result = normalize_action('VIRSH', {});
+    expect(result.action_class).toBe('system.service');
   });
 });
 

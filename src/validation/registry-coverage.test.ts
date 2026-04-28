@@ -94,6 +94,12 @@ const COVERAGE_EXEMPT = new Set<string>([
   // ships only the registry alias + explainer + per_request HITL, with the
   // data_exfiltration intent_group so a single rule can cover all transports.
   ActionClass.NetworkTransfer,
+  // v1.3.2: typed tools for kubectl (apply / get / delete / rollout — see
+  // release-plan §7). kubectl exec / port-forward are in the "long-running /
+  // separate process" bucket and need the v1.4 streams design before they
+  // get typed wrappers. v1.3.1 ships only the registry alias + explainer +
+  // per_request HITL.
+  ActionClass.ClusterManage,
 ]);
 
 // ─── Scanning helpers ──────────────────────────────────────────────────────────
