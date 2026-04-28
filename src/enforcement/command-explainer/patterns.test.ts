@@ -385,8 +385,8 @@ describe('TC-CE-39: whitespace-only input — returns unrecognised fallback', ()
 
 describe('TC-CE-40: catch-all pattern — unknown commands produce generic summary', () => {
   it('returns a summary containing the binary name for an unknown command', () => {
-    const result = explain('curl https://example.com');
-    expect(result.summary).toMatch(/curl/i);
+    const result = explain('customtool https://example.com');
+    expect(result.summary).toMatch(/customtool/i);
   });
 
   it('returns empty effects and warnings for an unknown command', () => {
@@ -825,5 +825,328 @@ describe('TC-CE-75: prettier — no warnings emitted', () => {
   it('produces no warnings for a standard prettier run', () => {
     const result = explain('prettier --write src/');
     expect(result.warnings).toHaveLength(0);
+  });
+});
+
+// ── File system commands ───────────────────────────────────────────────────────
+
+describe('TC-CE-76: rm — basic file deletion', () => {
+  it('mentions deletion in summary', () => {
+    const result = explain('rm /tmp/file.txt');
+    expect(result.summary).toMatch(/delet/i);
+  });
+
+  it('includes the target path in summary', () => {
+    const result = explain('rm /tmp/file.txt');
+    expect(result.summary).toContain('/tmp/file.txt');
+  });
+
+  it('includes a permanent removal effect', () => {
+    const result = explain('rm /tmp/file.txt');
+    expect(hasEffectMatching(result.effects, /remov|delet|filesystem/i)).toBe(true);
+  });
+
+  it('warns that deleted files cannot be recovered', () => {
+    const result = explain('rm /tmp/file.txt');
+    expect(hasWarningMatching(result.warnings, /recover|trash/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-77: rm -rf — recursive force deletion', () => {
+  it('mentions recursive deletion in summary', () => {
+    const result = explain('rm -rf /tmp/build');
+    expect(result.summary).toMatch(/recursiv/i);
+  });
+
+  it('warns about recursive directory removal', () => {
+    const result = explain('rm -rf /tmp/build');
+    expect(hasWarningMatching(result.warnings, /director|tree|-r/i)).toBe(true);
+  });
+
+  it('warns about -f flag suppressing prompts', () => {
+    const result = explain('rm -rf /tmp/build');
+    expect(hasWarningMatching(result.warnings, /-f|suppress|confirm/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-78: rm -r — recursive flag only', () => {
+  it('warns about recursive removal', () => {
+    const result = explain('rm -r /tmp/dir');
+    expect(hasWarningMatching(result.warnings, /director|tree|-r/i)).toBe(true);
+  });
+
+  it('does not warn about -f when -f is absent', () => {
+    const result = explain('rm -r /tmp/dir');
+    expect(hasWarningMatching(result.warnings, /-f|suppress/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-79: cp — file copy', () => {
+  it('mentions copying in summary', () => {
+    const result = explain('cp src.txt dst.txt');
+    expect(result.summary).toMatch(/cop/i);
+  });
+
+  it('includes source and destination in summary', () => {
+    const result = explain('cp src.txt dst.txt');
+    expect(result.summary).toContain('src.txt');
+    expect(result.summary).toContain('dst.txt');
+  });
+
+  it('includes a file-creation effect', () => {
+    const result = explain('cp src.txt dst.txt');
+    expect(hasEffectMatching(result.effects, /creat|overwrit|destination/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-80: cp -r — recursive copy', () => {
+  it('mentions recursive in summary', () => {
+    const result = explain('cp -r src/ dst/');
+    expect(result.summary).toMatch(/recursiv/i);
+  });
+});
+
+describe('TC-CE-81: mv — file move', () => {
+  it('mentions moving in summary', () => {
+    const result = explain('mv old.txt new.txt');
+    expect(result.summary).toMatch(/mov/i);
+  });
+
+  it('includes source and destination in summary', () => {
+    const result = explain('mv old.txt new.txt');
+    expect(result.summary).toContain('old.txt');
+    expect(result.summary).toContain('new.txt');
+  });
+
+  it('includes a filesystem effect', () => {
+    const result = explain('mv old.txt new.txt');
+    expect(hasEffectMatching(result.effects, /reloc|renam|filesystem|overwrit/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-82: chmod — permission change', () => {
+  it('mentions permissions in summary', () => {
+    const result = explain('chmod 644 file.txt');
+    expect(result.summary).toMatch(/permission/i);
+  });
+
+  it('includes the mode and path in summary', () => {
+    const result = explain('chmod 644 file.txt');
+    expect(result.summary).toContain('644');
+    expect(result.summary).toContain('file.txt');
+  });
+
+  it('includes a permissions effect', () => {
+    const result = explain('chmod 644 file.txt');
+    expect(hasEffectMatching(result.effects, /permission/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-83: chmod 777 — world-writable warning', () => {
+  it('warns about world-writable permissions', () => {
+    const result = explain('chmod 777 /etc/config');
+    expect(hasWarningMatching(result.warnings, /777|world.writable|security/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-84: chmod -R — recursive permission change', () => {
+  it('mentions recursive in summary', () => {
+    const result = explain('chmod -R 755 /srv/app');
+    expect(result.summary).toMatch(/recursiv/i);
+  });
+});
+
+describe('TC-CE-85: mkdir — directory creation', () => {
+  it('mentions directory creation in summary', () => {
+    const result = explain('mkdir /tmp/newdir');
+    expect(result.summary).toMatch(/creat/i);
+  });
+
+  it('includes the path in summary', () => {
+    const result = explain('mkdir /tmp/newdir');
+    expect(result.summary).toContain('/tmp/newdir');
+  });
+
+  it('includes a directory-creation effect', () => {
+    const result = explain('mkdir /tmp/newdir');
+    expect(hasEffectMatching(result.effects, /director|filesystem/i)).toBe(true);
+  });
+
+  it('produces no warnings', () => {
+    const result = explain('mkdir /tmp/newdir');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-86: rsync — file sync', () => {
+  it('mentions syncing in summary', () => {
+    const result = explain('rsync -av src/ dst/');
+    expect(result.summary).toMatch(/sync/i);
+  });
+
+  it('includes source and destination in summary', () => {
+    const result = explain('rsync -av src/ dst/');
+    expect(result.summary).toContain('src/');
+    expect(result.summary).toContain('dst/');
+  });
+
+  it('includes a filesystem effect', () => {
+    const result = explain('rsync -av src/ dst/');
+    expect(hasEffectMatching(result.effects, /filesystem|destination/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-87: rsync --delete — warns about deletion', () => {
+  it('warns about --delete removing files', () => {
+    const result = explain('rsync --delete src/ dst/');
+    expect(hasWarningMatching(result.warnings, /--delete|absent|destination/i)).toBe(true);
+  });
+});
+
+// ── Network commands ───────────────────────────────────────────────────────────
+
+describe('TC-CE-88: curl — HTTP fetch', () => {
+  it('mentions fetching in summary', () => {
+    const result = explain('curl https://example.com/api');
+    expect(result.summary).toMatch(/fetch|content/i);
+  });
+
+  it('includes the URL in summary', () => {
+    const result = explain('curl https://example.com/api');
+    expect(result.summary).toContain('https://example.com/api');
+  });
+
+  it('includes a network effect', () => {
+    const result = explain('curl https://example.com/api');
+    expect(hasEffectMatching(result.effects, /network|request/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-89: curl POST — identifies POST request', () => {
+  it('mentions POST in summary', () => {
+    const result = explain('curl -X POST https://api.example.com/data');
+    expect(result.summary).toMatch(/POST/i);
+  });
+});
+
+describe('TC-CE-90: curl -o — output file effect', () => {
+  it('includes a file-write effect', () => {
+    const result = explain('curl -o output.json https://api.example.com/data');
+    expect(hasEffectMatching(result.effects, /file|write/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-91: curl -d — POST via data flag', () => {
+  it('identifies -d as a POST request', () => {
+    const result = explain('curl -d "key=value" https://api.example.com/data');
+    expect(result.summary).toMatch(/POST/i);
+  });
+});
+
+describe('TC-CE-92: wget — file download', () => {
+  it('mentions downloading in summary', () => {
+    const result = explain('wget https://example.com/file.tar.gz');
+    expect(result.summary).toMatch(/download/i);
+  });
+
+  it('includes the URL in summary', () => {
+    const result = explain('wget https://example.com/file.tar.gz');
+    expect(result.summary).toContain('https://example.com/file.tar.gz');
+  });
+
+  it('includes a file-creation effect', () => {
+    const result = explain('wget https://example.com/file.tar.gz');
+    expect(hasEffectMatching(result.effects, /file|network/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-93: ssh — remote shell connection', () => {
+  it('mentions shell connection in summary', () => {
+    const result = explain('ssh user@example.com');
+    expect(result.summary).toMatch(/shell|connect/i);
+  });
+
+  it('includes the host in summary', () => {
+    const result = explain('ssh user@example.com');
+    expect(result.summary).toContain('user@example.com');
+  });
+
+  it('includes a network connection effect', () => {
+    const result = explain('ssh user@example.com');
+    expect(hasEffectMatching(result.effects, /network|remote|connection/i)).toBe(true);
+  });
+
+  it('warns about remote access', () => {
+    const result = explain('ssh user@example.com');
+    expect(hasWarningMatching(result.warnings, /remote|access|system/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-94: scp — secure file copy', () => {
+  it('mentions secure copy in summary', () => {
+    const result = explain('scp local.txt user@host:/remote/path');
+    expect(result.summary).toMatch(/secur|cop/i);
+  });
+
+  it('includes source and destination in summary', () => {
+    const result = explain('scp local.txt user@host:/remote/path');
+    expect(result.summary).toContain('local.txt');
+    expect(result.summary).toContain('user@host:/remote/path');
+  });
+
+  it('includes a network transfer effect', () => {
+    const result = explain('scp local.txt user@host:/remote/path');
+    expect(hasEffectMatching(result.effects, /network|transfer/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-95: nc — TCP connection', () => {
+  it('mentions connection in summary', () => {
+    const result = explain('nc example.com 8080');
+    expect(result.summary).toMatch(/connect|TCP/i);
+  });
+
+  it('includes host and port in summary', () => {
+    const result = explain('nc example.com 8080');
+    expect(result.summary).toContain('example.com');
+    expect(result.summary).toContain('8080');
+  });
+
+  it('includes a network connection effect', () => {
+    const result = explain('nc example.com 8080');
+    expect(hasEffectMatching(result.effects, /network|connection/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-96: nc -l — listen mode', () => {
+  it('mentions listening in summary', () => {
+    const result = explain('nc -l 4444');
+    expect(result.summary).toMatch(/listen/i);
+  });
+
+  it('includes the port in summary', () => {
+    const result = explain('nc -l 4444');
+    expect(result.summary).toContain('4444');
+  });
+});
+
+describe('TC-CE-97: netcat — alias for nc', () => {
+  it('matches the netcat binary', () => {
+    const result = explain('netcat example.com 9000');
+    expect(result.summary).toMatch(/connect|TCP/i);
+  });
+});
+
+describe('TC-CE-98: rm — fallback with no path specified', () => {
+  it('falls back gracefully when no path is given', () => {
+    const result = explain('rm');
+    expect(result.summary).toMatch(/delet/i);
+  });
+});
+
+describe('TC-CE-99: curl — fallback with no URL specified', () => {
+  it('falls back gracefully when no URL is given', () => {
+    const result = explain('curl');
+    expect(result.summary).toMatch(/fetch|content/i);
   });
 });

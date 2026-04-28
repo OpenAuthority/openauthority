@@ -463,6 +463,161 @@ function prettierExplain(args: string[]): ExplainResult {
   return { summary, effects, warnings: [] };
 }
 
+// ── File system detectors ──────────────────────────────────────────────────────
+
+function rmExplain(args: string[]): ExplainResult {
+  const isRecursive = args.some(t =>
+    t === '-r' || t === '-R' || t === '--recursive' ||
+    (/^-[a-zA-Z]+$/.test(t) && (t.includes('r') || t.includes('R'))),
+  );
+  const isForce = args.some(t =>
+    t === '-f' || t === '--force' ||
+    (/^-[a-zA-Z]+$/.test(t) && t.includes('f')),
+  );
+  const paths = positionalArgs(args);
+  const target = paths.length > 0 ? paths.join(', ') : 'files';
+  const summary = isRecursive ? `Recursively deletes ${target}` : `Deletes ${target}`;
+  const warnings: string[] = ['Deleted files cannot be recovered from the trash'];
+  if (isRecursive) warnings.push('-r flag removes entire directory trees');
+  if (isForce)     warnings.push('-f flag suppresses confirmation prompts');
+  return { summary, effects: ['Removes files from the filesystem permanently'], warnings };
+}
+
+function cpExplain(args: string[]): ExplainResult {
+  const isRecursive = args.some(t => t === '-r' || t === '-R' || t === '--recursive');
+  const pos = positionalArgs(args);
+  const src = pos[0] ?? '<source>';
+  const dst = pos.length > 1 ? pos[pos.length - 1]! : '<destination>';
+  return {
+    summary: isRecursive
+      ? `Recursively copies ${src} to ${dst}`
+      : `Copies ${src} to ${dst}`,
+    effects: ['Creates or overwrites files at destination'],
+    warnings: [],
+  };
+}
+
+function mvExplain(args: string[]): ExplainResult {
+  const pos = positionalArgs(args);
+  const src = pos[0] ?? '<source>';
+  const dst = pos.length > 1 ? pos[pos.length - 1]! : '<destination>';
+  return {
+    summary: `Moves ${src} to ${dst}`,
+    effects: ['Relocates or renames files on the filesystem', 'May overwrite destination if it exists'],
+    warnings: [],
+  };
+}
+
+function chmodExplain(args: string[]): ExplainResult {
+  const isRecursive = args.some(t => t === '-R' || t === '--recursive');
+  const pos = positionalArgs(args);
+  const mode = pos[0] ?? '<mode>';
+  const path = pos[1] ?? '<path>';
+  const summary = isRecursive
+    ? `Recursively changes permissions of ${path} to ${mode}`
+    : `Changes permissions of ${path} to ${mode}`;
+  const warnings: string[] = [];
+  if (mode === '777' || mode === '0777') {
+    warnings.push('World-writable permissions (777) are a security risk');
+  }
+  return { summary, effects: ['Modifies file access permissions'], warnings };
+}
+
+function mkdirExplain(args: string[]): ExplainResult {
+  const pos = positionalArgs(args);
+  const path = pos[0] ?? '<directory>';
+  return {
+    summary: `Creates directory ${path}`,
+    effects: ['Creates a new directory on the filesystem'],
+    warnings: [],
+  };
+}
+
+function rsyncExplain(args: string[]): ExplainResult {
+  const pos = positionalArgs(args);
+  const src = pos[0] ?? '<source>';
+  const dst = pos[1] ?? '<destination>';
+  const isDelete = args.includes('--delete');
+  const warnings: string[] = [];
+  if (isDelete) warnings.push('--delete removes files at destination absent in source');
+  return {
+    summary: `Syncs files from ${src} to ${dst}`,
+    effects: ['Modifies the destination filesystem'],
+    warnings,
+  };
+}
+
+// ── Network detectors ──────────────────────────────────────────────────────────
+
+function curlExplain(args: string[]): ExplainResult {
+  const pos = positionalArgs(args);
+  const url = pos[0] ?? '<url>';
+  const isPost =
+    args.some((t, i) => (t === '-X' || t === '--request') && args[i + 1] === 'POST') ||
+    args.some(t => t === '--data' || t === '-d' || t === '--data-raw' || t === '--data-binary');
+  const hasOutput = args.some(t => t === '-o' || t === '--output' || t === '-O');
+  const summary = isPost
+    ? `Sends an HTTP POST request to ${url}`
+    : `Fetches content from ${url}`;
+  const effects: string[] = ['Makes a network request'];
+  if (hasOutput) effects.push('Writes response to a local file');
+  return { summary, effects, warnings: [] };
+}
+
+function wgetExplain(args: string[]): ExplainResult {
+  const pos = positionalArgs(args);
+  const url = pos[0] ?? '<url>';
+  return {
+    summary: `Downloads ${url}`,
+    effects: ['Creates a local file from network content'],
+    warnings: [],
+  };
+}
+
+function sshExplain(args: string[]): ExplainResult {
+  const pos = positionalArgs(args);
+  const host = pos[0] ?? '<host>';
+  return {
+    summary: `Opens a secure shell connection to ${host}`,
+    effects: ['Establishes a remote network connection'],
+    warnings: ['Grants interactive access to a remote system'],
+  };
+}
+
+function scpExplain(args: string[]): ExplainResult {
+  const pos = positionalArgs(args);
+  const src = pos[0] ?? '<source>';
+  const dst = pos.length > 1 ? pos[pos.length - 1]! : '<destination>';
+  return {
+    summary: `Securely copies files from ${src} to ${dst}`,
+    effects: ['Transfers files over a network connection'],
+    warnings: [],
+  };
+}
+
+function ncExplain(args: string[]): ExplainResult {
+  const isListen = args.includes('-l') || args.includes('--listen');
+  const pos = positionalArgs(args);
+  let summary: string;
+  if (isListen) {
+    const port = pos[0];
+    summary = port
+      ? `Listens for incoming connections on port ${port}`
+      : 'Listens for incoming network connections';
+  } else {
+    const host = pos[0];
+    const port = pos[1];
+    if (host && port) {
+      summary = `Opens a TCP connection to ${host}:${port}`;
+    } else if (host) {
+      summary = `Opens a network connection to ${host}`;
+    } else {
+      summary = 'Opens a network connection';
+    }
+  }
+  return { summary, effects: ['Establishes a network connection'], warnings: [] };
+}
+
 // ── Rule table ─────────────────────────────────────────────────────────────────
 
 interface CommandRule {
@@ -483,6 +638,19 @@ const rules: CommandRule[] = [
   { match: /^go\b/,              explain: goExplain },
   { match: /^eslint\b/,          explain: eslintExplain },
   { match: /^prettier\b/,        explain: prettierExplain },
+  // File system operations
+  { match: /^rm\b/,              explain: rmExplain },
+  { match: /^cp\b/,              explain: cpExplain },
+  { match: /^mv\b/,              explain: mvExplain },
+  { match: /^chmod\b/,           explain: chmodExplain },
+  { match: /^mkdir\b/,           explain: mkdirExplain },
+  { match: /^rsync\b/,           explain: rsyncExplain },
+  // Network commands
+  { match: /^curl\b/,            explain: curlExplain },
+  { match: /^wget\b/,            explain: wgetExplain },
+  { match: /^ssh\b/,             explain: sshExplain },
+  { match: /^scp\b/,             explain: scpExplain },
+  { match: /^(nc|netcat)\b/,     explain: ncExplain },
 ];
 
 // ── Public API ─────────────────────────────────────────────────────────────────

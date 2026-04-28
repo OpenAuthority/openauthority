@@ -169,6 +169,8 @@ import { ApprovalManager } from "./hitl/approval-manager.js";
 import { TelegramListener, sendApprovalRequest, sendConfirmation, editMessageDecision, sendApproveAlwaysConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
 import type { TelegramOperatorInfo } from "./hitl/telegram.js";
 import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig } from "./hitl/slack.js";
+import { sendConsoleApprovalRequest } from "./hitl/console.js";
+import { explainCommand } from "./hitl/command-explainer.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
 import { existsSync } from "node:fs";
@@ -974,7 +976,10 @@ function formatMatchedRule(rule: { effect: string; resource?: string; action_cla
 }
 
 /**
- * Dispatches a HITL approval request to the appropriate channel adapter (Telegram or Slack).
+ * Dispatches a HITL approval request to the appropriate channel adapter
+ * (Telegram, Slack, or console). Calls `explainCommand` on `target` and
+ * spreads the resulting explanation, effects, warnings, rawCommand,
+ * action_class, target, and expires_at into all channel send calls.
  *
  * Returns a `BeforeToolCallResult` when the action should be blocked, or `undefined` to allow.
  */
@@ -983,10 +988,28 @@ async function dispatchHitlChannel(
   toolName: string,
   identity: ResolvedIdentity,
   target: string,
+  action_class: string,
 ): Promise<BeforeToolCallResult | void> {
   const channel = policy.approval.channel;
   const auditAgent = identity.auditAgentId;
   const auditChannel = identity.auditChannel;
+
+  // Compute shared fields for all channel send calls.
+  const expires_at = new Date(Date.now() + policy.approval.timeout * 1000).toISOString();
+  const { summary, effects, warnings, inferred_action_class } = explainCommand(target);
+  const explanation = summary !== `Runs ${target.trim().split(/\s+/)[0]}` && summary !== 'Runs an unrecognised command'
+    ? summary
+    : undefined;
+  const sharedOpts = {
+    action_class,
+    target,
+    expires_at,
+    rawCommand: target,
+    ...(explanation !== undefined ? { explanation } : {}),
+    ...(effects.length > 0 ? { effects } : {}),
+    ...(warnings.length > 0 ? { warnings } : {}),
+  };
+  void inferred_action_class; // available for future use
 
   if (channel === 'telegram') {
     const telegramConfig = resolveTelegramConfig(hitlConfigRef.current?.telegram);
@@ -1002,7 +1025,7 @@ async function dispatchHitlChannel(
     }
 
     const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy, target });
-    const sendResult = await sendApprovalRequest(telegramConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled });
+    const sendResult = await sendApprovalRequest(telegramConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled, ...sharedOpts });
 
     if (!sendResult.ok) {
       approvalManager.cancel(token);
@@ -1044,7 +1067,7 @@ async function dispatchHitlChannel(
     }
 
     const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy, target });
-    const result = await sendSlackApprovalRequest(slackConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled });
+    const result = await sendSlackApprovalRequest(slackConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled, ...sharedOpts });
 
     if (!result.ok) {
       approvalManager.cancel(token);
@@ -1068,6 +1091,24 @@ async function dispatchHitlChannel(
         void sendSlackConfirmation(slackConfig, { token: t, decision, toolName, messageTs });
       }
     });
+  }
+
+  if (channel === 'console') {
+    const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy, target });
+    const result = await sendConsoleApprovalRequest({ token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled, ...sharedOpts });
+
+    if (result.decision === 'approved_always') {
+      approvalManager.addSessionAutoApproval(auditChannel, action_class);
+      console.log(`[hitl-console] session auto-approval registered: channel=${auditChannel} action_class=${action_class}`);
+      if (target.length > 0 || !['shell.exec', 'code.execute'].includes(action_class)) {
+        void persistAutoPermitPattern(target, toolName, action_class, 'console', undefined, auditAgent);
+      }
+    }
+
+    const decision: 'approved' | 'denied' = result.decision === 'denied' ? 'denied' : 'approved';
+    approvalManager.resolveApproval(token, decision);
+
+    return await resolveHitlDecision(token, promise, policy, toolName, identity, () => { /* result already shown inline */ });
   }
 
   // Unknown channel — no adapter available
@@ -1475,7 +1516,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
             console.log(`[clawthority] │ [hitl] ✓ session auto-approved (${normalizedAction.action_class}) — skipping HITL dispatch`);
           } else {
             console.log(`[clawthority] │ [hitl] releasing ${pipelineDecision.stage ?? 'unknown'} HITL-gated forbid via policy "${policy.name}" (${policy.approval.channel})`);
-            const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity, normalizedAction.target);
+            const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity, normalizedAction.target, normalizedAction.action_class);
             if (hitlChannelResult) return hitlChannelResult;
           }
           // Approved (or auto-approved): fall through to the pre-existing HITL check and then ALLOWED.
@@ -1534,7 +1575,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
         console.log(`[clawthority] │ [hitl] ✓ session auto-approved (${normalizedAction.action_class}) — skipping HITL dispatch`);
       } else {
         console.log(`[clawthority] │ [hitl] matched policy "${policy.name}" — requesting approval via ${policy.approval.channel}`);
-        const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity, normalizedAction.target);
+        const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity, normalizedAction.target, normalizedAction.action_class);
         if (hitlChannelResult) return hitlChannelResult;
       }
     } else if (hitlConfig !== null) {

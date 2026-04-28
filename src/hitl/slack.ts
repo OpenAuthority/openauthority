@@ -53,6 +53,22 @@ export interface SlackSendApprovalOpts {
    * `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` is set).
    */
   showApproveAlways?: boolean;
+  /** Risk level label shown in the message (e.g. "low", "medium", "high"). */
+  riskLevel?: string;
+  /**
+   * Human-readable explanation of what the command will do, provided by the
+   * command explainer. Truncated to 500 characters with an ellipsis.
+   */
+  explanation?: string;
+  /** Side-effects of the action, rendered as a bullet list. */
+  effects?: string[];
+  /** Warnings or caveats about the action, rendered as a bullet list. */
+  warnings?: string[];
+  /**
+   * Raw shell command string, rendered in a de-emphasised context block.
+   * Truncated to 200 characters with an ellipsis.
+   */
+  rawCommand?: string;
 }
 
 export interface SlackSendApprovalResult {
@@ -95,16 +111,17 @@ export async function sendSlackApprovalRequest(
     text: { type: 'plain_text', text: '\uD83D\uDEA8 HITL Approval Request' },
   });
 
-  // Core fields: Tool, Agent, Policy, Expires in — rendered as a 2-column grid.
-  blocks.push({
-    type: 'section',
-    fields: [
-      { type: 'mrkdwn', text: `*Tool:*\n\`${truncate(opts.toolName)}\`` },
-      { type: 'mrkdwn', text: `*Agent:*\n\`${truncate(opts.agentId)}\`` },
-      { type: 'mrkdwn', text: `*Policy:*\n${truncate(opts.policyName)}` },
-      { type: 'mrkdwn', text: `*Expires in:*\n${opts.timeoutSeconds}s` },
-    ],
-  });
+  // Core fields: Tool, Agent, Policy, Expires in, Risk? — rendered as a 2-column grid.
+  const coreFields: object[] = [
+    { type: 'mrkdwn', text: `*Tool:*\n\`${truncate(opts.toolName)}\`` },
+    { type: 'mrkdwn', text: `*Agent:*\n\`${truncate(opts.agentId)}\`` },
+    { type: 'mrkdwn', text: `*Policy:*\n${truncate(opts.policyName)}` },
+    { type: 'mrkdwn', text: `*Expires in:*\n${opts.timeoutSeconds}s` },
+  ];
+  if (opts.riskLevel) {
+    coreFields.push({ type: 'mrkdwn', text: `*Risk:*\n${truncate(opts.riskLevel)}` });
+  }
+  blocks.push({ type: 'section', fields: coreFields });
 
   // Optional fields: Action Class and Target.
   const optionalFields: object[] = [];
@@ -129,6 +146,42 @@ export async function sendSlackApprovalRequest(
     blocks.push({
       type: 'section',
       text: { type: 'mrkdwn', text: `:clipboard: *Summary:* ${truncate(opts.summary, 200)}` },
+    });
+  }
+
+  // Optional explanation — truncated at 500 chars.
+  if (opts.explanation) {
+    const explanation = opts.explanation.length > 500 ? opts.explanation.slice(0, 499) + '\u2026' : opts.explanation;
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:mag: *Explanation:*\n${explanation}` },
+    });
+  }
+
+  // Optional rawCommand — de-emphasised context block, truncated at 200 chars.
+  if (opts.rawCommand) {
+    const raw = opts.rawCommand.length > 200 ? opts.rawCommand.slice(0, 199) + '\u2026' : opts.rawCommand;
+    blocks.push({
+      type: 'context',
+      elements: [{ type: 'mrkdwn', text: `:computer: *Command:* \`${raw}\`` }],
+    });
+  }
+
+  // Optional effects — bullet list.
+  if (opts.effects && opts.effects.length > 0) {
+    const effectLines = opts.effects.map(e => `\u2022 ${e}`).join('\n');
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Effects:*\n${effectLines}` },
+    });
+  }
+
+  // Optional warnings — bullet list with warning prefix.
+  if (opts.warnings && opts.warnings.length > 0) {
+    const warningLines = opts.warnings.map(w => `:warning: ${w}`).join('\n');
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `*Warnings:*\n${warningLines}` },
     });
   }
 

@@ -83,6 +83,11 @@ export interface SendApprovalOpts {
   effects?: string[];
   /** Warnings or caveats about the action, rendered as a bullet list. */
   warnings?: string[];
+  /**
+   * Raw shell command string, rendered as a pre-formatted code block.
+   * Truncated to 200 characters with an ellipsis.
+   */
+  rawCommand?: string;
 }
 
 export interface SendApprovalResult {
@@ -166,6 +171,13 @@ export async function sendApprovalRequest(
     for (const warning of opts.warnings) {
       lines.push(`\u2022 ${escapeMarkdownV2(warning)}`);
     }
+  }
+
+  // Raw command — pre-formatted code block, truncated to 200 chars
+  if (opts.rawCommand) {
+    const truncated = opts.rawCommand.length > 200 ? opts.rawCommand.slice(0, 199) + '\u2026' : opts.rawCommand;
+    lines.push(``, `\uD83D\uDDB5 *Command:*`);
+    lines.push(`\`\`\`\n${truncated}\n\`\`\``);
   }
 
   // Footer: optional expiry and approval ID

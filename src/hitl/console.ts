@@ -141,6 +141,11 @@ export async function sendConsoleApprovalRequest(
     }
   }
 
+  if (opts.rawCommand) {
+    const truncated = opts.rawCommand.length > 200 ? opts.rawCommand.slice(0, 199) + '\u2026' : opts.rawCommand;
+    lines.push('', dim(`\uD83D\uDDB5 Command: ${truncated}`));
+  }
+
   lines.push('');
   if (opts.expires_at) {
     lines.push(`\u23F1  ${bold('Expires at:')} ${opts.expires_at}`);
