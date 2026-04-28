@@ -36,6 +36,15 @@ export interface SendApprovalOpts {
    * cannot confuse a spoofed agent with a registered one.
    */
   verified?: boolean;
+  /**
+   * When true, a `/approve_always TOKEN` option is included in the message.
+   * Operators can use it to approve this request and automatically approve
+   * all subsequent requests of the same action class in the same channel.
+   *
+   * Set to false (or omit) to hide the option (e.g. when
+   * `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` is set).
+   */
+  showApproveAlways?: boolean;
 }
 
 /**
@@ -70,7 +79,8 @@ export async function sendApprovalRequest(
   if (opts.summary) lines.push(`\u{1F4CB} *Summary:* ${opts.summary}`);
   if (opts.expires_at) lines.push(`\u23F1 *Expires at:* ${opts.expires_at}`);
   lines.push(`\u{1F511} *Approval ID:* \`${opts.token}\``);
-  lines.push('', `Reply with:`, `\`/approve ${opts.token}\` or \`/deny ${opts.token}\``);
+  const alwaysClause = opts.showApproveAlways ? ` or \`/approve_always ${opts.token}\`` : '';
+  lines.push('', `Reply with:`, `\`/approve ${opts.token}\`${alwaysClause} or \`/deny ${opts.token}\``);
   const text = lines.join('\n');
 
   try {
@@ -122,11 +132,12 @@ export async function sendConfirmation(
   }
 }
 
-export type TelegramCommand = 'approve' | 'deny';
+export type TelegramCommand = 'approve' | 'approve_always' | 'deny';
 
 // Tokens are UUID v7 (36 chars with hyphens, e.g. "019daa50-5dc1-78ee-9ab4-bcf652bddfa3")
 // or session_approval keys of the form "session_id:action_class" (may contain ':', '.').
-const COMMAND_RE = /^\/(approve|deny)\s+([\w.:-]{6,128})$/;
+// approve_always must appear before approve in the alternation so it matches first.
+const COMMAND_RE = /^\/(approve_always|approve|deny)\s+([\w.:-]{6,128})$/;
 
 /**
  * Long-polling listener for Telegram bot updates.

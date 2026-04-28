@@ -98,6 +98,38 @@ describe('sendApprovalRequest', () => {
     expect(body.text).toContain('/deny abc12345');
   });
 
+  it('omits /approve_always when showApproveAlways is not set', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await sendApprovalRequest(config, opts);
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse(init?.body as string);
+    expect(body.text).not.toContain('/approve_always');
+  });
+
+  it('includes /approve_always TOKEN when showApproveAlways is true', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await sendApprovalRequest(config, { ...opts, showApproveAlways: true });
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse(init?.body as string);
+    expect(body.text).toContain('/approve_always abc12345');
+    expect(body.text).toContain('/approve abc12345');
+    expect(body.text).toContain('/deny abc12345');
+  });
+
+  it('omits /approve_always TOKEN when showApproveAlways is false', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await sendApprovalRequest(config, { ...opts, showApproveAlways: false });
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse(init?.body as string);
+    expect(body.text).not.toContain('/approve_always');
+  });
+
   it('returns false on non-2xx response', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('Unauthorized', { status: 401 }));
     const result = await sendApprovalRequest(config, opts);
@@ -225,6 +257,45 @@ describe('TelegramListener', () => {
 
     await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
     expect(onCommand).toHaveBeenCalledWith('deny', sessionToken);
+  });
+
+  it('parses /approve_always TOKEN correctly', async () => {
+    const updates = {
+      ok: true,
+      result: [
+        { update_id: 8, message: { text: '/approve_always abc12345', chat: { id: 12345 } } },
+      ],
+    };
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(updates), { status: 200 }))
+      .mockImplementation(() => new Promise(() => {}));
+
+    listener = new TelegramListener('test-token', onCommand);
+    listener.start();
+
+    await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
+    expect(onCommand).toHaveBeenCalledWith('approve_always', 'abc12345');
+  });
+
+  it('parses /approve_always with a UUID v7 token', async () => {
+    const uuid = '019daa50-5dc1-78ee-9ab4-bcf652bddfa3';
+    const updates = {
+      ok: true,
+      result: [
+        { update_id: 9, message: { text: `/approve_always ${uuid}`, chat: { id: 12345 } } },
+      ],
+    };
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(updates), { status: 200 }))
+      .mockImplementation(() => new Promise(() => {}));
+
+    listener = new TelegramListener('test-token', onCommand);
+    listener.start();
+
+    await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
+    expect(onCommand).toHaveBeenCalledWith('approve_always', uuid);
   });
 
   it('ignores non-command messages', async () => {

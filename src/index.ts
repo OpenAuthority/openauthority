@@ -718,7 +718,7 @@ async function dispatchHitlChannel(
     }
 
     const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy });
-    const sent = await sendApprovalRequest(telegramConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified });
+    const sent = await sendApprovalRequest(telegramConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled });
 
     if (!sent) {
       approvalManager.cancel(token);
@@ -1526,7 +1526,17 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
         telegramListener = new TelegramListener(
           telegramConfig.botToken,
           (command, token) => {
-            const decision = command === 'approve' ? 'approved' as const : 'denied' as const;
+            if (command === 'approve_always' && FEATURES.approveAlwaysEnabled) {
+              // Register session auto-approval before resolving so future
+              // requests of the same action class in this channel skip HITL.
+              const pending = approvalManager.getPending(token);
+              if (pending) {
+                approvalManager.addSessionAutoApproval(pending.channelId, pending.action_class);
+                console.log(`[hitl-telegram] session auto-approval registered: channel=${pending.channelId} action_class=${pending.action_class}`);
+              }
+            }
+            // approve_always resolves the current request as approved.
+            const decision = command === 'deny' ? 'denied' as const : 'approved' as const;
             const resolved = approvalManager.resolveApproval(token, decision);
             if (!resolved) {
               console.log(`[hitl-telegram] unknown or expired token: ${token}`);
