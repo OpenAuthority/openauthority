@@ -9,12 +9,38 @@ const TELEGRAM_API = 'https://api.telegram.org';
 const POLL_TIMEOUT_SECONDS = 30;
 const RETRY_DELAY_MS = 5_000;
 const POLL_RATE_LIMIT_DELAY_MS = 30_000;
+/** Maximum character count for command explanation text before truncation. */
+const MAX_COMMAND_LENGTH = 500;
 
 /**
  * Shared circuit breaker for outbound Telegram API calls (sendMessage).
  * Exported so tests can inject a fresh instance.
  */
 export const telegramCircuitBreaker = new CircuitBreaker();
+
+/**
+ * Escapes special MarkdownV2 characters in a plain-text string.
+ *
+ * Per the Telegram Bot API spec the following characters must be preceded
+ * by a backslash when they appear outside of entity boundaries:
+ * `_`, `*`, `[`, `]`, `(`, `)`, `~`, `` ` ``, `>`, `#`, `+`, `-`,
+ * `=`, `|`, `{`, `}`, `.`, `!`, `\`
+ *
+ * Exported for use in tests.
+ */
+export function escapeMarkdownV2(text: string): string {
+  return text.replace(/[_*[\]()~`>#+\-=|{}.!\\]/g, '\\$&');
+}
+
+/** Escapes characters that have special meaning inside a MarkdownV2 code span. */
+function escapeCodeSpan(text: string): string {
+  return text.replace(/[`\\]/g, '\\$&');
+}
+
+/** Truncates a string to at most `max` characters, appending … if cut. */
+function truncateCommand(s: string, max = MAX_COMMAND_LENGTH): string {
+  return s.length > max ? s.slice(0, max - 1) + '\u2026' : s;
+}
 
 export interface SendApprovalOpts {
   token: string;
@@ -37,18 +63,34 @@ export interface SendApprovalOpts {
    */
   verified?: boolean;
   /**
-   * When true, a `/approve_always TOKEN` option is included in the message.
-   * Operators can use it to approve this request and automatically approve
-   * all subsequent requests of the same action class in the same channel.
+   * When true (default), a 🔁 "Approve Always" inline button is included in
+   * the message. Operators can click it to approve this request and
+   * automatically approve all subsequent requests of the same action class
+   * in the same channel without further prompts.
    *
-   * Set to false (or omit) to hide the option (e.g. when
+   * Set to false to hide the button (e.g. when
    * `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` is set).
    */
   showApproveAlways?: boolean;
+  /** Risk level label shown in the message (e.g. "low", "medium", "high"). */
+  riskLevel?: string;
+  /**
+   * Human-readable explanation of what the command will do, provided by the
+   * command explainer. Truncated to 500 characters with an ellipsis.
+   */
+  explanation?: string;
+  /** Side-effects of the action, rendered as a bullet list. */
+  effects?: string[];
+  /** Warnings or caveats about the action, rendered as a bullet list. */
+  warnings?: string[];
 }
 
 /**
- * Sends an approval request message to the configured Telegram chat.
+ * Sends a MarkdownV2-formatted approval request message to the configured
+ * Telegram chat. The message includes rich formatting (agent, tool, risk
+ * level, explanation, effects, warnings) and an inline keyboard with three
+ * buttons: ✅ Approve Once, 🔁 Approve Always (optional), ❌ Deny.
+ *
  * Returns `true` on success, `false` on failure (including when the circuit
  * breaker is open after a rate-limit storm).
  *
@@ -60,28 +102,84 @@ export async function sendApprovalRequest(
   breaker: CircuitBreaker = telegramCircuitBreaker,
 ): Promise<boolean> {
   const lines: string[] = [];
+
+  // Unverified agent warning — prepended when identity cannot be confirmed.
   if (opts.verified === false) {
+    const escapedId = escapeMarkdownV2(opts.agentId);
     lines.push(
-      `\u26A0\uFE0F *UNVERIFIED AGENT* \u2014 the identity claim "${opts.agentId}" could not be verified. Treat with caution.`,
+      `\u26A0\uFE0F *UNVERIFIED AGENT* \u2014 the identity claim "${escapedId}" could not be verified\\. Treat with caution\\.`,
       '',
     );
   }
+
+  // Header
+  lines.push(`\uD83D\uDEA8 *HITL Approval Request*`, '');
+
+  // Core fields block
   lines.push(
-    `\u{1F6A8} *HITL Approval Request* \u2014 \`${opts.token}\``,
-    '',
-    `*Tool:* \`${opts.toolName}\``,
-    `*Agent:* \`${opts.agentId}\``,
-    `*Policy:* ${opts.policyName}`,
-    `*Expires in:* ${opts.timeoutSeconds}s`,
+    `*Tool:* \`${escapeCodeSpan(opts.toolName)}\``,
+    `*Agent:* \`${escapeCodeSpan(opts.agentId)}\``,
+    `*Policy:* ${escapeMarkdownV2(opts.policyName)}`,
   );
-  if (opts.action_class) lines.push(`\u{1F510} *Action Class:* \`${opts.action_class}\``);
-  if (opts.target) lines.push(`\u{1F3AF} *Target:* \`${opts.target}\``);
-  if (opts.summary) lines.push(`\u{1F4CB} *Summary:* ${opts.summary}`);
-  if (opts.expires_at) lines.push(`\u23F1 *Expires at:* ${opts.expires_at}`);
-  lines.push(`\u{1F511} *Approval ID:* \`${opts.token}\``);
-  const alwaysClause = opts.showApproveAlways ? ` or \`/approve_always ${opts.token}\`` : '';
-  lines.push('', `Reply with:`, `\`/approve ${opts.token}\`${alwaysClause} or \`/deny ${opts.token}\``);
+  if (opts.riskLevel) {
+    lines.push(`*Risk:* ${escapeMarkdownV2(opts.riskLevel)}`);
+  }
+  lines.push(`*Expires in:* ${opts.timeoutSeconds}s`);
+
+  // Optional action class and target
+  if (opts.action_class) {
+    lines.push(`\uD83D\uDD10 *Action Class:* \`${escapeCodeSpan(opts.action_class)}\``);
+  }
+  if (opts.target) {
+    lines.push(`\uD83C\uDFAF *Target:* \`${escapeCodeSpan(opts.target)}\``);
+  }
+
+  // Optional summary (legacy field)
+  if (opts.summary) {
+    lines.push(``, `\uD83D\uDCCB *Summary:* ${escapeMarkdownV2(opts.summary)}`);
+  }
+
+  // Command explanation from command explainer (truncated at 500 chars)
+  if (opts.explanation) {
+    const truncated = truncateCommand(opts.explanation);
+    lines.push(``, `\uD83D\uDCCB *Explanation:*`, escapeMarkdownV2(truncated));
+  }
+
+  // Effects bullet list
+  if (opts.effects && opts.effects.length > 0) {
+    lines.push(``, `*Effects:*`);
+    for (const effect of opts.effects) {
+      lines.push(`\u2022 ${escapeMarkdownV2(effect)}`);
+    }
+  }
+
+  // Warnings bullet list
+  if (opts.warnings && opts.warnings.length > 0) {
+    lines.push(``, `\u26A0\uFE0F *Warnings:*`);
+    for (const warning of opts.warnings) {
+      lines.push(`\u2022 ${escapeMarkdownV2(warning)}`);
+    }
+  }
+
+  // Footer: optional expiry and approval ID
+  lines.push('');
+  if (opts.expires_at) {
+    lines.push(`\u23F1 *Expires at:* ${escapeMarkdownV2(opts.expires_at)}`);
+  }
+  lines.push(`\uD83D\uDD11 *Approval ID:* \`${escapeCodeSpan(opts.token)}\``);
+
   const text = lines.join('\n');
+
+  // Inline keyboard — Approve Once, (optional) Approve Always, Deny.
+  const showApproveAlways = opts.showApproveAlways !== false;
+  const row: Array<{ text: string; callback_data: string }> = [
+    { text: '\u2705 Approve Once', callback_data: `approve:${opts.token}` },
+  ];
+  if (showApproveAlways) {
+    row.push({ text: '\uD83D\uDD01 Approve Always', callback_data: `approve_always:${opts.token}` });
+  }
+  row.push({ text: '\u274C Deny', callback_data: `deny:${opts.token}` });
+  const reply_markup = { inline_keyboard: [row] };
 
   try {
     return await withRetry(
@@ -89,7 +187,12 @@ export async function sendApprovalRequest(
         fetch(`${TELEGRAM_API}/bot${config.botToken}/sendMessage`, {
           method: 'POST',
           headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ chat_id: config.chatId, text, parse_mode: 'Markdown' }),
+          body: JSON.stringify({
+            chat_id: config.chatId,
+            text,
+            parse_mode: 'MarkdownV2',
+            reply_markup,
+          }),
         }),
       async (res) => {
         if (!res.ok) {
@@ -115,7 +218,7 @@ export async function sendConfirmation(
   opts: { token: string; decision: string; toolName: string },
 ): Promise<void> {
   const emoji = opts.decision === 'approved' ? '\u2705' : '\u274C';
-  const text = `${emoji} Action \`${opts.token}\` — *${opts.decision.toUpperCase()}*\nTool: \`${opts.toolName}\``;
+  const text = `${emoji} Action \`${escapeCodeSpan(opts.token)}\` \u2014 *${opts.decision.toUpperCase()}*\nTool: \`${escapeCodeSpan(opts.toolName)}\``;
 
   try {
     await fetch(`${TELEGRAM_API}/bot${config.botToken}/sendMessage`, {
@@ -124,7 +227,7 @@ export async function sendConfirmation(
       body: JSON.stringify({
         chat_id: config.chatId,
         text,
-        parse_mode: 'Markdown',
+        parse_mode: 'MarkdownV2',
       }),
     });
   } catch {
@@ -139,11 +242,16 @@ export type TelegramCommand = 'approve' | 'approve_always' | 'deny';
 // approve_always must appear before approve in the alternation so it matches first.
 const COMMAND_RE = /^\/(approve_always|approve|deny)\s+([\w.:-]{6,128})$/;
 
+// Same token format but triggered by inline keyboard callback_data ("command:TOKEN").
+const CALLBACK_DATA_RE = /^(approve_always|approve|deny):([\w.:-]{6,128})$/;
+
 /**
  * Long-polling listener for Telegram bot updates.
  *
- * Parses `/approve TOKEN` and `/deny TOKEN` commands from incoming messages
- * and forwards them to the provided callback.
+ * Handles both text commands (`/approve TOKEN`, `/deny TOKEN`,
+ * `/approve_always TOKEN`) and inline keyboard button clicks (via
+ * `callback_query` updates). Callback queries are answered immediately so
+ * Telegram removes the loading indicator on the button.
  */
 export class TelegramListener {
   private running = false;
@@ -202,6 +310,7 @@ export class TelegramListener {
           result?: Array<{
             update_id: number;
             message?: { text?: string; chat?: { id: number } };
+            callback_query?: { id: string; data?: string };
           }>;
         };
 
@@ -212,6 +321,23 @@ export class TelegramListener {
 
         for (const update of body.result) {
           this.offset = update.update_id + 1;
+
+          // Handle inline keyboard button clicks (callback_query).
+          if (update.callback_query) {
+            const { id: queryId, data } = update.callback_query;
+            if (data) {
+              const match = CALLBACK_DATA_RE.exec(data);
+              if (match) {
+                const command = match[1] as TelegramCommand;
+                const token = match[2]!;
+                void this.answerCallbackQuery(queryId);
+                this.onCommand(command, token);
+              }
+            }
+            continue;
+          }
+
+          // Handle text commands (/approve TOKEN, /deny TOKEN, /approve_always TOKEN).
           const text = update.message?.text?.trim();
           if (!text) continue;
 
@@ -228,6 +354,22 @@ export class TelegramListener {
         console.error('[hitl-telegram] poll error, retrying in 5s:', err);
         await this.delay(RETRY_DELAY_MS);
       }
+    }
+  }
+
+  /**
+   * Answers a Telegram callback query to dismiss the button loading indicator.
+   * Fire-and-forget — failure here does not affect the approval flow.
+   */
+  private async answerCallbackQuery(queryId: string): Promise<void> {
+    try {
+      await fetch(`${TELEGRAM_API}/bot${this.botToken}/answerCallbackQuery`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ callback_query_id: queryId }),
+      });
+    } catch {
+      // Best-effort — don't fail the poll loop.
     }
   }
 

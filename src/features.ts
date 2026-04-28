@@ -13,8 +13,8 @@
 export interface FeatureFlags {
   /**
    * When true, the 🔁 "Approve Always" button is shown in Slack approval
-   * messages and operators can create session-scoped auto-permits by
-   * clicking it.
+   * messages and Telegram inline keyboards, and operators can create
+   * session-scoped auto-permits by clicking it.
    *
    * Set `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` to disable. Existing
    * session auto-permits created before the flag was set continue to be

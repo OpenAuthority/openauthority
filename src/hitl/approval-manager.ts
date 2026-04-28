@@ -139,10 +139,10 @@ export class ApprovalManager {
   /**
    * Tracks session-scoped auto-approvals keyed by `channelId:action_class`.
    *
-   * When an operator clicks 🔁 "Approve Always" in a Slack message, the
-   * corresponding key is added here so future requests of the same action
-   * class from the same channel are auto-approved without further HITL
-   * prompts.
+   * When an operator clicks 🔁 "Approve Always" in a Slack message or a
+   * Telegram inline keyboard, the corresponding key is added here so future
+   * requests of the same action class from the same channel are auto-approved
+   * without further HITL prompts.
    *
    * In-memory only — cleared on process restart.
    */
@@ -296,7 +296,8 @@ export class ApprovalManager {
    * action class. Once registered, `isSessionAutoApproved()` returns true
    * for that `channelId:action_class` pair until the process restarts.
    *
-   * Called when an operator clicks 🔁 "Approve Always" in a Slack message.
+   * Called by: Slack button clicks, Telegram inline buttons, and the
+   * Telegram `/approve_always TOKEN` text command.
    */
   addSessionAutoApproval(channelId: string, actionClass: string): void {
     this.sessionAutoApprovals.add(`${channelId}:${actionClass}`);
