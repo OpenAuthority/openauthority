@@ -9,6 +9,13 @@ export { resolveSlackConfig } from './config.js';
 
 const SLACK_API = 'https://slack.com/api';
 const TIMESTAMP_MAX_AGE_SECONDS = 300; // 5 minutes
+/** Maximum display length for values embedded in Block Kit fields. */
+const MAX_DISPLAY_LENGTH = 100;
+
+/** Truncates a string to at most `max` characters, appending … if cut. */
+function truncate(s: string, max = MAX_DISPLAY_LENGTH): string {
+  return s.length > max ? s.slice(0, max - 1) + '\u2026' : s;
+}
 
 /**
  * Shared circuit breaker for outbound Slack API calls (chat.postMessage / chat.update).
@@ -69,27 +76,75 @@ export async function sendSlackApprovalRequest(
   opts: SlackSendApprovalOpts,
   breaker: CircuitBreaker = slackCircuitBreaker,
 ): Promise<SlackSendApprovalResult> {
-  const sectionLines: string[] = [];
-  if (opts.verified === false) {
-    sectionLines.push(
-      `:warning: *UNVERIFIED AGENT* — the identity claim "${opts.agentId}" could not be verified. Treat with caution.`,
-      '',
-    );
-  }
-  sectionLines.push(
-    `:rotating_light: *HITL Approval Request* — \`${opts.token}\``,
-    '',
-    `*Tool:* \`${opts.toolName}\``,
-    `*Agent:* \`${opts.agentId}\``,
-    `*Policy:* ${opts.policyName}`,
-    `*Expires in:* ${opts.timeoutSeconds}s`,
-  );
-  if (opts.action_class) sectionLines.push(`:closed_lock_with_key: *Action Class:* \`${opts.action_class}\``);
-  if (opts.target) sectionLines.push(`:dart: *Target:* \`${opts.target}\``);
-  if (opts.summary) sectionLines.push(`:clipboard: *Summary:* ${opts.summary}`);
-  if (opts.expires_at) sectionLines.push(`:stopwatch: *Expires at:* ${opts.expires_at}`);
-  sectionLines.push(`:key: *Approval ID:* \`${opts.token}\``);
+  const blocks: object[] = [];
 
+  // Unverified agent warning — prepended when identity cannot be confirmed.
+  if (opts.verified === false) {
+    blocks.push({
+      type: 'section',
+      text: {
+        type: 'mrkdwn',
+        text: `:warning: *UNVERIFIED AGENT* — the identity claim "${truncate(opts.agentId)}" could not be verified. Treat with caution.`,
+      },
+    });
+  }
+
+  // Header — mirrors Telegram's "🚨 HITL Approval Request" line.
+  blocks.push({
+    type: 'header',
+    text: { type: 'plain_text', text: '\uD83D\uDEA8 HITL Approval Request' },
+  });
+
+  // Core fields: Tool, Agent, Policy, Expires in — rendered as a 2-column grid.
+  blocks.push({
+    type: 'section',
+    fields: [
+      { type: 'mrkdwn', text: `*Tool:*\n\`${truncate(opts.toolName)}\`` },
+      { type: 'mrkdwn', text: `*Agent:*\n\`${truncate(opts.agentId)}\`` },
+      { type: 'mrkdwn', text: `*Policy:*\n${truncate(opts.policyName)}` },
+      { type: 'mrkdwn', text: `*Expires in:*\n${opts.timeoutSeconds}s` },
+    ],
+  });
+
+  // Optional fields: Action Class and Target.
+  const optionalFields: object[] = [];
+  if (opts.action_class) {
+    optionalFields.push({
+      type: 'mrkdwn',
+      text: `:closed_lock_with_key: *Action Class:*\n\`${truncate(opts.action_class)}\``,
+    });
+  }
+  if (opts.target) {
+    optionalFields.push({
+      type: 'mrkdwn',
+      text: `:dart: *Target:*\n\`${truncate(opts.target)}\``,
+    });
+  }
+  if (optionalFields.length > 0) {
+    blocks.push({ type: 'section', fields: optionalFields });
+  }
+
+  // Optional summary — full-width section to allow longer text.
+  if (opts.summary) {
+    blocks.push({
+      type: 'section',
+      text: { type: 'mrkdwn', text: `:clipboard: *Summary:* ${truncate(opts.summary, 200)}` },
+    });
+  }
+
+  // Context footer: Approval ID and optional expiry timestamp.
+  const contextElements: object[] = [
+    { type: 'mrkdwn', text: `:key: *Approval ID:* \`${opts.token}\`` },
+  ];
+  if (opts.expires_at) {
+    contextElements.push({ type: 'mrkdwn', text: `:stopwatch: *Expires at:* ${opts.expires_at}` });
+  }
+  blocks.push({ type: 'context', elements: contextElements });
+
+  // Visual separator before action buttons.
+  blocks.push({ type: 'divider' });
+
+  // Action buttons — Approve, (optional) Approve Always, Deny.
   const showApproveAlways = opts.showApproveAlways !== false;
   const actionElements: object[] = [
     {
@@ -115,21 +170,11 @@ export async function sendSlackApprovalRequest(
     action_id: 'hitl_deny',
     value: `deny:${opts.token}`,
   });
-
-  const blocks = [
-    {
-      type: 'section',
-      text: {
-        type: 'mrkdwn',
-        text: sectionLines.join('\n'),
-      },
-    },
-    {
-      type: 'actions',
-      block_id: `hitl_${opts.token}`,
-      elements: actionElements,
-    },
-  ];
+  blocks.push({
+    type: 'actions',
+    block_id: `hitl_${opts.token}`,
+    elements: actionElements,
+  });
 
   try {
     return await withRetry<SlackSendApprovalResult>(
