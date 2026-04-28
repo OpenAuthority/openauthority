@@ -1,0 +1,371 @@
+/**
+ * Command explainer pattern rules.
+ *
+ * Produces structured explanations (summary, effects, warnings) for common
+ * developer commands observed in agent audit logs.  Each rule is matched
+ * against the raw command string; when a rule fires, a context-aware
+ * summary and any applicable warnings are returned to the caller.
+ *
+ * Detector functions always receive `args` where `args[0]` is the
+ * subcommand token.  All detectors call `args.slice(1)` internally to
+ * obtain the flag/argument list.
+ *
+ * @module
+ */
+
+// ── Public types ───────────────────────────────────────────────────────────────
+
+/** Structured explanation produced by {@link explain}. */
+export interface ExplainResult {
+  /** One-line sentence-case summary of what the command does. */
+  summary: string;
+  /** Observable side-effects (filesystem, network, registry, etc.). */
+  effects: string[];
+  /** Security or operational warnings applicable to this invocation. */
+  warnings: string[];
+}
+
+// ── Private helpers ────────────────────────────────────────────────────────────
+
+/** Splits a shell-like command string into tokens, respecting quoted groups. */
+function tokenize(command: string): string[] {
+  const tokens: string[] = [];
+  let current = '';
+  let inDouble = false;
+  let inSingle = false;
+
+  for (const ch of command) {
+    if (ch === '"' && !inSingle) { inDouble = !inDouble; continue; }
+    if (ch === "'" && !inDouble) { inSingle = !inSingle; continue; }
+    if (ch === ' ' && !inDouble && !inSingle) {
+      if (current.length > 0) { tokens.push(current); current = ''; }
+      continue;
+    }
+    current += ch;
+  }
+  if (current.length > 0) tokens.push(current);
+  return tokens;
+}
+
+/** Returns tokens that do not start with `-` (positional arguments). */
+function positionalArgs(tokens: string[]): string[] {
+  return tokens.filter(t => !t.startsWith('-'));
+}
+
+// ── Git detectors ──────────────────────────────────────────────────────────────
+
+function gitCommit(args: string[]): ExplainResult {
+  const flags = args.slice(1);
+  const warnings: string[] = [];
+  if (flags.includes('--amend')) {
+    warnings.push('--amend rewrites history — avoid on shared branches');
+  }
+  return {
+    summary: 'Commits staged changes to the local repository',
+    effects: ['Writes to .git'],
+    warnings,
+  };
+}
+
+function gitPush(args: string[]): ExplainResult {
+  const flags = args.slice(1);
+  const warnings: string[] = [];
+  if (flags.includes('--force') || flags.includes('-f')) {
+    warnings.push('Force push rewrites remote history');
+  }
+  return {
+    summary: 'Pushes local commits to the remote repository',
+    effects: ['Modifies remote branch'],
+    warnings,
+  };
+}
+
+function gitClone(args: string[]): ExplainResult {
+  const rest = args.slice(1);
+  const pos = positionalArgs(rest);
+  const url = pos[0] ?? '<url>';
+  return {
+    summary: `Clones repository ${url} to a local directory`,
+    effects: ['Creates a new directory'],
+    warnings: [],
+  };
+}
+
+function gitReset(args: string[]): ExplainResult {
+  const flags = args.slice(1);
+  const warnings: string[] = [];
+  if (flags.includes('--hard')) {
+    warnings.push('--hard discards all local uncommitted changes');
+  }
+  return {
+    summary: 'Resets the current HEAD to the specified state',
+    effects: ['Modifies repository state'],
+    warnings,
+  };
+}
+
+function gitMerge(args: string[]): ExplainResult {
+  const rest = args.slice(1);
+  const pos = positionalArgs(rest);
+  const branch = pos[0] ?? '<branch>';
+  return {
+    summary: `Merges ${branch} into the current branch`,
+    effects: ['Modifies current branch'],
+    warnings: [],
+  };
+}
+
+function gitExplain(args: string[]): ExplainResult {
+  const sub = args[0];
+  switch (sub) {
+    case 'commit':   return gitCommit(args);
+    case 'push':     return gitPush(args);
+    case 'pull':     return { summary: 'Fetches and merges changes from the remote repository', effects: ['Modifies local branch'], warnings: [] };
+    case 'clone':    return gitClone(args);
+    case 'status':   return { summary: 'Shows the working tree status', effects: [], warnings: [] };
+    case 'diff':     return { summary: 'Shows changes between commits, branches, or the working tree', effects: [], warnings: [] };
+    case 'log':      return { summary: 'Shows the commit log', effects: [], warnings: [] };
+    case 'merge':    return gitMerge(args);
+    case 'reset':    return gitReset(args);
+    case 'checkout': return { summary: 'Switches branches or restores working tree files', effects: ['Modifies working tree'], warnings: [] };
+    case 'add':      return { summary: 'Stages changes for the next commit', effects: ['Modifies staging area'], warnings: [] };
+    case 'stash':    return { summary: 'Stashes local modifications away', effects: ['Writes to .git/refs/stash'], warnings: [] };
+    default:         return { summary: `Runs git ${sub ?? ''}`.trim(), effects: [], warnings: [] };
+  }
+}
+
+// ── npm detectors ──────────────────────────────────────────────────────────────
+
+function npmInstall(args: string[]): ExplainResult {
+  const rest = args.slice(1);
+  const pkgs = positionalArgs(rest);
+  const summary = pkgs.length > 0
+    ? `Installs node packages: ${pkgs.join(', ')}`
+    : 'Installs node dependencies';
+  return {
+    summary,
+    effects: ['Modifies node_modules', 'Modifies package-lock.json'],
+    warnings: [],
+  };
+}
+
+function npmRun(args: string[]): ExplainResult {
+  const rest = args.slice(1);
+  const script = positionalArgs(rest)[0] ?? '<script>';
+  return {
+    summary: `Runs the ${script} npm script`,
+    effects: [],
+    warnings: ['Executes arbitrary shell commands defined in package.json'],
+  };
+}
+
+function npmExplain(args: string[]): ExplainResult {
+  const sub = args[0];
+  switch (sub) {
+    case 'install':
+    case 'i':
+      return npmInstall(args);
+    case 'run':
+    case 'run-script':
+      return npmRun(args);
+    case 'publish':
+      return {
+        summary: 'Publishes the package to the npm registry',
+        effects: ['Creates a remote package entry'],
+        warnings: ['Publishes package to npm — version cannot be unpublished'],
+      };
+    case 'uninstall':
+    case 'rm':
+    case 'remove':
+      return {
+        summary: 'Uninstalls node packages',
+        effects: ['Modifies node_modules', 'Modifies package-lock.json'],
+        warnings: [],
+      };
+    case 'ci':
+      return {
+        summary: 'Installs a clean dependency tree from package-lock.json',
+        effects: ['Replaces node_modules'],
+        warnings: [],
+      };
+    case 'audit':
+      return {
+        summary: 'Audits installed packages for known vulnerabilities',
+        effects: [],
+        warnings: [],
+      };
+    default:
+      return { summary: `Runs npm ${sub ?? ''}`.trim(), effects: [], warnings: [] };
+  }
+}
+
+// ── pip detectors ──────────────────────────────────────────────────────────────
+
+function pipInstall(args: string[]): ExplainResult {
+  // args[0] = 'install', args.slice(1) = flags + package names
+  const rest = args.slice(1);
+  const pos = positionalArgs(rest);
+
+  // Check for -r / --requirement flag (requirements file)
+  const reqIdx = rest.findIndex(t => t === '-r' || t === '--requirement');
+  if (reqIdx !== -1) {
+    const reqFile = rest[reqIdx + 1] ?? '<file>';
+    return {
+      summary: `Installs Python packages from ${reqFile}`,
+      effects: ['Installs packages into the Python environment'],
+      warnings: [],
+    };
+  }
+
+  const summary = pos.length > 0
+    ? `Installs Python packages: ${pos.join(', ')}`
+    : 'Installs Python packages';
+  return {
+    summary,
+    effects: ['Installs packages into the Python environment'],
+    warnings: [],
+  };
+}
+
+// ── pytest detectors ───────────────────────────────────────────────────────────
+
+function pytestExplain(args: string[]): ExplainResult {
+  // args does not include 'pytest' binary — these are the remaining tokens
+  const pos = positionalArgs(args);
+  const summary = pos.length > 0
+    ? `Runs tests in ${pos.join(', ')}`
+    : 'Runs the test suite';
+  return { summary, effects: [], warnings: [] };
+}
+
+// ── Docker detectors ───────────────────────────────────────────────────────────
+
+/**
+ * Checks whether a `-v` / `--volume` flag value mounts the host root
+ * filesystem into the container (e.g. `/:/host` or `/:any`).
+ */
+function hasRootVolumeMount(rest: string[]): boolean {
+  for (let i = 0; i < rest.length; i++) {
+    const tok = rest[i]!;
+    // Handle both `-v /:/host` (two tokens) and `--volume=/:/host` (one token)
+    let mountSpec: string | undefined;
+    if ((tok === '-v' || tok === '--volume') && i + 1 < rest.length) {
+      mountSpec = rest[i + 1];
+    } else if (tok.startsWith('--volume=')) {
+      mountSpec = tok.slice('--volume='.length);
+    }
+    if (mountSpec !== undefined && /^\/:/.test(mountSpec)) {
+      return true;
+    }
+  }
+  return false;
+}
+
+function dockerRunExplain(args: string[]): ExplainResult {
+  // args[0] = 'run', args.slice(1) = options + image + [command…]
+  const rest = args.slice(1);
+  const image = positionalArgs(rest)[0] ?? '<image>';
+  const warnings: string[] = [];
+
+  if (hasRootVolumeMount(rest)) {
+    warnings.push('Mounts host root filesystem into the container (full disk access)');
+  }
+  if (rest.includes('--privileged')) {
+    warnings.push('Grants extended kernel capabilities to the container (privileged mode)');
+  }
+
+  return {
+    summary: `Runs a container from image ${image}`,
+    effects: ['Starts a container process'],
+    warnings,
+  };
+}
+
+function dockerBuildExplain(args: string[]): ExplainResult {
+  // args[0] = 'build', args.slice(1) = options + context
+  const rest = args.slice(1);
+  const context = positionalArgs(rest)[0] ?? '.';
+  return {
+    summary: `Builds a Docker image from context ${context}`,
+    effects: ['Writes image layers to the local Docker daemon'],
+    warnings: [],
+  };
+}
+
+function dockerExecExplain(args: string[]): ExplainResult {
+  // args[0] = 'exec', args.slice(1) = options + container + command…
+  const rest = args.slice(1);
+  const container = positionalArgs(rest)[0] ?? '<container>';
+  const effects: string[] = ['Runs a process inside a running container'];
+
+  // Detect `bash -c` / `sh -c` anywhere in the token list after exec.
+  // Check the raw token list (not positional-only) so the `-c` flag is visible.
+  for (let i = 0; i < rest.length - 1; i++) {
+    const tok = rest[i]!;
+    if ((tok === 'bash' || tok === 'sh') && rest[i + 1] === '-c') {
+      effects.push('Executes an inline shell script inside the container');
+      break;
+    }
+  }
+
+  return {
+    summary: `Executes a command in container ${container}`,
+    effects,
+    warnings: ['Provides direct access to a running container environment'],
+  };
+}
+
+function dockerExplain(args: string[]): ExplainResult {
+  const sub = args[0];
+  switch (sub) {
+    case 'run':   return dockerRunExplain(args);
+    case 'build': return dockerBuildExplain(args);
+    case 'exec':  return dockerExecExplain(args);
+    default:      return { summary: `Runs docker ${sub ?? ''}`.trim(), effects: [], warnings: [] };
+  }
+}
+
+// ── Rule table ─────────────────────────────────────────────────────────────────
+
+interface CommandRule {
+  /** Tested against the raw command string to select this rule. */
+  match: RegExp;
+  /** Receives all tokens after the binary (args[0] = subcommand when present). */
+  explain: (args: string[]) => ExplainResult;
+}
+
+const rules: CommandRule[] = [
+  { match: /^git\b/,        explain: gitExplain },
+  { match: /^npm\b/,        explain: npmExplain },
+  { match: /^pip3?\s+install\b/, explain: pipInstall },
+  { match: /^pytest\b/,     explain: (args) => pytestExplain(args) },
+  { match: /^docker\b/,     explain: dockerExplain },
+];
+
+// ── Public API ─────────────────────────────────────────────────────────────────
+
+/**
+ * Returns a structured explanation for `command`.
+ *
+ * When no rule matches the command a generic fallback summary is returned
+ * so callers always receive a well-formed {@link ExplainResult}.
+ *
+ * @param command Raw command string (may include flags and arguments).
+ */
+export function explain(command: string): ExplainResult {
+  const tokens = tokenize(command.trim());
+  if (tokens.length === 0) {
+    return { summary: 'Runs an unrecognised command', effects: [], warnings: [] };
+  }
+
+  const binary = tokens[0]!;
+  const args = tokens.slice(1); // args[0] = subcommand when present
+
+  for (const rule of rules) {
+    if (rule.match.test(command)) {
+      return rule.explain(args);
+    }
+  }
+
+  return { summary: `Runs ${binary}`, effects: [], warnings: [] };
+}
