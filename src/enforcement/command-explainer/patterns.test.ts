@@ -25,6 +25,9 @@
  *                          (ping, traceroute, nslookup, dig, netstat, ss, nmap)
  *   TC-CE-168 – TC-CE-181: scheduling / persistence patterns
  *                          (crontab, at, batch, atq, atrm)
+ *   TC-CE-182 – TC-CE-194: network-transfer patterns
+ *                          (rsync remote-flagging, scp remote-flagging,
+ *                          sftp interactive vs batch)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -2214,5 +2217,149 @@ describe('TC-CE-181: crontab — fallback when no flag is given', () => {
     const result = explain('crontab');
     expect(result.summary).toMatch(/crontab/i);
     expect(result.warnings).toHaveLength(0);
+  });
+});
+
+// ── TC-CE-182 – TC-CE-194 : network-transfer ─────────────────────────────────
+
+describe('TC-CE-182: rsync — local-only invocation, no remote warning', () => {
+  it('emits no remote warning when both endpoints are local paths', () => {
+    const result = explain('rsync -a /var/data/ /backup/data/');
+    expect(hasWarningMatching(result.warnings, /remote/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-183: rsync — remote destination flagged as upload', () => {
+  it('warns about uploading when destination is user@host:path', () => {
+    const result = explain('rsync -a /var/data/ alice@backup.example.com:/srv/');
+    expect(hasWarningMatching(result.warnings, /Destination.*remote|uploaded over the network/i)).toBe(true);
+  });
+
+  it('warns about uploading when destination is host:path', () => {
+    const result = explain('rsync -a /var/data/ backup.example.com:/srv/');
+    expect(hasWarningMatching(result.warnings, /Destination.*remote|uploaded over the network/i)).toBe(true);
+  });
+
+  it('warns about uploading when destination is rsync://...', () => {
+    const result = explain('rsync -a /var/data/ rsync://backup.example.com/srv');
+    expect(hasWarningMatching(result.warnings, /Destination.*remote|uploaded over the network/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-184: rsync — remote source flagged as download', () => {
+  it('warns about pulling when source is user@host:path and destination is local', () => {
+    const result = explain('rsync -a alice@db.example.com:/var/db/ /local/restore/');
+    expect(hasWarningMatching(result.warnings, /Source.*remote|pulling data/i)).toBe(true);
+  });
+
+  it('does not emit the source warning when both endpoints are remote', () => {
+    const result = explain('rsync -a alice@a.example.com:/data alice@b.example.com:/dest');
+    // Both ends remote — destination warning fires; source warning suppressed
+    // to avoid double-flagging a single transfer.
+    expect(hasWarningMatching(result.warnings, /Source.*remote|pulling data/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-185: rsync --delete — keeps the existing delete warning', () => {
+  it('still warns about --delete alongside any remote warning', () => {
+    const result = explain('rsync -a --delete /var/data/ alice@host:/srv/');
+    expect(hasWarningMatching(result.warnings, /--delete|removes files at destination/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-186: rsync — Windows-style local paths are not flagged as remote', () => {
+  it('does not treat C:foo as a remote endpoint', () => {
+    const result = explain('rsync -a C:foo /backup/');
+    expect(hasWarningMatching(result.warnings, /remote/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-187: scp — local-only invocation, no remote warning', () => {
+  it('emits no remote warning when both endpoints are local paths', () => {
+    const result = explain('scp /etc/hosts /backup/hosts');
+    expect(hasWarningMatching(result.warnings, /remote/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-188: scp — remote destination flagged as upload', () => {
+  it('warns about uploading when destination is user@host:path', () => {
+    const result = explain('scp /etc/hosts alice@host.example.com:/etc/hosts.bak');
+    expect(hasWarningMatching(result.warnings, /Destination.*remote|uploaded over the network/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-189: scp — remote source flagged as download', () => {
+  it('warns about pulling when source is remote and destination is local', () => {
+    const result = explain('scp alice@host.example.com:/etc/hosts /tmp/hosts');
+    expect(hasWarningMatching(result.warnings, /Source.*remote|pulling data/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-190: sftp — interactive session warning', () => {
+  it('summarises a bare `sftp host` invocation as opening an interactive session', () => {
+    const result = explain('sftp alice@host.example.com');
+    expect(result.summary).toMatch(/sftp session|opens an sftp/i);
+    expect(result.summary).toContain('alice@host.example.com');
+  });
+
+  it('warns that the explainer cannot inspect interactive transfers', () => {
+    const result = explain('sftp alice@host.example.com');
+    expect(hasWarningMatching(result.warnings, /interactive|cannot be inspected/i)).toBe(true);
+  });
+
+  it('always warns that files cross the network', () => {
+    const result = explain('sftp alice@host.example.com');
+    expect(hasWarningMatching(result.warnings, /cross the network|either direction/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-191: sftp -b — batch-file mode summary', () => {
+  it('reports the batch file in the summary', () => {
+    const result = explain('sftp -b /tmp/transfer.sftp alice@host.example.com');
+    expect(result.summary).toContain('/tmp/transfer.sftp');
+    expect(result.summary).toContain('alice@host.example.com');
+  });
+
+  it('does not raise the interactive warning for batch-file mode', () => {
+    const result = explain('sftp -b /tmp/transfer.sftp alice@host.example.com');
+    expect(hasWarningMatching(result.warnings, /interactive.*cannot be inspected/i)).toBe(false);
+  });
+
+  it('still warns that files cross the network', () => {
+    const result = explain('sftp -b /tmp/transfer.sftp alice@host.example.com');
+    expect(hasWarningMatching(result.warnings, /cross the network|either direction/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-192: sftp -P <port> — port flag does not become the host', () => {
+  it('reports the actual host, not the port number', () => {
+    const result = explain('sftp -P 2222 alice@host.example.com');
+    expect(result.summary).toContain('alice@host.example.com');
+    expect(result.summary).not.toMatch(/sftp session to 2222/);
+  });
+});
+
+describe('TC-CE-193: sftp — fallback when no host is given', () => {
+  it('falls back gracefully with a placeholder host', () => {
+    const result = explain('sftp');
+    expect(result.summary).toMatch(/<host>/);
+  });
+});
+
+describe('TC-CE-194: rule routing — sftp vs ssh vs scp', () => {
+  it('"sftp host" routes to sftpExplain (not ssh)', () => {
+    const result = explain('sftp alice@host');
+    expect(result.summary).toMatch(/sftp/i);
+    expect(result.summary).not.toMatch(/secure shell/i);
+  });
+
+  it('"scp src dst" routes to scpExplain (not sftp)', () => {
+    const result = explain('scp /etc/hosts alice@host:/tmp/');
+    expect(result.summary).toMatch(/securely copies/i);
+  });
+
+  it('"ssh host" routes to sshExplain (not sftp/scp)', () => {
+    const result = explain('ssh alice@host');
+    expect(result.summary).toMatch(/secure shell/i);
   });
 });

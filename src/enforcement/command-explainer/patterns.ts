@@ -1092,6 +1092,25 @@ function mkdirExplain(args: string[]): ExplainResult {
   };
 }
 
+/**
+ * Heuristic — token looks like a remote endpoint for rsync / scp / sftp.
+ *
+ * Matches `user@host:path`, `host:path`, `rsync://...`, and `sftp://...`.
+ * Plain local paths (`/foo`, `./foo`, `foo/bar`) and Windows-style paths
+ * (`C:\...` — already handled because `:` only counts when followed by a
+ * non-backslash) do not match.
+ */
+function looksRemoteTransferTarget(token: string): boolean {
+  if (token.length === 0) return false;
+  if (/^rsync:\/\//i.test(token) || /^sftp:\/\//i.test(token)) return true;
+  // user@host:path or host:path. Reject Windows drive letters by requiring
+  // either a user@ prefix, or at least one dot in the host portion (so plain
+  // colon-separated tokens like `C:foo` don't match).
+  if (/^[A-Za-z0-9._-]+@[A-Za-z0-9._-]+:/.test(token)) return true;
+  if (/^[A-Za-z0-9_-]+\.[A-Za-z0-9._-]+:/.test(token)) return true;
+  return false;
+}
+
 function rsyncExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const src = pos[0] ?? '<source>';
@@ -1099,6 +1118,16 @@ function rsyncExplain(args: string[]): ExplainResult {
   const isDelete = args.includes('--delete');
   const warnings: string[] = [];
   if (isDelete) warnings.push('--delete removes files at destination absent in source');
+
+  const remoteSrc = looksRemoteTransferTarget(src);
+  const remoteDst = looksRemoteTransferTarget(dst);
+  if (remoteDst) {
+    warnings.push(`Destination ${dst} is remote — local data is being uploaded over the network`);
+  }
+  if (remoteSrc && !remoteDst) {
+    warnings.push(`Source ${src} is remote — pulling data into the local filesystem`);
+  }
+
   return {
     summary: `Syncs files from ${src} to ${dst}`,
     effects: ['Modifies the destination filesystem'],
@@ -1147,10 +1176,58 @@ function scpExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const src = pos[0] ?? '<source>';
   const dst = pos.length > 1 ? pos[pos.length - 1]! : '<destination>';
+
+  const warnings: string[] = [];
+  const remoteSrc = looksRemoteTransferTarget(src);
+  const remoteDst = looksRemoteTransferTarget(dst);
+  if (remoteDst) {
+    warnings.push(`Destination ${dst} is remote — local data is being uploaded over the network`);
+  }
+  if (remoteSrc && !remoteDst) {
+    warnings.push(`Source ${src} is remote — pulling data into the local filesystem`);
+  }
+
   return {
     summary: `Securely copies files from ${src} to ${dst}`,
     effects: ['Transfers files over a network connection'],
-    warnings: [],
+    warnings,
+  };
+}
+
+function sftpExplain(args: string[]): ExplainResult {
+  // `sftp [user@]host` opens an interactive session.
+  // `sftp -b <batchfile> [user@]host` runs a batch script.
+  // `sftp -P 2222 user@host` overrides port.
+  const positional = positionalArgs(args);
+  // Skip a port number that follows -P / -p.
+  const skipIdx = (() => {
+    const pIdx = args.findIndex(a => a === '-P' || a === '-p');
+    if (pIdx < 0) return -1;
+    const skip = args[pIdx + 1];
+    return positional.indexOf(skip!);
+  })();
+  const filtered = positional.filter((_, i) => i !== skipIdx);
+  const host = filtered[filtered.length - 1] ?? '<host>';
+
+  const bIdx = args.findIndex(a => a === '-b');
+  const batchFile = bIdx >= 0 ? args[bIdx + 1] : undefined;
+
+  const warnings: string[] = [
+    'Interactive or scripted file transfer — files in either direction cross the network',
+  ];
+
+  let summary: string;
+  if (batchFile !== undefined) {
+    summary = `Runs sftp batch file ${batchFile} against ${host}`;
+  } else {
+    summary = `Opens an sftp session to ${host}`;
+    warnings.push('Interactive — content of the transfer cannot be inspected by the explainer');
+  }
+
+  return {
+    summary,
+    effects: ['Establishes an SFTP connection to a remote host'],
+    warnings,
   };
 }
 
@@ -1421,6 +1498,7 @@ const rules: CommandRule[] = [
   { match: /^wget\b/,            explain: wgetExplain },
   { match: /^ssh\b/,             explain: sshExplain },
   { match: /^scp\b/,             explain: scpExplain },
+  { match: /^sftp\b/,            explain: sftpExplain },
   { match: /^(nc|netcat)\b/,     explain: ncExplain },
   // Service / host-lifecycle management
   { match: /^systemctl\b/,       explain: systemctlExplain },

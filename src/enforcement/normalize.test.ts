@@ -87,6 +87,7 @@ describe('registry coverage — each action class resolves from at least one ali
     ['ping',             'network.diagnose'],
     ['nmap',             'network.scan'],
     ['crontab',          'scheduling.persist'],
+    ['rsync',            'network.transfer'],
     ['git_log',          'vcs.read'],
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
@@ -553,6 +554,49 @@ describe('scheduling.persist aliases and defaults', () => {
   it('no intent_group on scheduling.persist', () => {
     const result = normalize_action('crontab', {});
     expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network.transfer action class — aliases, risk, HITL, intent_group
+// ---------------------------------------------------------------------------
+
+describe('network.transfer aliases and defaults', () => {
+  it('rsync → network.transfer with high risk and per_request HITL', () => {
+    const result = normalize_action('rsync', {});
+    expect(result.action_class).toBe('network.transfer');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('scp → network.transfer', () => {
+    const result = normalize_action('scp', {});
+    expect(result.action_class).toBe('network.transfer');
+  });
+
+  it('sftp → network.transfer', () => {
+    const result = normalize_action('sftp', {});
+    expect(result.action_class).toBe('network.transfer');
+  });
+
+  it('RSYNC (uppercase) → network.transfer via case-insensitive alias lookup', () => {
+    const result = normalize_action('RSYNC', {});
+    expect(result.action_class).toBe('network.transfer');
+  });
+
+  it('intent_group is data_exfiltration', () => {
+    const result = normalize_action('rsync', {});
+    expect(result.intent_group).toBe('data_exfiltration');
+  });
+
+  it('intent_group propagates from scp', () => {
+    const result = normalize_action('scp', {});
+    expect(result.intent_group).toBe('data_exfiltration');
+  });
+
+  it('intent_group propagates from sftp', () => {
+    const result = normalize_action('sftp', {});
+    expect(result.intent_group).toBe('data_exfiltration');
   });
 });
 

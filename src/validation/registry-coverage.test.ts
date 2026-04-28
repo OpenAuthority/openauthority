@@ -89,6 +89,11 @@ const COVERAGE_EXEMPT = new Set<string>([
   // typed wrapper deliberately omits interactive `crontab -e` mode; install-
   // from-file is the supported persistence path.
   ActionClass.SchedulingPersist,
+  // v1.4: typed tools for rsync/scp/sftp would constrain endpoints to a
+  // configured allowlist (similar to web.fetch's `allowed_domains`). v1.3.1
+  // ships only the registry alias + explainer + per_request HITL, with the
+  // data_exfiltration intent_group so a single rule can cover all transports.
+  ActionClass.NetworkTransfer,
 ]);
 
 // ─── Scanning helpers ──────────────────────────────────────────────────────────

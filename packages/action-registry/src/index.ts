@@ -76,6 +76,7 @@ export const ActionClass = {
   NetworkDiagnose: 'network.diagnose',
   NetworkScan: 'network.scan',
   SchedulingPersist: 'scheduling.persist',
+  NetworkTransfer: 'network.transfer',
   VcsRead: 'vcs.read',
   VcsWrite: 'vcs.write',
   VcsRemote: 'vcs.remote',
@@ -94,7 +95,7 @@ export const ActionClass = {
 export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
 
 // ---------------------------------------------------------------------------
-// Registry — 39 entries, aliases stored lowercase
+// Registry — 40 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 export const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -532,6 +533,17 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'atq',
       'atrm',
     ],
+  },
+  {
+    action_class: ActionClass.NetworkTransfer,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'rsync',
+      'scp',
+      'sftp',
+    ],
+    intent_group: 'data_exfiltration',
   },
   {
     action_class: ActionClass.VcsRead,
