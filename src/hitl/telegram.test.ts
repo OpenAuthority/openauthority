@@ -1,5 +1,5 @@
 import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
-import { resolveTelegramConfig, sendApprovalRequest, sendApproveAlwaysConfirmation, TelegramListener, escapeMarkdownV2 } from './telegram.js';
+import { resolveTelegramConfig, sendApprovalRequest, sendApproveAlwaysConfirmation, editMessageDecision, TelegramListener, escapeMarkdownV2 } from './telegram.js';
 import { CircuitBreaker } from './retry.js';
 import type { TelegramConfig } from './types.js';
 
@@ -109,10 +109,11 @@ describe('sendApprovalRequest', () => {
   });
 
   it('sends a POST to the Telegram sendMessage endpoint', async () => {
-    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true,"result":{"message_id":42}}', { status: 200 }));
 
     const result = await sendApprovalRequest(config, opts);
-    expect(result).toBe(true);
+    expect(result.ok).toBe(true);
+    expect(result.messageId).toBe(42);
 
     expect(fetch).toHaveBeenCalledOnce();
     const [url, init] = vi.mocked(fetch).mock.calls[0]!;
@@ -127,6 +128,24 @@ describe('sendApprovalRequest', () => {
     expect(body.text).toContain('agent-1'); // agentId is in a code span — hyphens are not escaped there
     expect(body.text).toContain('Email policy');
     expect(body.text).toContain('300s');
+  });
+
+  it('returns messageId from Telegram API response', async () => {
+    vi.mocked(fetch).mockResolvedValue(
+      new Response('{"ok":true,"result":{"message_id":123}}', { status: 200 }),
+    );
+
+    const result = await sendApprovalRequest(config, opts);
+    expect(result.ok).toBe(true);
+    expect(result.messageId).toBe(123);
+  });
+
+  it('returns ok:true with no messageId when result is absent', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    const result = await sendApprovalRequest(config, opts);
+    expect(result.ok).toBe(true);
+    expect(result.messageId).toBeUndefined();
   });
 
   it('uses MarkdownV2 parse mode', async () => {
@@ -370,35 +389,35 @@ describe('sendApprovalRequest', () => {
     expect(body.text).toContain('2024\\-04\\-28T10:45:00Z');
   });
 
-  it('returns false on non-2xx response', async () => {
+  it('returns ok:false on non-2xx response', async () => {
     vi.mocked(fetch).mockResolvedValue(new Response('Unauthorized', { status: 401 }));
     const result = await sendApprovalRequest(config, opts);
-    expect(result).toBe(false);
+    expect(result.ok).toBe(false);
   });
 
-  it('returns false on fetch error', async () => {
+  it('returns ok:false on fetch error', async () => {
     vi.mocked(fetch).mockRejectedValue(new Error('Network error'));
     const result = await sendApprovalRequest(config, opts);
-    expect(result).toBe(false);
+    expect(result.ok).toBe(false);
   });
 
-  it('retries on 429 and returns true when the retry succeeds', async () => {
+  it('retries on 429 and returns ok:true when the retry succeeds', async () => {
     vi.mocked(fetch)
       .mockResolvedValueOnce(new Response('', { status: 429 }))
-      .mockResolvedValueOnce(new Response('{"ok":true}', { status: 200 }));
+      .mockResolvedValueOnce(new Response('{"ok":true,"result":{"message_id":7}}', { status: 200 }));
 
     const breaker = new CircuitBreaker();
     const result = await sendApprovalRequest(config, opts, breaker);
-    expect(result).toBe(true);
+    expect(result.ok).toBe(true);
     expect(fetch).toHaveBeenCalledTimes(2);
   });
 
-  it('returns false immediately when circuit is open (no fetch)', async () => {
+  it('returns ok:false immediately when circuit is open (no fetch)', async () => {
     const breaker = new CircuitBreaker();
     breaker.trip();
 
     const result = await sendApprovalRequest(config, opts, breaker);
-    expect(result).toBe(false);
+    expect(result.ok).toBe(false);
     expect(fetch).not.toHaveBeenCalled();
   });
 });
@@ -1034,5 +1053,141 @@ describe('sendApproveAlwaysConfirmation', () => {
 
     const result = await sendApproveAlwaysConfirmation(config, opts, breaker);
     expect(result).toBe(true);
+  });
+});
+
+// ─── editMessageDecision ─────────────────────────────────────────────────────
+
+describe('editMessageDecision', () => {
+  const config = { botToken: 'test-token', chatId: '12345' };
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('sends a POST to editMessageText endpoint with approved decision', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await editMessageDecision(config, { messageId: 42, token: 'abc12345', decision: 'approved', toolName: 'email.send' });
+
+    expect(fetch).toHaveBeenCalledOnce();
+    const [url, init] = vi.mocked(fetch).mock.calls[0]!;
+    expect(url).toBe('https://api.telegram.org/bottest-token/editMessageText');
+    expect(init?.method).toBe('POST');
+
+    const body = JSON.parse(init?.body as string);
+    expect(body.chat_id).toBe('12345');
+    expect(body.message_id).toBe(42);
+    expect(body.parse_mode).toBe('MarkdownV2');
+    expect(body.text).toContain('APPROVED');
+    expect(body.text).toContain('abc12345');
+    expect(body.text).toContain('email.send');
+  });
+
+  it('sends a POST to editMessageText endpoint with denied decision', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await editMessageDecision(config, { messageId: 7, token: 'abc12345', decision: 'denied', toolName: 'shell.exec' });
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse(init?.body as string);
+    expect(body.text).toContain('DENIED');
+  });
+
+  it('omits reply_markup so inline keyboard buttons are removed', async () => {
+    vi.mocked(fetch).mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    await editMessageDecision(config, { messageId: 1, token: 'tok', decision: 'approved', toolName: 'tool' });
+
+    const [, init] = vi.mocked(fetch).mock.calls[0]!;
+    const body = JSON.parse(init?.body as string);
+    expect(body.reply_markup).toBeUndefined();
+  });
+
+  it('does not throw when fetch fails (best-effort)', async () => {
+    vi.mocked(fetch).mockRejectedValue(new Error('network error'));
+
+    await expect(
+      editMessageDecision(config, { messageId: 1, token: 'tok', decision: 'approved', toolName: 'tool' }),
+    ).resolves.toBeUndefined();
+  });
+});
+
+// ─── TelegramListener — duplicate tap alert ───────────────────────────────────
+
+describe('TelegramListener — duplicate callback_query alert', () => {
+  let listener: TelegramListener;
+
+  beforeEach(() => {
+    vi.stubGlobal('fetch', vi.fn());
+  });
+
+  afterEach(() => {
+    listener?.stop();
+    vi.unstubAllGlobals();
+  });
+
+  it('passes alert text "Already decided" to answerCallbackQuery when onCommand returns it', async () => {
+    const updates = {
+      ok: true,
+      result: [
+        { update_id: 80, callback_query: { id: 'cq-dup', data: 'approve:abc12345' } },
+      ],
+    };
+
+    // onCommand returns 'Already decided' to simulate a duplicate tap
+    const onCommand = vi.fn(() => 'Already decided' as string | void);
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(updates), { status: 200 }))
+      .mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    listener = new TelegramListener('test-token', onCommand);
+    listener.start();
+
+    await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
+    // Allow fire-and-forget answerCallbackQuery to settle
+    await new Promise((r) => setTimeout(r, 20));
+
+    const answerCall = vi.mocked(fetch).mock.calls.find(
+      (c) => (c[0] as string).includes('answerCallbackQuery'),
+    );
+    expect(answerCall).toBeDefined();
+    const answerBody = JSON.parse(answerCall![1]?.body as string);
+    expect(answerBody.text).toBe('Already decided');
+    expect(answerBody.show_alert).toBe(true);
+  });
+
+  it('sends silent answerCallbackQuery (no text) when onCommand returns void', async () => {
+    const updates = {
+      ok: true,
+      result: [
+        { update_id: 81, callback_query: { id: 'cq-ok', data: 'approve:abc12345' } },
+      ],
+    };
+
+    const onCommand = vi.fn(() => undefined as string | void);
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(updates), { status: 200 }))
+      .mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    listener = new TelegramListener('test-token', onCommand);
+    listener.start();
+
+    await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
+    await new Promise((r) => setTimeout(r, 20));
+
+    const answerCall = vi.mocked(fetch).mock.calls.find(
+      (c) => (c[0] as string).includes('answerCallbackQuery'),
+    );
+    expect(answerCall).toBeDefined();
+    const answerBody = JSON.parse(answerCall![1]?.body as string);
+    expect(answerBody.text).toBeUndefined();
+    expect(answerBody.show_alert).toBeUndefined();
   });
 });

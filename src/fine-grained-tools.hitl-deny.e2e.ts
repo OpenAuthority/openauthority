@@ -162,7 +162,7 @@ describe('fine-grained tools — HITL deny (Telegram stub, per-class)', () => {
       );
       return {
         ...actual,
-        sendApprovalRequest: vi.fn(async () => true),
+        sendApprovalRequest: vi.fn(async () => ({ ok: true })),
         TelegramListener: class MockTelegramListener {
           constructor(_botToken: string, _onCommand: unknown) {}
           start(): void {}
@@ -397,7 +397,7 @@ describe('fine-grained tools — HITL deny (Telegram stub)', () => {
       );
       return {
         ...actual,
-        sendApprovalRequest: vi.fn(async () => true),
+        sendApprovalRequest: vi.fn(async () => ({ ok: true })),
         TelegramListener: class MockTelegramListener {
           constructor(_botToken: string, _onCommand: unknown) {}
           start(): void {}

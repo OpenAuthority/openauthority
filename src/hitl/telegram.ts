@@ -85,14 +85,21 @@ export interface SendApprovalOpts {
   warnings?: string[];
 }
 
+export interface SendApprovalResult {
+  ok: boolean;
+  /** Telegram message_id — needed for editMessageText on decision. */
+  messageId?: number | undefined;
+}
+
 /**
  * Sends a MarkdownV2-formatted approval request message to the configured
  * Telegram chat. The message includes rich formatting (agent, tool, risk
  * level, explanation, effects, warnings) and an inline keyboard with three
  * buttons: ✅ Approve Once, 🔁 Approve Always (optional), ❌ Deny.
  *
- * Returns `true` on success, `false` on failure (including when the circuit
- * breaker is open after a rate-limit storm).
+ * Returns `{ ok: true, messageId }` on success, `{ ok: false }` on failure
+ * (including when the circuit breaker is open after a rate-limit storm).
+ * The `messageId` is used to edit the original message when a decision is made.
  *
  * @param breaker  Injected for testing; defaults to the module-level singleton.
  */
@@ -100,7 +107,7 @@ export async function sendApprovalRequest(
   config: ResolvedTelegramConfig,
   opts: SendApprovalOpts,
   breaker: CircuitBreaker = telegramCircuitBreaker,
-): Promise<boolean> {
+): Promise<SendApprovalResult> {
   const lines: string[] = [];
 
   // Unverified agent warning — prepended when identity cannot be confirmed.
@@ -197,16 +204,18 @@ export async function sendApprovalRequest(
       async (res) => {
         if (!res.ok) {
           console.error(`[hitl-telegram] sendMessage failed: ${res.status} ${res.statusText}`);
-          return false;
+          return { ok: false } as SendApprovalResult;
         }
-        return true;
+        const body = await res.json() as { ok: boolean; result?: { message_id?: number } };
+        const messageId = body.result?.message_id;
+        return { ok: true, ...(messageId !== undefined ? { messageId } : {}) } as SendApprovalResult;
       },
-      () => false,
+      () => ({ ok: false }) as SendApprovalResult,
       breaker,
     );
   } catch (err) {
     console.error('[hitl-telegram] sendMessage error:', err);
-    return false;
+    return { ok: false };
   }
 }
 
@@ -232,6 +241,37 @@ export async function sendConfirmation(
     });
   } catch {
     // Best-effort confirmation — don't fail the flow.
+  }
+}
+
+/**
+ * Edits the original approval request message to show the decision and remove
+ * the inline keyboard buttons.  Mirrors Slack's `sendSlackConfirmation` /
+ * `chat.update` behaviour.
+ *
+ * Fire-and-forget — failure here does not affect the approval flow.
+ */
+export async function editMessageDecision(
+  config: ResolvedTelegramConfig,
+  opts: { messageId: number; token: string; decision: string; toolName: string },
+): Promise<void> {
+  const emoji = opts.decision === 'approved' ? '\u2705' : '\u274C';
+  const text = `${emoji} Action \`${escapeCodeSpan(opts.token)}\` \u2014 *${opts.decision.toUpperCase()}*\nTool: \`${escapeCodeSpan(opts.toolName)}\``;
+
+  try {
+    await fetch(`${TELEGRAM_API}/bot${config.botToken}/editMessageText`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        chat_id: config.chatId,
+        message_id: opts.messageId,
+        text,
+        parse_mode: 'MarkdownV2',
+        // Omitting reply_markup removes the inline keyboard buttons.
+      }),
+    });
+  } catch {
+    // Best-effort — don't fail the flow.
   }
 }
 
@@ -366,12 +406,16 @@ export class TelegramListener {
      * For text commands (`/approve TOKEN`) the third argument is absent
      * because the Bot API message object does not expose sender identity in a
      * structured `from` field at this listener level.
+     *
+     * When the handler returns a non-empty string for a callback_query, that
+     * string is used as the alert text shown to the operator (e.g. "Already
+     * decided").  Returning `undefined` or `void` sends a silent dismiss.
      */
     private readonly onCommand: (
       command: TelegramCommand,
       token: string,
       from?: TelegramOperatorInfo,
-    ) => void,
+    ) => string | void,
   ) {}
 
   /** Starts the long-polling loop. Safe to call multiple times (no-op if already running). */
@@ -445,7 +489,6 @@ export class TelegramListener {
               if (match) {
                 const command = match[1] as TelegramCommand;
                 const token = match[2]!;
-                void this.answerCallbackQuery(queryId);
                 // Capture operator identity from callback_query.from when present.
                 const operatorInfo: TelegramOperatorInfo | undefined = from
                   ? {
@@ -454,11 +497,10 @@ export class TelegramListener {
                       ...(from.first_name !== undefined ? { firstName: from.first_name } : {}),
                     }
                   : undefined;
-                if (operatorInfo !== undefined) {
-                  this.onCommand(command, token, operatorInfo);
-                } else {
-                  this.onCommand(command, token);
-                }
+                const alertText = operatorInfo !== undefined
+                  ? this.onCommand(command, token, operatorInfo)
+                  : this.onCommand(command, token);
+                void this.answerCallbackQuery(queryId, alertText ?? undefined);
               }
             }
             continue;
@@ -486,14 +528,21 @@ export class TelegramListener {
 
   /**
    * Answers a Telegram callback query to dismiss the button loading indicator.
+   * When `alertText` is provided it is shown as a pop-up alert to the operator
+   * (e.g. "Already decided" for duplicate button taps).
    * Fire-and-forget — failure here does not affect the approval flow.
    */
-  private async answerCallbackQuery(queryId: string): Promise<void> {
+  private async answerCallbackQuery(queryId: string, alertText?: string): Promise<void> {
     try {
+      const payload: Record<string, unknown> = { callback_query_id: queryId };
+      if (alertText !== undefined && alertText.length > 0) {
+        payload['text'] = alertText;
+        payload['show_alert'] = true;
+      }
       await fetch(`${TELEGRAM_API}/bot${this.botToken}/answerCallbackQuery`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ callback_query_id: queryId }),
+        body: JSON.stringify(payload),
       });
     } catch {
       // Best-effort — don't fail the poll loop.

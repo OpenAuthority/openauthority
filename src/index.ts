@@ -119,6 +119,7 @@ export {
   TelegramListener,
   sendApprovalRequest,
   sendConfirmation,
+  editMessageDecision,
   sendApproveAlwaysConfirmation,
   resolveTelegramConfig,
   SlackInteractionServer,
@@ -165,7 +166,7 @@ import { parseHitlPolicyFile } from "./hitl/parser.js";
 import { startHitlPolicyWatcher, type HitlWatcherHandle } from "./hitl/watcher.js";
 import type { HitlPolicyConfig } from "./hitl/types.js";
 import { ApprovalManager } from "./hitl/approval-manager.js";
-import { TelegramListener, sendApprovalRequest, sendConfirmation, sendApproveAlwaysConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
+import { TelegramListener, sendApprovalRequest, sendConfirmation, editMessageDecision, sendApproveAlwaysConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
 import type { TelegramOperatorInfo } from "./hitl/telegram.js";
 import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig } from "./hitl/slack.js";
 import { createHash } from "node:crypto";
@@ -901,6 +902,9 @@ const pipelineEmitter = new EventEmitter();
 /** Maps HITL token → Slack message timestamp for chat.update on decision. */
 const slackMessageTimestamps = new Map<string, string>();
 
+/** Maps HITL token → Telegram message_id for editMessageText on decision. */
+const telegramMessageIds = new Map<string, number>();
+
 /**
  * How long (ms) an Approve Always confirmation waits for a Save/Cancel
  * response before timing out.  After timeout the confirmation is silently
@@ -982,9 +986,9 @@ async function dispatchHitlChannel(
     }
 
     const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy, target });
-    const sent = await sendApprovalRequest(telegramConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled });
+    const sendResult = await sendApprovalRequest(telegramConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled });
 
-    if (!sent) {
+    if (!sendResult.ok) {
       approvalManager.cancel(token);
       console.log(`[clawthority] │ [hitl] telegram unreachable — applying fallback: ${policy.approval.fallback}`);
       await logHitlDecision('telegram-unreachable', token, toolName, auditAgent, auditChannel, policy.name, policy.approval.timeout, identity.verified);
@@ -996,8 +1000,17 @@ async function dispatchHitlChannel(
       return;
     }
 
+    // Store message_id for editMessageText on decision (mirrors Slack's messageTs).
+    if (sendResult.messageId !== undefined) telegramMessageIds.set(token, sendResult.messageId);
+
     return await resolveHitlDecision(token, promise, policy, toolName, identity, (t, decision) => {
-      void sendConfirmation(telegramConfig, { token: t, decision, toolName });
+      const messageId = telegramMessageIds.get(t);
+      telegramMessageIds.delete(t);
+      if (messageId !== undefined) {
+        void editMessageDecision(telegramConfig, { messageId, token: t, decision, toolName });
+      } else {
+        void sendConfirmation(telegramConfig, { token: t, decision, toolName });
+      }
     });
   }
 
@@ -1947,6 +1960,11 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
               pendingApproveAlwaysConfirmations.delete(token);
             }
 
+            // Duplicate tap: token already consumed — show alert to operator.
+            if (approvalManager.isConsumed(token)) {
+              return 'Already decided';
+            }
+
             // approve_always resolves the current request as approved.
             const decision = command === 'deny' ? 'denied' as const : 'approved' as const;
             const resolved = approvalManager.resolveApproval(token, decision);
@@ -2036,6 +2054,7 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
       slackInteractionServer = null;
     }
     slackMessageTimestamps.clear();
+    telegramMessageIds.clear();
     for (const conf of pendingApproveAlwaysConfirmations.values()) {
       clearTimeout(conf.timer);
     }
