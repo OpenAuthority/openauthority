@@ -10,6 +10,7 @@
  *   node scripts/auto-permits.mjs validate [--json] [--store <path>]
  *   node scripts/auto-permits.mjs test     <command> [--json] [--store <path>]
  *   node scripts/auto-permits.mjs remove   <index|pattern> [--dry-run] [--yes] [--store <path>]
+ *   node scripts/auto-permits.mjs revoke   <index> [--store <path>]
  *
  * The store path is resolved from (highest precedence first):
  *   1. --store <path> CLI flag
@@ -22,6 +23,7 @@
  *   npm run validate-auto-permits
  *   npm run test-auto-permit      -- <command>
  *   npm run remove-auto-permit    -- <index|pattern>
+ *   npm run revoke-auto-permit    -- <index>
  */
 
 import { readFileSync, writeFileSync, renameSync, mkdirSync, chmodSync } from 'node:fs';
@@ -784,6 +786,78 @@ async function cmdRemove(rawArgs) {
   console.log(`Removed. Store now contains ${updated.length} auto-permit(s).`);
 }
 
+/**
+ * Revokes a single auto-permit by numeric index.
+ *
+ * Unlike `remove`, this command:
+ *   - Accepts only a 0-based integer index (not a pattern string).
+ *   - Does not prompt for confirmation — the explicit index is intent enough.
+ *   - Prints a pretty summary of the revoked rule (creation date, origin).
+ *
+ * Atomically saves the updated rules with an incremented version number.
+ *
+ * @param {string[]} rawArgs  Argv slice after the `revoke` subcommand token.
+ */
+function cmdRevoke(rawArgs) {
+  const parsed = parseArgs(rawArgs);
+  const storePath = resolveStorePath(parsed);
+
+  const selector = parsed.positional[0];
+  if (!selector) {
+    console.error('Error: an index is required.');
+    console.error('Usage: auto-permits revoke <index> [--store <path>]');
+    process.exit(1);
+  }
+
+  // Validate that the selector is a non-negative integer.
+  const idx = Number(selector);
+  if (!Number.isInteger(idx) || idx < 0 || String(idx) !== selector) {
+    console.error(`Error: invalid index "${selector}" — must be a non-negative integer.`);
+    console.error('Usage: auto-permits revoke <index> [--store <path>]');
+    process.exit(1);
+  }
+
+  const { rules, version, found } = loadStore(storePath);
+
+  if (!found) {
+    console.error(`Error: store file not found: ${storePath}`);
+    process.exit(1);
+  }
+
+  if (idx >= rules.length) {
+    console.error(
+      `Error: index ${idx} is out of range — store contains ${rules.length} rule(s) (valid indices: 0–${rules.length - 1}).`,
+    );
+    process.exit(1);
+  }
+
+  const rule = rules[idx];
+  const pattern =
+    rule != null && typeof rule === 'object' ? (rule.pattern ?? '(no pattern)') : '(invalid)';
+  const date = rule != null && typeof rule === 'object' ? formatDate(rule) : '(unknown)';
+  const origin =
+    rule != null && typeof rule === 'object'
+      ? (rule.originalCommand ?? rule.derived_from ?? '(unknown)')
+      : '(unknown)';
+  const by =
+    rule != null && typeof rule === 'object' && typeof rule.created_by === 'string'
+      ? rule.created_by
+      : null;
+
+  console.log(`Revoking auto-permit [${idx}]:`);
+  console.log(`  Pattern:  ${pattern}`);
+  console.log(`  Created:  ${date}`);
+  console.log(`  Origin:   ${origin}`);
+  if (by !== null) {
+    console.log(`  By:       ${by}`);
+  }
+
+  const updated = rules.filter((_, i) => i !== idx);
+  saveStore(storePath, updated, version + 1);
+
+  console.log(`\nRevoked. Store now contains ${updated.length} auto-permit(s). (version ${version + 1})`);
+}
+
 // ── Usage ─────────────────────────────────────────────────────────────────────
 
 function printUsage() {
@@ -804,6 +878,9 @@ function printUsage() {
   );
   console.error(
     '  remove    <index|pattern> [--dry-run] [--yes] [--store <path>]  Remove a permit (prompts to confirm)',
+  );
+  console.error(
+    '  revoke    <index> [--store <path>]                               Revoke a permit by index (no prompt)',
   );
   console.error('');
   console.error('Selector (list, show, remove):');
@@ -841,6 +918,9 @@ const [, , command, ...rest] = process.argv;
       break;
     case 'remove':
       await cmdRemove(rest);
+      break;
+    case 'revoke':
+      cmdRevoke(rest);
       break;
     default:
       printUsage();

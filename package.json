@@ -45,7 +45,8 @@
     "show-auto-permit": "node scripts/auto-permits.mjs show",
     "validate-auto-permits": "node scripts/auto-permits.mjs validate",
     "test-auto-permit": "node scripts/auto-permits.mjs test",
-    "remove-auto-permit": "node scripts/auto-permits.mjs remove"
+    "remove-auto-permit": "node scripts/auto-permits.mjs remove",
+    "revoke-auto-permit": "node scripts/auto-permits.mjs revoke"
   },
   "dependencies": {
     "@openclaw/action-registry": "*",
