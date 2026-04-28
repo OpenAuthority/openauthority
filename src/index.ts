@@ -22,11 +22,16 @@ export {
   resolveAutoPermitStoreConfig,
   compilePatternRegex,
   FileAutoPermitChecker,
+  loadAutoPermitRulesFromFile,
+  saveAutoPermitRules,
+  watchAutoPermitStore,
 } from "./auto-permits/index.js";
 export type {
   AutoPermitStorageMode,
   ResolvedAutoPermitStoreConfig,
   AutoPermitRuleChecker,
+  LoadResult,
+  AutoPermitWatchHandle,
 } from "./auto-permits/index.js";
 
 // ─── Cedar-style engine re-exports ───────────────────────────────────────────
@@ -174,8 +179,9 @@ import { validateCapability } from "./enforcement/stage1-capability.js";
 import { createCombinedStage2 } from "./enforcement/stage2-policy.js";
 import { FileAuthorityAdapter } from "./adapter/file-adapter.js";
 import type { WatchHandle } from "./adapter/types.js";
-import { FileAutoPermitChecker, resolveAutoPermitStoreConfig } from "./auto-permits/index.js";
-import { isAutoPermit } from "./models/auto-permit.js";
+import { FileAutoPermitChecker, resolveAutoPermitStoreConfig, loadAutoPermitRulesFromFile, saveAutoPermitRules, watchAutoPermitStore, derivePattern } from "./auto-permits/index.js";
+import type { AutoPermitWatchHandle } from "./auto-permits/index.js";
+import type { AutoPermit } from "./models/auto-permit.js";
 
 /**
  * Resolved identity view used by audit and HITL call sites. Derived from
@@ -644,13 +650,14 @@ async function loadJsonRules(): Promise<void> {
  * Loads auto-permit rules from the configured store file and populates
  * `autoPermitCheckerRef.current` with a `FileAutoPermitChecker` instance.
  *
- * The store path is resolved via `resolveAutoPermitStoreConfig()` which reads
- * the `CLAWTHORITY_AUTO_PERMIT_STORE` env var (defaults to
+ * Delegates entirely to {@link loadAutoPermitRulesFromFile} from the store
+ * module. The store path is resolved via `resolveAutoPermitStoreConfig()`
+ * which reads the `CLAWTHORITY_AUTO_PERMIT_STORE` env var (defaults to
  * `data/auto-permits.json`). The file is optional — when absent the function
  * returns silently and `autoPermitCheckerRef.current` remains undefined,
  * meaning auto-permit matching is skipped for all subsequent tool calls.
  *
- * Invalid records (those that fail `isAutoPermit` validation) are skipped with
+ * Invalid records (those that fail the `AutoPermit` schema) are skipped with
  * a warning so a single corrupt entry does not discard the entire store.
  */
 async function loadAutoPermitRules(): Promise<void> {
@@ -659,39 +666,75 @@ async function loadAutoPermitRules(): Promise<void> {
     const moduleDir = dirname(fileURLToPath(import.meta.url));
     const storePath = resolve(moduleDir, "../../", config.path);
 
-    let raw: string;
-    try {
-      raw = await readFile(storePath, "utf-8");
-    } catch (readErr: unknown) {
-      const code = (readErr as NodeJS.ErrnoException).code;
-      if (code === "ENOENT") {
-        // Store file does not exist yet — silently skip; auto-permit matching
-        // will be disabled until the file is created (e.g. on first approval).
-        return;
-      }
-      throw readErr;
-    }
+    const result = await loadAutoPermitRulesFromFile(storePath);
 
-    const parsed: unknown = JSON.parse(raw);
-    if (!Array.isArray(parsed)) {
-      console.warn("[plugin:clawthority] auto-permit store is not a JSON array — skipping rule load");
-      return;
-    }
-
-    const validRules = parsed.filter(isAutoPermit);
-    const skipped = parsed.length - validRules.length;
-    if (skipped > 0) {
+    if (result.skipped > 0) {
       console.warn(
-        `[plugin:clawthority] auto-permit store: ${skipped} invalid record(s) skipped (schema mismatch)`,
+        `[plugin:clawthority] auto-permit store: ${result.skipped} invalid record(s) skipped (schema mismatch)`,
       );
     }
 
-    autoPermitCheckerRef.current = new FileAutoPermitChecker(validRules);
+    if (!result.found) {
+      // Store file does not exist yet — silently skip; auto-permit matching
+      // will be disabled until the file is created (e.g. on first approval).
+      return;
+    }
+
+    autoPermitCheckerRef.current = new FileAutoPermitChecker(result.rules);
     console.log(
-      `[plugin:clawthority] auto-permit rules loaded: ${validRules.length} rule(s) from ${config.path}`,
+      `[plugin:clawthority] auto-permit rules loaded: ${result.rules.length} rule(s) from ${config.path}`,
     );
   } catch (err) {
     console.warn("[plugin:clawthority] failed to load auto-permit rules — matching will be skipped:", err);
+  }
+}
+
+// ─── Auto-permit pattern persistence ─────────────────────────────────────────
+
+/**
+ * Derives a permit pattern from `command` and appends it to the auto-permit
+ * store file.  On success the in-memory checker is reloaded so the new rule
+ * takes effect immediately for subsequent tool calls.
+ *
+ * Called from the "Approve Always" callbacks (Telegram and Slack) after the
+ * session-scoped auto-approval is registered.  Failures are swallowed and
+ * logged so that the broader approval flow is never interrupted.
+ *
+ * The `channel` string is used only for log prefixing (e.g. `'telegram'`).
+ */
+async function persistAutoPermitPattern(command: string, channel: string): Promise<void> {
+  let derived: ReturnType<typeof derivePattern>;
+  try {
+    derived = derivePattern({ command });
+  } catch (err) {
+    // Shell metacharacters, empty command, or other derivation failures are
+    // expected for compound commands — log and return quietly.
+    console.log(`[hitl-${channel}] auto-permit pattern derivation skipped: ${(err as Error).message}`);
+    return;
+  }
+
+  // Confirmation: show the derived pattern before persisting.
+  console.log(`[hitl-${channel}] auto-permit pattern derived: '${derived.pattern}' — saving to store`);
+
+  try {
+    const config = resolveAutoPermitStoreConfig();
+    const moduleDir = dirname(fileURLToPath(import.meta.url));
+    const storePath = resolve(moduleDir, "../../", config.path);
+
+    const existing = await loadAutoPermitRulesFromFile(storePath);
+
+    const newRule: AutoPermit = {
+      pattern: derived.pattern,
+      method: derived.method,
+      createdAt: Date.now(),
+      originalCommand: command,
+    };
+
+    await saveAutoPermitRules(storePath, [...existing.rules, newRule]);
+    await loadAutoPermitRules();
+    console.log(`[hitl-${channel}] auto-permit rule saved: '${derived.pattern}'`);
+  } catch (err) {
+    console.warn(`[hitl-${channel}] failed to save auto-permit rule: ${(err as Error).message}`);
   }
 }
 
@@ -742,6 +785,12 @@ let telegramListener: TelegramListener | null = null;
 let slackInteractionServer: SlackInteractionServer | null = null;
 const approvalManager = new ApprovalManager();
 
+/**
+ * Chokidar watch handle for the auto-permit store file. Set up in activate()
+ * to reload rules when the store is modified externally. Cleaned up in deactivate().
+ */
+let autoPermitStoreWatcher: AutoPermitWatchHandle | null = null;
+
 /** @deprecated Use per-call EventEmitter inside beforeToolCallHandler instead. */
 const pipelineEmitter = new EventEmitter();
 
@@ -786,6 +835,7 @@ async function dispatchHitlChannel(
   policy: import('./hitl/types.js').HitlPolicy,
   toolName: string,
   identity: ResolvedIdentity,
+  target: string,
 ): Promise<BeforeToolCallResult | void> {
   const channel = policy.approval.channel;
   const auditAgent = identity.auditAgentId;
@@ -804,7 +854,7 @@ async function dispatchHitlChannel(
       return;
     }
 
-    const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy });
+    const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy, target });
     const sent = await sendApprovalRequest(telegramConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled });
 
     if (!sent) {
@@ -837,7 +887,7 @@ async function dispatchHitlChannel(
       return;
     }
 
-    const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy });
+    const { token, promise } = approvalManager.createApprovalRequest({ toolName, agentId: auditAgent, channelId: auditChannel, policy, target });
     const result = await sendSlackApprovalRequest(slackConfig, { token, toolName, agentId: auditAgent, policyName: policy.name, timeoutSeconds: policy.approval.timeout, verified: identity.verified, showApproveAlways: FEATURES.approveAlwaysEnabled });
 
     if (!result.ok) {
@@ -1234,7 +1284,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
             console.log(`[clawthority] │ [hitl] ✓ session auto-approved (${normalizedAction.action_class}) — skipping HITL dispatch`);
           } else {
             console.log(`[clawthority] │ [hitl] releasing ${pipelineDecision.stage ?? 'unknown'} HITL-gated forbid via policy "${policy.name}" (${policy.approval.channel})`);
-            const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity);
+            const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity, normalizedAction.target);
             if (hitlChannelResult) return hitlChannelResult;
           }
           // Approved (or auto-approved): fall through to the pre-existing HITL check and then ALLOWED.
@@ -1293,7 +1343,7 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
         console.log(`[clawthority] │ [hitl] ✓ session auto-approved (${normalizedAction.action_class}) — skipping HITL dispatch`);
       } else {
         console.log(`[clawthority] │ [hitl] matched policy "${policy.name}" — requesting approval via ${policy.approval.channel}`);
-        const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity);
+        const hitlChannelResult = await dispatchHitlChannel(policy, toolName, identity, normalizedAction.target);
         if (hitlChannelResult) return hitlChannelResult;
       }
     } else if (hitlConfig !== null) {
@@ -1538,6 +1588,19 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
       console.error("[plugin:clawthority] unexpected error in loadAutoPermitRules:", err);
     }
 
+    // Watch the auto-permit store for external modifications (e.g. direct
+    // file edits by an operator) so the in-memory checker stays in sync.
+    try {
+      const apConfig = resolveAutoPermitStoreConfig();
+      const apModuleDir = dirname(fileURLToPath(import.meta.url));
+      const apStorePath = resolve(apModuleDir, "../../", apConfig.path);
+      autoPermitStoreWatcher = watchAutoPermitStore(apStorePath, () => {
+        void loadAutoPermitRules();
+      });
+    } catch (err) {
+      console.warn("[plugin:clawthority] failed to start auto-permit store watcher:", err);
+    }
+
     // Instantiate the file-based authority adapter using the same rules file
     // path as loadJsonRules() so both subsystems read from the same source.
     // bundle.json takes precedence over rules.json when present.
@@ -1641,6 +1704,12 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
               if (pending) {
                 approvalManager.addSessionAutoApproval(pending.channelId, pending.action_class);
                 console.log(`[hitl-telegram] session auto-approval registered: channel=${pending.channelId} action_class=${pending.action_class}`);
+                // Derive and persist an auto-permit pattern from the command
+                // target so future matching commands are auto-permitted without
+                // requiring HITL at all. Failures are logged, not thrown.
+                if (pending.target.length > 0) {
+                  void persistAutoPermitPattern(pending.target, 'telegram');
+                }
               }
             }
             // approve_always resolves the current request as approved.
@@ -1669,6 +1738,12 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
               if (pending) {
                 approvalManager.addSessionAutoApproval(pending.channelId, pending.action_class);
                 console.log(`[hitl-slack] session auto-approval registered: channel=${pending.channelId} action_class=${pending.action_class}`);
+                // Derive and persist an auto-permit pattern from the command
+                // target so future matching commands are auto-permitted without
+                // requiring HITL at all. Failures are logged, not thrown.
+                if (pending.target.length > 0) {
+                  void persistAutoPermitPattern(pending.target, 'slack');
+                }
               }
             }
             // approve_always resolves the current request as approved.
@@ -1731,6 +1806,12 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
     }
     hitlConfigRef.current = null;
     hitlAuditLogger = null;
+
+    // ── Auto-permit store watcher cleanup ─────────────────────────────────
+    if (autoPermitStoreWatcher !== null) {
+      autoPermitStoreWatcher.stop();
+      autoPermitStoreWatcher = null;
+    }
 
     // ── Rules watcher cleanup ─────────────────────────────────────────────
     if (rulesWatcher !== null) {

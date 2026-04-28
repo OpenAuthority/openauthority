@@ -1,4 +1,4 @@
-// ─── Pattern Derivation Engine — unit tests (T48) ────────────────────────────
+// ─── Pattern Derivation Engine — unit tests (T48, T28) ───────────────────────
 //
 // TC-PDE-01  default: binary + positional → `{binary} {positional} *`
 // TC-PDE-02  default: binary only (no args) → `{binary}`
@@ -25,6 +25,11 @@
 // TC-PDE-23  validatePattern: invalid — binary contains wildcard
 // TC-PDE-24  isDerivedPattern: returns true for a valid DerivedPattern
 // TC-PDE-25  isDerivedPattern: returns false for a missing required field
+// TC-PDE-26  shell metachar |  in command → PatternDerivationError
+// TC-PDE-27  shell metachar ;  in command → PatternDerivationError
+// TC-PDE-28  shell metachar $  in command → PatternDerivationError
+// TC-PDE-29  validatePattern: pattern length > 200 → invalid
+// TC-PDE-30  validatePattern: pattern exactly 200 chars → valid
 
 import { describe, it, expect } from 'vitest';
 import {
@@ -32,6 +37,7 @@ import {
   validatePattern,
   isDerivedPattern,
   PatternDerivationError,
+  MAX_PATTERN_LENGTH,
 } from './pattern-derivation.js';
 
 // ─── derivePattern — default method ──────────────────────────────────────────
@@ -225,5 +231,54 @@ describe('isDerivedPattern', () => {
     const derived = derivePattern({ command: 'git commit' });
     const { pattern: _p, ...withoutPattern } = derived;
     expect(isDerivedPattern(withoutPattern)).toBe(false);
+  });
+});
+
+// ─── Shell metacharacter detection ───────────────────────────────────────────
+
+describe('derivePattern — shell metacharacter rejection', () => {
+  // TC-PDE-26
+  it('throws PatternDerivationError when the command contains a pipe (|)', () => {
+    expect(() => derivePattern({ command: 'git log | grep fix' })).toThrow(PatternDerivationError);
+  });
+
+  // TC-PDE-27
+  it('throws PatternDerivationError when the command contains a semicolon (;)', () => {
+    expect(() => derivePattern({ command: 'git add . ; git commit' })).toThrow(PatternDerivationError);
+  });
+
+  // TC-PDE-28
+  it('throws PatternDerivationError when the command contains a dollar sign ($)', () => {
+    expect(() => derivePattern({ command: 'echo $HOME' })).toThrow(PatternDerivationError);
+  });
+
+  it('error message mentions shell metacharacters', () => {
+    expect(() => derivePattern({ command: 'ls > /tmp/out' })).toThrowError(
+      /shell metachar/i,
+    );
+  });
+});
+
+// ─── Maximum pattern length ───────────────────────────────────────────────────
+
+describe('validatePattern — maximum length', () => {
+  // TC-PDE-29
+  it('returns invalid when the pattern exceeds 200 characters', () => {
+    // Build a pattern that is one character over the limit.
+    const overLimit = 'git ' + 'a'.repeat(MAX_PATTERN_LENGTH - 3);
+    expect(overLimit.length).toBeGreaterThan(MAX_PATTERN_LENGTH);
+    const result = validatePattern(overLimit);
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => /200/.test(e))).toBe(true);
+  });
+
+  // TC-PDE-30
+  it('returns valid when the pattern is exactly 200 characters', () => {
+    // Construct a 200-char pattern: binary + space + token(s) that total 200.
+    const tokenLength = MAX_PATTERN_LENGTH - 4; // 4 = 'git' + space
+    const atLimit = `git ${'a'.repeat(tokenLength)}`;
+    expect(atLimit.length).toBe(MAX_PATTERN_LENGTH);
+    const result = validatePattern(atLimit);
+    expect(result.valid).toBe(true);
   });
 });

@@ -89,8 +89,27 @@ export interface PatternValidationResult {
   errors: string[];
 }
 
+/** Maximum allowed length for a derived or validated permit pattern. */
+export const MAX_PATTERN_LENGTH = 200;
+
+/**
+ * Shell metacharacters that prevent safe pattern derivation.
+ *
+ * If a raw command contains any of these characters the command is a compound
+ * shell expression (pipeline, redirection, substitution, variable expansion,
+ * etc.) and the derived pattern would not accurately represent a single
+ * command invocation.  Pattern derivation is refused to avoid creating
+ * overly-broad or inaccurate permit rules from such inputs.
+ */
+const SHELL_METACHAR_RE = /[|;&><`$\n\r]/;
+
 /** Regex that a valid non-wildcard token must satisfy (no spaces, no `*`). */
 const VALID_TOKEN_RE = /^[^\s*]+$/;
+
+/** Escapes all regex special characters in a literal string (local copy of matcher's helper). */
+function escapeRegex(s: string): string {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+}
 
 /**
  * Validates a permit pattern before storage.
@@ -117,6 +136,10 @@ export function validatePattern(pattern: string): PatternValidationResult {
     errors.push('Pattern must not have leading or trailing whitespace');
   }
 
+  if (pattern.length > MAX_PATTERN_LENGTH) {
+    errors.push(`Pattern must not exceed ${MAX_PATTERN_LENGTH} characters`);
+  }
+
   const tokens = pattern.split(' ');
 
   if (tokens.some((t) => t === '')) {
@@ -133,6 +156,23 @@ export function validatePattern(pattern: string): PatternValidationResult {
   const wildcardIndex = tokens.indexOf('*');
   if (wildcardIndex !== -1 && wildcardIndex !== tokens.length - 1) {
     errors.push('Wildcard (*) must only appear as the last token');
+  }
+
+  // Regex compilation safety check: verify the pattern compiles to a valid
+  // RegExp when expanded by the matcher.  This is a defence-in-depth gate
+  // that catches any edge case that slipped past the token-level checks above.
+  if (errors.length === 0) {
+    try {
+      const hasWildcard = tokens[tokens.length - 1] === '*';
+      if (hasWildcard) {
+        const prefix = tokens.slice(0, -1).map(escapeRegex).join(' ');
+        void new RegExp(`^${prefix}( .+)?$`);
+      } else {
+        void new RegExp(`^${tokens.map(escapeRegex).join(' ')}$`);
+      }
+    } catch {
+      errors.push('Pattern does not compile to a safe regular expression');
+    }
   }
 
   return { valid: errors.length === 0, errors };
@@ -219,6 +259,16 @@ function tokenize(command: string): string[] {
 export function derivePattern(opts: DerivePatternOpts): DerivedPattern {
   const method = opts.method ?? 'default';
   const command = opts.command.trim();
+
+  // Reject commands that contain shell metacharacters.  Such commands are
+  // compound shell expressions (pipelines, redirections, substitutions, etc.)
+  // and a pattern derived from them would be inaccurate or too broad,
+  // creating a security risk by matching unrelated future commands.
+  if (SHELL_METACHAR_RE.test(command)) {
+    throw new PatternDerivationError(
+      'Command contains shell metacharacters — pattern derivation is not safe for compound shell expressions',
+    );
+  }
 
   const tokens = tokenize(command);
 

@@ -41,3 +41,15 @@ export {
 export type {
   AutoPermitRuleChecker,
 } from './matcher.js';
+
+export {
+  loadAutoPermitRulesFromFile,
+  saveAutoPermitRules,
+  watchAutoPermitStore,
+} from './store.js';
+
+export type {
+  LoadResult,
+  AutoPermitWatchHandle,
+  WatchAutoPermitStoreOpts,
+} from './store.js';
