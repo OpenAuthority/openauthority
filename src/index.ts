@@ -184,7 +184,7 @@ import { validateCapability } from "./enforcement/stage1-capability.js";
 import { createCombinedStage2 } from "./enforcement/stage2-policy.js";
 import { FileAuthorityAdapter } from "./adapter/file-adapter.js";
 import type { WatchHandle } from "./adapter/types.js";
-import { FileAutoPermitChecker, resolveAutoPermitStoreConfig, loadAutoPermitRulesFromFile, saveAutoPermitRules, watchAutoPermitStore, derivePattern } from "./auto-permits/index.js";
+import { FileAutoPermitChecker, resolveAutoPermitStoreConfig, loadAutoPermitRulesFromFile, saveAutoPermitRules, watchAutoPermitStore, derivePattern, compilePatternRegex } from "./auto-permits/index.js";
 import type { AutoPermitWatchHandle } from "./auto-permits/index.js";
 import type { AutoPermit } from "./models/auto-permit.js";
 
@@ -637,6 +637,48 @@ async function loadJsonRules(): Promise<void> {
         ...(rec.tags !== undefined ? { tags: rec.tags } : {}),
       } satisfies Rule;
     });
+
+    // ── Merge auto-permit rules from auto-permits.json ─────────────────────
+    // Only in 'separate' mode; in 'rules' mode the auto-permit store path is
+    // data/rules.json itself (already loaded above) and AutoPermit records
+    // use a different schema (pattern/method/createdAt/originalCommand) that
+    // the rules parser silently ignores — no need to load twice.
+    const apConfig = resolveAutoPermitStoreConfig();
+    if (apConfig.mode === 'separate') {
+      try {
+        const apPath = resolve(moduleDir, '../../', apConfig.path);
+        const apResult = await loadAutoPermitRulesFromFile(apPath);
+        if (apResult.found) {
+          if (apResult.skipped > 0) {
+            console.warn(
+              `[plugin:clawthority] auto-permits.json: ${apResult.skipped} invalid record(s) skipped`,
+            );
+          }
+          let merged = 0;
+          for (const permit of apResult.rules) {
+            const compiled = compilePatternRegex(permit.pattern);
+            if (compiled === null) continue;
+            cedarRules.push({
+              effect: 'permit',
+              resource: 'tool',
+              match: '*',
+              target_match: compiled,
+              priority: 50,
+              reason: `auto-permit: ${permit.pattern}`,
+              tags: ['auto-permit'],
+            } satisfies Rule);
+            merged++;
+          }
+          if (merged > 0) {
+            console.log(
+              `[plugin:clawthority] merged ${merged} auto-permit rule(s) from ${apConfig.path}`,
+            );
+          }
+        }
+      } catch (apErr) {
+        console.warn('[plugin:clawthority] failed to load auto-permits.json — skipping:', apErr);
+      }
+    }
 
     const engine = new CedarPolicyEngine();
     engine.addRules(cedarRules);
@@ -1652,6 +1694,7 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
       const apStorePath = resolve(apModuleDir, "../../", apConfig.path);
       autoPermitStoreWatcher = watchAutoPermitStore(apStorePath, () => {
         void loadAutoPermitRules();
+        void loadJsonRules();
       });
     } catch (err) {
       console.warn("[plugin:clawthority] failed to start auto-permit store watcher:", err);
