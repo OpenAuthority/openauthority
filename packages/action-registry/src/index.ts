@@ -550,6 +550,7 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'yarn_run',
       'pnpm_run',
       'run_script',
+      'make_run',
     ],
   },
   {
