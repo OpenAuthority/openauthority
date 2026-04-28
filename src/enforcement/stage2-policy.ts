@@ -109,6 +109,18 @@ export function createEnforcementEngine(
 // Combined handler stage2 factory
 // ---------------------------------------------------------------------------
 
+/**
+ * Minimal interface for checking session-scoped auto-approvals.
+ *
+ * `ApprovalManager` satisfies this interface. Accepting an interface rather
+ * than a concrete class keeps `createCombinedStage2` decoupled from the HITL
+ * subsystem and makes unit testing straightforward.
+ */
+export interface AutoPermitChecker {
+  /** Returns true when the `channelId:actionClass` pair has been auto-approved. */
+  isSessionAutoApproved(channelId: string, actionClass: string): boolean;
+}
+
 /** Priority threshold below which a forbid is treated as HITL-gated. */
 const HITL_PRIORITY_THRESHOLD = 100;
 
@@ -164,14 +176,35 @@ function toStagedForbid(result: EvaluationDecision, stage: string): CeeDecision 
  * @param cedarEngine Cedar TS policy engine (evaluateByActionClass used).
  * @param jsonEngine  JSON rules engine, or null if not configured.
  * @param toolName    Original tool name used for JSON resource/match rules.
+ * @param autoPermit  Optional checker for session-scoped auto-approvals.
+ *                    When provided and `isSessionAutoApproved` returns true for
+ *                    the current channel + action class, the function returns a
+ *                    permit immediately before any engine evaluation occurs.
+ *                    Pass `undefined` (or omit) to disable auto-permit checks —
+ *                    controlled externally via the `approveAlwaysEnabled` feature
+ *                    flag so that disabling the flag at startup prevents any new
+ *                    auto-permit decisions from being issued.
  */
 export function createCombinedStage2(
   cedarEngine: PolicyEngine,
   jsonEngine: PolicyEngine | null,
   toolName: string,
+  autoPermit?: AutoPermitChecker,
 ): Stage2Fn {
   return async (ctx: PipelineContext): Promise<CeeDecision> => {
     try {
+      // ── Auto-permit pre-check ──────────────────────────────────────────────
+      // Checked first so session-scoped auto-approvals bypass HITL gating with
+      // minimal overhead (a single Set.has lookup). The source tag
+      // 'session_auto_approved' in the returned reason identifies the origin of
+      // the permit for audit and logging purposes.
+      if (autoPermit !== undefined) {
+        const channelId = ctx.rule_context.channel;
+        if (autoPermit.isSessionAutoApproved(channelId, ctx.action_class)) {
+          return { effect: 'permit', reason: 'session_auto_approved', stage: 'stage2' };
+        }
+      }
+
       let pendingHitlGated: CeeDecision | null = null;
 
       // ── Cedar engine ──────────────────────────────────────────────────────

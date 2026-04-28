@@ -1040,7 +1040,17 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   // evaluation into a single Stage2Fn. HITL-gated forbids (priority < 100)
   // are returned as forbid decisions with their priority preserved so the
   // post-pipeline handler can route them through HITL resolution.
-  const stage2 = createCombinedStage2(cedarEngineRef.current, jsonRulesEngineRef.current, toolName);
+  // Auto-permits are wired in when approveAlwaysEnabled is true so that
+  // session-scoped auto-approvals bypass HITL gating in the policy engine
+  // itself. Passing undefined when the flag is off disables the check without
+  // clearing any in-process state (evaluation is disabled; creation was already
+  // prevented at the Slack UI layer by hiding the Approve Always button).
+  const stage2 = createCombinedStage2(
+    cedarEngineRef.current,
+    jsonRulesEngineRef.current,
+    toolName,
+    FEATURES.approveAlwaysEnabled ? approvalManager : undefined,
+  );
 
   // ── Route all tool calls through runPipeline ─────────────────────────────
   // A per-call EventEmitter is used instead of a module-level emitter to
@@ -1049,6 +1059,14 @@ const beforeToolCallHandler: BeforeToolCallHandler = async ({ toolName, params, 
   // by the HITL resolution stage below once the final disposition is known.
   const callEmitter = new EventEmitter();
   callEmitter.once('executionEvent', ({ decision }: { decision: CeeDecision }) => {
+    // Auto-permit: log with source tag so the auto-generated permit reason
+    // ('session_auto_approved') is visible in the operator log stream.
+    if (decision.effect === 'permit' && decision.reason === 'session_auto_approved') {
+      console.log(
+        `[clawthority] │ [stage2/auto-permit] ✓ session_auto_approved (${normalizedAction.action_class})`,
+      );
+      return;
+    }
     // Permits are intentionally not logged (see logPolicyDecision comment above).
     // pipeline_error fails closed without an audit entry — the error is already
     // visible on stderr and a logged forbid with no rule context would be noise.
