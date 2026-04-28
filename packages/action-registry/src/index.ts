@@ -72,6 +72,7 @@ export const ActionClass = {
   SystemService: 'system.service',
   PermissionsModify: 'permissions.modify',
   PermissionsElevate: 'permissions.elevate',
+  ProcessSignal: 'process.signal',
   VcsRead: 'vcs.read',
   VcsWrite: 'vcs.write',
   VcsRemote: 'vcs.remote',
@@ -90,7 +91,7 @@ export const ActionClass = {
 export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
 
 // ---------------------------------------------------------------------------
-// Registry — 35 entries, aliases stored lowercase
+// Registry — 36 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 export const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -484,6 +485,16 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'su',
       'doas',
       'passwd',
+    ],
+  },
+  {
+    action_class: ActionClass.ProcessSignal,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'kill',
+      'pkill',
+      'killall',
     ],
   },
   {

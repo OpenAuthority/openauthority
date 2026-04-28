@@ -19,6 +19,8 @@
  *                          (systemctl, service, reboot, shutdown, init)
  *   TC-CE-122 – TC-CE-138: permissions patterns
  *                          (chown, umask, sudo, su, passwd)
+ *   TC-CE-139 – TC-CE-150: process-signal patterns
+ *                          (kill, pkill, killall)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -1633,5 +1635,160 @@ describe('TC-CE-138: passwd root — coordination warning', () => {
   it('warns about coordination on bare `passwd` (current user could be root)', () => {
     const result = explain('passwd');
     expect(hasWarningMatching(result.warnings, /coordinate with operators/i)).toBe(true);
+  });
+});
+
+// ── TC-CE-139 – TC-CE-150 : process signalling ───────────────────────────────
+
+describe('TC-CE-139: kill — default summary names target and signal', () => {
+  it('defaults to SIGTERM when no signal is specified', () => {
+    const result = explain('kill 1234');
+    expect(result.summary).toMatch(/SIGTERM/i);
+    expect(result.summary).toContain('1234');
+  });
+
+  it('emits no warnings for an ordinary SIGTERM kill', () => {
+    const result = explain('kill 1234');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-140: kill -9 / -KILL / -SIGKILL — uncatchable-signal warning', () => {
+  it('warns about cannot-be-caught when -9 is used', () => {
+    const result = explain('kill -9 1234');
+    expect(hasWarningMatching(result.warnings, /cannot be caught|without cleanup/i)).toBe(true);
+  });
+
+  it('warns about cannot-be-caught when -KILL is used', () => {
+    const result = explain('kill -KILL 1234');
+    expect(hasWarningMatching(result.warnings, /cannot be caught|without cleanup/i)).toBe(true);
+  });
+
+  it('warns about cannot-be-caught when --signal=KILL is used', () => {
+    const result = explain('kill --signal=KILL 1234');
+    expect(hasWarningMatching(result.warnings, /cannot be caught|without cleanup/i)).toBe(true);
+  });
+
+  it('warns about cannot-be-caught when -s KILL is used', () => {
+    const result = explain('kill -s KILL 1234');
+    expect(hasWarningMatching(result.warnings, /cannot be caught|without cleanup/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-141: kill -HUP — reload-style summary, no warning', () => {
+  it('describes SIGHUP as a configuration reload', () => {
+    const result = explain('kill -HUP 1234');
+    expect(hasEffectMatching(result.effects, /reload|SIGHUP/i)).toBe(true);
+  });
+
+  it('emits no destructive-signal warning on SIGHUP', () => {
+    const result = explain('kill -HUP 1234');
+    expect(hasWarningMatching(result.warnings, /cannot be caught/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-142: kill — pid-1 (init) warning', () => {
+  it('warns when targeting PID 1', () => {
+    const result = explain('kill -9 1');
+    expect(hasWarningMatching(result.warnings, /PID 1|init.*crash|crashes the host/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-143: kill -1 (broadcast) warning', () => {
+  it('warns about broadcast when target is -1', () => {
+    const result = explain('kill -9 -1');
+    expect(hasWarningMatching(result.warnings, /-1|every process|broadcast/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-144: kill -l — read-only signal listing', () => {
+  it('summarises as listing signals with no warnings', () => {
+    const result = explain('kill -l');
+    expect(result.summary).toMatch(/list|signal/i);
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-145: pkill — pattern-match warning', () => {
+  it('always warns that pattern matches by name', () => {
+    const result = explain('pkill nginx');
+    expect(hasWarningMatching(result.warnings, /pattern|matches by name|multiple processes/i)).toBe(true);
+  });
+
+  it('reports the pattern in the summary', () => {
+    const result = explain('pkill -9 java');
+    expect(result.summary).toContain('java');
+  });
+
+  it('warns about destructive signal when -9 is used', () => {
+    const result = explain('pkill -9 nginx');
+    expect(hasWarningMatching(result.warnings, /cannot be caught/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-146: pkill -f — full-command-line warning', () => {
+  it('warns about -f / --full broadening the match', () => {
+    const result = explain('pkill -f java.*MyApp');
+    expect(hasWarningMatching(result.warnings, /full command line|broader/i)).toBe(true);
+  });
+
+  it('warns about -f / --full when --full is spelled out', () => {
+    const result = explain('pkill --full java.*MyApp');
+    expect(hasWarningMatching(result.warnings, /full command line|broader/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-147: killall — multi-instance warning', () => {
+  it('warns that every matching process is targeted', () => {
+    const result = explain('killall nginx');
+    expect(hasWarningMatching(result.warnings, /every running process|unrelated instances/i)).toBe(true);
+  });
+
+  it('reports the name in the summary', () => {
+    const result = explain('killall -9 java');
+    expect(result.summary).toContain('java');
+  });
+
+  it('warns about destructive signal when -9 is used', () => {
+    const result = explain('killall -9 nginx');
+    expect(hasWarningMatching(result.warnings, /cannot be caught/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-148: rule routing — kill vs pkill vs killall', () => {
+  it('"killall ssh" routes to killallExplain (not killExplain)', () => {
+    const result = explain('killall ssh');
+    expect(hasWarningMatching(result.warnings, /every running process|unrelated instances/i)).toBe(true);
+    expect(hasWarningMatching(result.warnings, /pattern|matches by name|multiple processes/i)).toBe(false);
+  });
+
+  it('"pkill ssh" routes to pkillExplain (not killExplain or killallExplain)', () => {
+    const result = explain('pkill ssh');
+    expect(hasWarningMatching(result.warnings, /pattern|matches by name|multiple processes/i)).toBe(true);
+    expect(hasWarningMatching(result.warnings, /every running process|unrelated instances/i)).toBe(false);
+  });
+
+  it('"kill 1234" routes to killExplain (not pkill or killall)', () => {
+    const result = explain('kill 1234');
+    expect(hasWarningMatching(result.warnings, /pattern|matches by name|every running process/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-149: kill — fallback when no target is provided', () => {
+  it('falls back gracefully with a placeholder target', () => {
+    const result = explain('kill');
+    expect(result.summary).toMatch(/SIGTERM|<pid>/i);
+  });
+});
+
+describe('TC-CE-150: pkill / killall — fallback when no pattern is provided', () => {
+  it('pkill: falls back gracefully with a placeholder pattern', () => {
+    const result = explain('pkill');
+    expect(result.summary).toMatch(/<pattern>/);
+  });
+
+  it('killall: falls back gracefully with a placeholder name', () => {
+    const result = explain('killall');
+    expect(result.summary).toMatch(/<name>/);
   });
 });

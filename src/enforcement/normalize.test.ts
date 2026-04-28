@@ -83,6 +83,7 @@ describe('registry coverage — each action class resolves from at least one ali
     ['systemctl',        'system.service'],
     ['chmod',            'permissions.modify'],
     ['sudo',             'permissions.elevate'],
+    ['kill',             'process.signal'],
     ['git_log',          'vcs.read'],
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
@@ -401,6 +402,39 @@ describe('permissions.elevate aliases and defaults', () => {
 
   it('no intent_group on permissions.elevate', () => {
     const result = normalize_action('sudo', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// process.signal action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('process.signal aliases and defaults', () => {
+  it('kill → process.signal with high risk and per_request HITL', () => {
+    const result = normalize_action('kill', {});
+    expect(result.action_class).toBe('process.signal');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('pkill → process.signal', () => {
+    const result = normalize_action('pkill', {});
+    expect(result.action_class).toBe('process.signal');
+  });
+
+  it('killall → process.signal', () => {
+    const result = normalize_action('killall', {});
+    expect(result.action_class).toBe('process.signal');
+  });
+
+  it('KILL (uppercase) → process.signal via case-insensitive alias lookup', () => {
+    const result = normalize_action('KILL', {});
+    expect(result.action_class).toBe('process.signal');
+  });
+
+  it('no intent_group on process.signal', () => {
+    const result = normalize_action('kill', {});
     expect(result.intent_group).toBeUndefined();
   });
 });

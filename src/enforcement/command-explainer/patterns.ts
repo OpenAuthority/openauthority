@@ -643,6 +643,161 @@ function passwdExplain(args: string[]): ExplainResult {
   };
 }
 
+// ── Process signal helpers ─────────────────────────────────────────────────────
+
+/**
+ * Parses a kill-style argument list into a signal name and a list of targets.
+ *
+ * `kill` accepts negative-PID targets (`-1` = broadcast, `-1234` = process
+ * group), so a naive "anything starting with `-` is a flag" rule wrongly
+ * eats them. Rule used here:
+ *
+ *   1. The FIRST signal-shaped token (`-9`, `-KILL`, `-s KILL`,
+ *      `--signal=KILL`) is consumed as the signal.
+ *   2. After `--`, every token is a target.
+ *   3. Any subsequent `-<number>` token is treated as a target (negative
+ *      PID), not a second signal.
+ *
+ * Returns the signal name (without `SIG` prefix, e.g. `'KILL'` or `'9'`),
+ * or `undefined` when none is present.
+ */
+function parseKillArgs(args: string[]): { signal: string | undefined; targets: string[] } {
+  let signal: string | undefined;
+  let signalConsumed = false;
+  let afterDoubleDash = false;
+  const targets: string[] = [];
+
+  for (let i = 0; i < args.length; i++) {
+    const a = args[i]!;
+    if (afterDoubleDash) {
+      targets.push(a);
+      continue;
+    }
+    if (a === '--') {
+      afterDoubleDash = true;
+      continue;
+    }
+    if (!signalConsumed) {
+      if (a === '-s' || a === '--signal') {
+        const next = args[i + 1];
+        if (next !== undefined) {
+          signal = next.replace(/^SIG/i, '');
+          signalConsumed = true;
+          i += 1;
+          continue;
+        }
+      }
+      if (a.startsWith('--signal=')) {
+        signal = a.slice('--signal='.length).replace(/^SIG/i, '');
+        signalConsumed = true;
+        continue;
+      }
+      if (/^-[A-Z]+$/.test(a)) {
+        signal = a.slice(1).replace(/^SIG/i, '');
+        signalConsumed = true;
+        continue;
+      }
+      if (/^-\d+$/.test(a)) {
+        signal = a.slice(1);
+        signalConsumed = true;
+        continue;
+      }
+    }
+    // Anything else (including subsequent -<number> tokens) is a target.
+    targets.push(a);
+  }
+
+  return { signal, targets };
+}
+
+/** Signals operators almost always mean "destructive" when sent. */
+const DESTRUCTIVE_SIGNALS: ReadonlySet<string> = new Set([
+  '9', 'KILL', '11', 'SEGV',
+]);
+
+/** Signals that are routine reload / soft-stop operations. */
+const RELOAD_SIGNALS: ReadonlySet<string> = new Set([
+  '1', 'HUP',
+]);
+
+function killExplain(args: string[]): ExplainResult {
+  // `kill -l` lists signals, no target — read-only.
+  if (args.includes('-l') || args.includes('-L')) {
+    return {
+      summary: 'Lists available signal names',
+      effects: [],
+      warnings: [],
+    };
+  }
+
+  const { signal, targets } = parseKillArgs(args);
+  const targetStr = targets.length > 0 ? targets.join(', ') : '<pid>';
+  const signalLabel = signal !== undefined ? signal : 'TERM';
+
+  const warnings: string[] = [];
+  if (DESTRUCTIVE_SIGNALS.has(signalLabel.toUpperCase())) {
+    warnings.push(`SIG${signalLabel} cannot be caught or ignored — process exits immediately without cleanup`);
+  }
+  if (targets.includes('1')) {
+    warnings.push('Target is PID 1 (init) — killing it crashes the host');
+  }
+  if (targets.includes('-1')) {
+    warnings.push('Target is -1 — sends the signal to every process the caller can reach');
+  }
+
+  const effects: string[] = [];
+  if (RELOAD_SIGNALS.has(signalLabel.toUpperCase())) {
+    effects.push('Triggers a configuration reload (SIGHUP)');
+  } else {
+    effects.push(`Sends SIG${signalLabel} to the target process`);
+  }
+
+  return {
+    summary: `Sends SIG${signalLabel} to ${targetStr}`,
+    effects,
+    warnings,
+  };
+}
+
+function pkillExplain(args: string[]): ExplainResult {
+  const { signal, targets } = parseKillArgs(args);
+  // pkill takes a pattern as its last positional. Patterns aren't numeric,
+  // so parseKillArgs's negative-PID disambiguation is harmless here.
+  const pattern = targets[targets.length - 1] ?? '<pattern>';
+  const signalLabel = signal !== undefined ? signal : 'TERM';
+
+  const warnings: string[] = ['Pattern matches by name — may target multiple processes'];
+  if (DESTRUCTIVE_SIGNALS.has(signalLabel.toUpperCase())) {
+    warnings.push(`SIG${signalLabel} cannot be caught or ignored — affected processes exit immediately without cleanup`);
+  }
+  if (args.includes('-f') || args.includes('--full')) {
+    warnings.push('-f / --full matches against the full command line — broader than the process name alone');
+  }
+
+  return {
+    summary: `Sends SIG${signalLabel} to processes matching '${pattern}'`,
+    effects: [`Sends SIG${signalLabel} to every process whose name matches the pattern`],
+    warnings,
+  };
+}
+
+function killallExplain(args: string[]): ExplainResult {
+  const { signal, targets } = parseKillArgs(args);
+  const name = targets[0] ?? '<name>';
+  const signalLabel = signal !== undefined ? signal : 'TERM';
+
+  const warnings: string[] = ['killall affects every running process with this name — may include unrelated instances'];
+  if (DESTRUCTIVE_SIGNALS.has(signalLabel.toUpperCase())) {
+    warnings.push(`SIG${signalLabel} cannot be caught or ignored — affected processes exit immediately without cleanup`);
+  }
+
+  return {
+    summary: `Sends SIG${signalLabel} to every process named '${name}'`,
+    effects: [`Sends SIG${signalLabel} to every process matching the name`],
+    warnings,
+  };
+}
+
 function mkdirExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const path = pos[0] ?? '<directory>';
@@ -996,6 +1151,10 @@ const rules: CommandRule[] = [
   { match: /^sudo\b/,            explain: sudoExplain },
   { match: /^su\b/,              explain: suExplain },
   { match: /^passwd\b/,          explain: passwdExplain },
+  // Process signalling
+  { match: /^kill\b/,            explain: killExplain },
+  { match: /^pkill\b/,           explain: pkillExplain },
+  { match: /^killall\b/,         explain: killallExplain },
 ];
 
 // ── Public API ─────────────────────────────────────────────────────────────────

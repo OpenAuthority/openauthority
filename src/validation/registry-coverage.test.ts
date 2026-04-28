@@ -72,6 +72,10 @@ const COVERAGE_EXEMPT = new Set<string>([
   // §2.2. The v1.3.2 plan ships a default-forbid policy rule on this class
   // instead. Operators who need privilege elevation use unsafe_admin_exec.
   ActionClass.PermissionsElevate,
+  // v1.3.2: typed tools for kill/pkill/killall (see release-plan §6).
+  // PID resolution to process name+cmdline happens inside the typed tool so
+  // HITL messages can show "TERM pid 1234 (/usr/bin/java -jar app.jar)".
+  ActionClass.ProcessSignal,
 ]);
 
 // ─── Scanning helpers ──────────────────────────────────────────────────────────
