@@ -153,6 +153,19 @@ describe('loadAutoPermitRulesFromFile', () => {
     expect(result.found).toBe(true);
     expect(result.rules).toEqual([]);
     expect(result.skipped).toBe(0);
+    expect(result.version).toBe(0);
+  });
+
+  // TC-APS-05b
+  it('parses versioned { version, rules } format and returns the correct version', async () => {
+    const rule = makeRule({ pattern: 'git push *' });
+    mockReadFile.mockResolvedValue(JSON.stringify({ version: 5, rules: [rule] }));
+    const result = await loadAutoPermitRulesFromFile(STORE_PATH);
+    expect(result.found).toBe(true);
+    expect(result.version).toBe(5);
+    expect(result.rules).toHaveLength(1);
+    expect(result.rules[0]!.pattern).toBe('git push *');
+    expect(result.skipped).toBe(0);
   });
 
   // TC-APS-06
@@ -179,7 +192,7 @@ describe('saveAutoPermitRules', () => {
   // TC-APS-07
   it('writes to a .tmp file then renames over the target path', async () => {
     const rules = [makeRule({ pattern: 'git commit *' })];
-    await saveAutoPermitRules(STORE_PATH, rules);
+    await saveAutoPermitRules(STORE_PATH, rules, 1);
     expect(mockWriteFile).toHaveBeenCalledWith(
       `${STORE_PATH}.tmp`,
       expect.any(String),
@@ -190,20 +203,29 @@ describe('saveAutoPermitRules', () => {
   });
 
   // TC-APS-08
-  it('writes an empty array as valid JSON when rules is empty', async () => {
-    await saveAutoPermitRules(STORE_PATH, []);
+  it('writes versioned envelope { version, rules } as valid JSON when rules is empty', async () => {
+    await saveAutoPermitRules(STORE_PATH, [], 1);
     const written = mockWriteFile.mock.calls[0]![1] as string;
-    expect(JSON.parse(written)).toEqual([]);
+    expect(JSON.parse(written)).toEqual({ version: 1, rules: [] });
   });
 
   // TC-APS-09
   it('written content round-trips through JSON.parse and preserves all fields', async () => {
     const rule = makeRule({ pattern: 'npm install *', method: 'exact', createdAt: 42 });
-    await saveAutoPermitRules(STORE_PATH, [rule]);
+    await saveAutoPermitRules(STORE_PATH, [rule], 3);
     const written = mockWriteFile.mock.calls[0]![1] as string;
-    const parsed = JSON.parse(written) as AutoPermit[];
-    expect(parsed).toHaveLength(1);
-    expect(parsed[0]).toMatchObject({ pattern: 'npm install *', method: 'exact', createdAt: 42 });
+    const parsed = JSON.parse(written) as { version: number; rules: AutoPermit[] };
+    expect(parsed.version).toBe(3);
+    expect(parsed.rules).toHaveLength(1);
+    expect(parsed.rules[0]).toMatchObject({ pattern: 'npm install *', method: 'exact', createdAt: 42 });
+  });
+
+  // TC-APS-09b
+  it('uses version 1 by default when nextVersion is omitted', async () => {
+    await saveAutoPermitRules(STORE_PATH, []);
+    const written = mockWriteFile.mock.calls[0]![1] as string;
+    const parsed = JSON.parse(written) as { version: number; rules: AutoPermit[] };
+    expect(parsed.version).toBe(1);
   });
 });
 

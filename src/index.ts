@@ -4,6 +4,7 @@ export type {
   PolicyDecisionEntry,
   HitlDecisionEntry,
   NormalizerUnclassifiedEntry,
+  AutoPermitAddedEntry,
   JsonlAuditLoggerOptions,
 } from "./audit.js";
 
@@ -140,6 +141,7 @@ export type {
   ResolvedTelegramConfig,
   SendApprovalOpts,
   TelegramCommand,
+  TelegramOperatorInfo,
   ResolvedSlackConfig,
   SlackSendApprovalOpts,
   SlackSendApprovalResult,
@@ -148,7 +150,7 @@ export type {
 
 // ─── Internal imports ─────────────────────────────────────────────────────────
 import { JsonlAuditLogger } from "./audit.js";
-import type { HitlDecisionEntry, NormalizerUnclassifiedEntry, PolicyDecisionEntry } from "./audit.js";
+import type { AutoPermitAddedEntry, HitlDecisionEntry, NormalizerUnclassifiedEntry, PolicyDecisionEntry } from "./audit.js";
 import { PolicyEngine as CedarPolicyEngine } from "./policy/engine.js";
 import type { Rule, RuleContext } from "./policy/types.js";
 import defaultRules, { OPEN_MODE_RULES } from "./policy/rules.js";
@@ -162,6 +164,7 @@ import { startHitlPolicyWatcher, type HitlWatcherHandle } from "./hitl/watcher.j
 import type { HitlPolicyConfig } from "./hitl/types.js";
 import { ApprovalManager } from "./hitl/approval-manager.js";
 import { TelegramListener, sendApprovalRequest, sendConfirmation, resolveTelegramConfig } from "./hitl/telegram.js";
+import type { TelegramOperatorInfo } from "./hitl/telegram.js";
 import { SlackInteractionServer, sendSlackApprovalRequest, sendSlackConfirmation, resolveSlackConfig } from "./hitl/slack.js";
 import { createHash } from "node:crypto";
 import { readFile } from "node:fs/promises";
@@ -700,9 +703,20 @@ async function loadAutoPermitRules(): Promise<void> {
  * session-scoped auto-approval is registered.  Failures are swallowed and
  * logged so that the broader approval flow is never interrupted.
  *
- * The `channel` string is used only for log prefixing (e.g. `'telegram'`).
+ * @param command    The command string to derive a pattern from (e.g. tool target).
+ * @param channel    Log prefix / audit channel tag (e.g. `'telegram'`, `'slack'`).
+ * @param operatorId Identity of the operator who clicked "Approve Always", when
+ *                   available.  For Telegram button clicks this is the numeric user
+ *                   ID, optionally followed by `@username`.  Absent for text-command
+ *                   approvals and Slack (not exposed in the interaction payload).
+ * @param agentId    Agent ID that triggered the original HITL approval request.
  */
-async function persistAutoPermitPattern(command: string, channel: string): Promise<void> {
+async function persistAutoPermitPattern(
+  command: string,
+  channel: string,
+  operatorId?: string,
+  agentId?: string,
+): Promise<void> {
   let derived: ReturnType<typeof derivePattern>;
   try {
     derived = derivePattern({ command });
@@ -722,6 +736,7 @@ async function persistAutoPermitPattern(command: string, channel: string): Promi
     const storePath = resolve(moduleDir, "../../", config.path);
 
     const existing = await loadAutoPermitRulesFromFile(storePath);
+    const nextVersion = existing.version + 1;
 
     const newRule: AutoPermit = {
       pattern: derived.pattern,
@@ -730,9 +745,25 @@ async function persistAutoPermitPattern(command: string, channel: string): Promi
       originalCommand: command,
     };
 
-    await saveAutoPermitRules(storePath, [...existing.rules, newRule]);
+    await saveAutoPermitRules(storePath, [...existing.rules, newRule], nextVersion);
     await loadAutoPermitRules();
-    console.log(`[hitl-${channel}] auto-permit rule saved: '${derived.pattern}'`);
+    console.log(`[hitl-${channel}] auto-permit rule saved: '${derived.pattern}' (store v${nextVersion})`);
+
+    // Emit auto_permit_added audit event.
+    if (hitlAuditLogger) {
+      const entry: AutoPermitAddedEntry = {
+        ts: new Date().toISOString(),
+        type: 'auto_permit_added',
+        pattern: derived.pattern,
+        method: derived.method,
+        originalCommand: command,
+        channel,
+        agentId: agentId ?? 'unknown',
+        storeVersion: nextVersion,
+        ...(operatorId !== undefined ? { operatorId } : {}),
+      };
+      await hitlAuditLogger.log(entry);
+    }
   } catch (err) {
     console.warn(`[hitl-${channel}] failed to save auto-permit rule: ${(err as Error).message}`);
   }
@@ -1696,19 +1727,29 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
       if (telegramConfig) {
         telegramListener = new TelegramListener(
           telegramConfig.botToken,
-          (command, token) => {
+          (command, token, from?: TelegramOperatorInfo) => {
             if (command === 'approve_always' && FEATURES.approveAlwaysEnabled) {
               // Register session auto-approval before resolving so future
               // requests of the same action class in this channel skip HITL.
               const pending = approvalManager.getPending(token);
               if (pending) {
                 approvalManager.addSessionAutoApproval(pending.channelId, pending.action_class);
-                console.log(`[hitl-telegram] session auto-approval registered: channel=${pending.channelId} action_class=${pending.action_class}`);
+                // Build operator identity string from Telegram callback_query.from.
+                // Format: "<userId>" or "<userId>@<username>" when username is set.
+                const operatorId = from !== undefined
+                  ? (from.username !== undefined
+                    ? `${from.userId}@${from.username}`
+                    : String(from.userId))
+                  : undefined;
+                console.log(
+                  `[hitl-telegram] session auto-approval registered: channel=${pending.channelId} action_class=${pending.action_class}` +
+                  (operatorId !== undefined ? ` operator=${operatorId}` : ''),
+                );
                 // Derive and persist an auto-permit pattern from the command
                 // target so future matching commands are auto-permitted without
                 // requiring HITL at all. Failures are logged, not thrown.
                 if (pending.target.length > 0) {
-                  void persistAutoPermitPattern(pending.target, 'telegram');
+                  void persistAutoPermitPattern(pending.target, 'telegram', operatorId, pending.agentId);
                 }
               }
             }
@@ -1741,8 +1782,10 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
                 // Derive and persist an auto-permit pattern from the command
                 // target so future matching commands are auto-permitted without
                 // requiring HITL at all. Failures are logged, not thrown.
+                // Slack interaction payloads do not expose a structured operator
+                // identity at this level; operatorId is omitted.
                 if (pending.target.length > 0) {
-                  void persistAutoPermitPattern(pending.target, 'slack');
+                  void persistAutoPermitPattern(pending.target, 'slack', undefined, pending.agentId);
                 }
               }
             }

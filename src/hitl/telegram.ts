@@ -237,6 +237,22 @@ export async function sendConfirmation(
 
 export type TelegramCommand = 'approve' | 'approve_always' | 'deny';
 
+/**
+ * Identity of the Telegram operator who triggered a command via an inline
+ * keyboard button click.  Populated from the `callback_query.from` field of
+ * the Telegram Bot API update.  Not available for text-command approvals
+ * (`/approve TOKEN`) because the Bot API message object does not expose the
+ * sender in the same structured way as `callback_query.from`.
+ */
+export interface TelegramOperatorInfo {
+  /** Telegram numeric user ID of the operator. */
+  userId: number;
+  /** Telegram username (without `@`), when set by the operator. */
+  username?: string;
+  /** Display first name of the operator. */
+  firstName?: string;
+}
+
 // Tokens are UUID v7 (36 chars with hyphens, e.g. "019daa50-5dc1-78ee-9ab4-bcf652bddfa3")
 // or session_approval keys of the form "session_id:action_class" (may contain ':', '.').
 // approve_always must appear before approve in the alternation so it matches first.
@@ -260,7 +276,20 @@ export class TelegramListener {
 
   constructor(
     private readonly botToken: string,
-    private readonly onCommand: (command: TelegramCommand, token: string) => void,
+    /**
+     * Called when a recognised command token is received.
+     *
+     * For inline keyboard button clicks the optional third argument carries
+     * the Telegram operator's identity (user ID, username, first name).
+     * For text commands (`/approve TOKEN`) the third argument is absent
+     * because the Bot API message object does not expose sender identity in a
+     * structured `from` field at this listener level.
+     */
+    private readonly onCommand: (
+      command: TelegramCommand,
+      token: string,
+      from?: TelegramOperatorInfo,
+    ) => void,
   ) {}
 
   /** Starts the long-polling loop. Safe to call multiple times (no-op if already running). */
@@ -310,7 +339,11 @@ export class TelegramListener {
           result?: Array<{
             update_id: number;
             message?: { text?: string; chat?: { id: number } };
-            callback_query?: { id: string; data?: string };
+            callback_query?: {
+              id: string;
+              data?: string;
+              from?: { id: number; username?: string; first_name?: string };
+            };
           }>;
         };
 
@@ -324,14 +357,26 @@ export class TelegramListener {
 
           // Handle inline keyboard button clicks (callback_query).
           if (update.callback_query) {
-            const { id: queryId, data } = update.callback_query;
+            const { id: queryId, data, from } = update.callback_query;
             if (data) {
               const match = CALLBACK_DATA_RE.exec(data);
               if (match) {
                 const command = match[1] as TelegramCommand;
                 const token = match[2]!;
                 void this.answerCallbackQuery(queryId);
-                this.onCommand(command, token);
+                // Capture operator identity from callback_query.from when present.
+                const operatorInfo: TelegramOperatorInfo | undefined = from
+                  ? {
+                      userId: from.id,
+                      ...(from.username !== undefined ? { username: from.username } : {}),
+                      ...(from.first_name !== undefined ? { firstName: from.first_name } : {}),
+                    }
+                  : undefined;
+                if (operatorInfo !== undefined) {
+                  this.onCommand(command, token, operatorInfo);
+                } else {
+                  this.onCommand(command, token);
+                }
               }
             }
             continue;

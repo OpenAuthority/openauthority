@@ -100,6 +100,43 @@ export interface NormalizerUnclassifiedEntry {
   verified?: boolean;
 }
 
+/**
+ * Audit entry emitted when a new auto-permit pattern is persisted to the
+ * auto-permit store following an "Approve Always" operator action.
+ *
+ * Records the derived pattern, the original command that triggered it, the
+ * operator identity (when available from the HITL channel), the channel
+ * through which the approval was granted, the AI agent that triggered the
+ * original HITL request, and the store version after the write.
+ */
+export interface AutoPermitAddedEntry {
+  /** ISO 8601 timestamp. */
+  ts: string;
+  /** Entry type marker. */
+  type: 'auto_permit_added';
+  /** The derived permit pattern written to the store (e.g. `"git commit *"`). */
+  pattern: string;
+  /** Derivation method used to produce the pattern (`'default'` or `'exact'`). */
+  method: string;
+  /** Verbatim command that triggered pattern derivation. */
+  originalCommand: string;
+  /**
+   * Identity of the operator who clicked "Approve Always", when available.
+   *
+   * For Telegram: the numeric user ID stringified (e.g. `"123456789"`), with
+   * optional `@username` suffix when the user has one set
+   * (e.g. `"123456789@alice"`).  Absent for text-command approvals and Slack
+   * approvals where the interaction payload does not expose user identity.
+   */
+  operatorId?: string;
+  /** HITL channel through which approval was granted (e.g. `'telegram'`, `'slack'`). */
+  channel: string;
+  /** Agent ID that triggered the original HITL approval request. */
+  agentId: string;
+  /** Auto-permit store version number after the new rule was appended. */
+  storeVersion: number;
+}
+
 /** Options for {@link JsonlAuditLogger}. */
 export interface JsonlAuditLoggerOptions {
   /** Absolute or relative path to the JSONL log file. */
@@ -158,7 +195,7 @@ export class JsonlAuditLogger {
    * @param entry  Audit entry to record. Accepts {@link PolicyDecisionEntry},
    *               {@link HitlDecisionEntry}, or any `Record<string, unknown>`.
    */
-  async log(entry: PolicyDecisionEntry | HitlDecisionEntry | NormalizerUnclassifiedEntry | Record<string, unknown>): Promise<void> {
+  async log(entry: PolicyDecisionEntry | HitlDecisionEntry | NormalizerUnclassifiedEntry | AutoPermitAddedEntry | Record<string, unknown>): Promise<void> {
     const line = JSON.stringify(entry) + "\n";
     try {
       mkdirSync(dirname(this.filePath), { recursive: true });

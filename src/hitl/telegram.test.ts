@@ -855,4 +855,54 @@ describe('TelegramListener', () => {
     expect(getUpdatesCalls.length).toBeGreaterThanOrEqual(2);
     expect(getUpdatesCalls[1]![0] as string).toContain('offset=51');
   });
+
+  it('passes operator info to onCommand when callback_query has a from field', async () => {
+    const updates = {
+      ok: true,
+      result: [
+        {
+          update_id: 60,
+          callback_query: {
+            id: 'cq-from',
+            data: 'approve_always:abc12345',
+            from: { id: 987654321, username: 'alice_ops', first_name: 'Alice' },
+          },
+        },
+      ],
+    };
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(updates), { status: 200 }))
+      .mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    listener = new TelegramListener('test-token', onCommand);
+    listener.start();
+
+    await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
+    expect(onCommand).toHaveBeenCalledWith('approve_always', 'abc12345', {
+      userId: 987654321,
+      username: 'alice_ops',
+      firstName: 'Alice',
+    });
+  });
+
+  it('omits operator info when callback_query has no from field', async () => {
+    const updates = {
+      ok: true,
+      result: [
+        { update_id: 61, callback_query: { id: 'cq-nofrom', data: 'approve:abc12345' } },
+      ],
+    };
+
+    vi.mocked(fetch)
+      .mockResolvedValueOnce(new Response(JSON.stringify(updates), { status: 200 }))
+      .mockResolvedValue(new Response('{"ok":true}', { status: 200 }));
+
+    listener = new TelegramListener('test-token', onCommand);
+    listener.start();
+
+    await vi.waitFor(() => expect(onCommand).toHaveBeenCalled());
+    // Called with only two arguments when from is absent.
+    expect(onCommand).toHaveBeenCalledWith('approve', 'abc12345');
+  });
 });
