@@ -1856,14 +1856,18 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
     // ── Version banner: confirm at a glance which build is running ──────────
     const v = getVersionInfo();
     const dirtyTag = v.commitDirty ? " (dirty)" : "";
-    console.log("┌──────────────────────────────────────────────────────────────┐");
-    console.log("│  [plugin:clawthority] VERSION                              │");
-    console.log("├──────────────────────────────────────────────────────────────┤");
-    console.log(`│  version:    ${v.version}${dirtyTag}`.padEnd(63) + "│");
-    console.log(`│  commit:     ${v.commit}${dirtyTag}`.padEnd(63) + "│");
-    console.log(`│  built at:   ${v.builtAt}`.padEnd(63) + "│");
-    console.log(`│  root:       ${v.pluginRoot}`.padEnd(63) + "│");
-    console.log("└──────────────────────────────────────────────────────────────┘");
+    console.log("+--------------------------------------------------------------+");
+    console.log("|  [plugin:clawthority] VERSION                                |");
+    console.log("+--------------------------------------------------------------+");
+    console.log(`|  version:    ${v.version}${dirtyTag}`.padEnd(63) + "|");
+    console.log(`|  commit:     ${v.commit}${dirtyTag}`.padEnd(63) + "|");
+    console.log(`|  built at:   ${v.builtAt}`.padEnd(63) + "|");
+    const MAX_ROOT_LEN = 48;
+    const displayRoot = v.pluginRoot.length > MAX_ROOT_LEN
+      ? '...' + v.pluginRoot.slice(-(MAX_ROOT_LEN - 3))
+      : v.pluginRoot;
+    console.log(`|  root:       ${displayRoot}`.padEnd(63) + "|");
+    console.log("+--------------------------------------------------------------+");
 
     rulesWatcher = startRulesWatcher(cedarEngineRef, 300, undefined, { defaultEffect: DEFAULT_EFFECT }, ACTIVE_RULES, coverageMap);
 
@@ -1932,40 +1936,40 @@ const plugin: OpenclawPlugin & { register?: (api: OpenclawPluginContext) => void
       if (!rulesByResource[key]) rulesByResource[key] = [];
       rulesByResource[key].push(r);
     }
-    console.log("┌──────────────────────────────────────────────────────────────┐");
-    console.log("│  [plugin:clawthority] ACTIVATION SUMMARY                  │");
-    console.log("├──────────────────────────────────────────────────────────────┤");
-    console.log("│  HOOKS REGISTERED (via ctx.on):                              │");
+    console.log("+--------------------------------------------------------------+");
+    console.log("|  [plugin:clawthority] ACTIVATION SUMMARY                     |");
+    console.log("+--------------------------------------------------------------+");
+    console.log("|  HOOKS REGISTERED (via ctx.on):                              |");
     for (const h of registeredHooks) {
-      console.log(`│    ✓ ${h.padEnd(54)}│`);
+      console.log(`|    + ${h.padEnd(56)}|`);
     }
     for (const h of disabledHooks) {
-      console.log(`│    ✗ ${h} (disabled)`.padEnd(63) + "│");
+      console.log(`|    - ${h} (disabled)`.padEnd(63) + "|");
     }
-    console.log("├──────────────────────────────────────────────────────────────┤");
+    console.log("+--------------------------------------------------------------+");
     const modeLabel = MODE === 'open'
       ? 'OPEN   (implicit permit; critical forbids enforced)'
       : 'CLOSED (implicit deny; explicit permits required)';
-    console.log(`│  MODE: ${modeLabel.padEnd(54)}│`);
-    console.log("├──────────────────────────────────────────────────────────────┤");
-    console.log(`│  POLICY RULES LOADED: ${String(rules.length).padEnd(38)}│`);
+    console.log(`|  MODE: ${modeLabel.padEnd(54)}|`);
+    console.log("+--------------------------------------------------------------+");
+    console.log(`|  POLICY RULES LOADED: ${String(rules.length).padEnd(39)}|`);
     for (const [resource, resourceRules] of Object.entries(rulesByResource)) {
       const permits = resourceRules.filter((r) => r.effect === "permit").length;
       const forbids = resourceRules.filter((r) => r.effect === "forbid").length;
-      console.log(`│    ${resource}: ${resourceRules.length} rules (${permits} permit, ${forbids} forbid)`.padEnd(63) + "│");
+      console.log(`|    ${resource}: ${resourceRules.length} rules (${permits} permit, ${forbids} forbid)`.padEnd(63) + "|");
     }
-    console.log("├──────────────────────────────────────────────────────────────┤");
-    console.log("│  RULE DETAILS:                                               │");
+    console.log("+--------------------------------------------------------------+");
+    console.log("|  RULE DETAILS:                                               |");
     for (const r of rules) {
-      const effect = r.effect === "permit" ? "✓ PERMIT" : "✕ FORBID";
+      const effect = r.effect === "permit" ? "+ PERMIT" : "x FORBID";
       const target = r.action_class
         ? `action:${r.action_class}`
         : `${r.resource ?? "?"}:${r.match instanceof RegExp ? r.match.source : String(r.match ?? "*")}`;
       const truncTarget = target.length > 48 ? target.slice(0, 45) + "..." : target;
       const cond = r.condition ? " [conditional]" : "";
-      console.log(`│  ${effect} ${truncTarget}${cond}`.padEnd(63) + "│");
+      console.log(`|  ${effect} ${truncTarget}${cond}`.padEnd(63) + "|");
     }
-    console.log("└──────────────────────────────────────────────────────────────┘");
+    console.log("+--------------------------------------------------------------+");
 
     // ── Audit logger — wire up before any stage so policy decisions land ────
     // The logger backs both HITL events (logHitlDecision) and structured
