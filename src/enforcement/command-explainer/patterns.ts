@@ -1646,6 +1646,231 @@ function virshExplain(args: string[]): ExplainResult {
   }
 }
 
+// ── Light explainers — read-only file utilities (cat / head / tail / etc.) ─
+
+function catExplain(args: string[]): ExplainResult {
+  const paths = positionalArgs(args);
+  if (paths.length === 0) {
+    return {
+      summary: 'Reads stdin and prints to stdout',
+      effects: ['Reads stdin'],
+      warnings: [],
+    };
+  }
+  return {
+    summary: paths.length === 1
+      ? `Prints the contents of ${paths[0]}`
+      : `Concatenates and prints ${paths.join(', ')}`,
+    effects: ['Reads from the local filesystem'],
+    warnings: [],
+  };
+}
+
+function headExplain(args: string[]): ExplainResult {
+  const nIdx = args.findIndex(a => a === '-n');
+  const n = nIdx >= 0 ? args[nIdx + 1] : undefined;
+  const numericFlag = args.find(a => /^-\d+$/.test(a));
+  const lines = n ?? (numericFlag !== undefined ? numericFlag.slice(1) : '10');
+  const path = positionalArgs(args).find(a => !/^-?\d+$/.test(a));
+  return {
+    summary: path !== undefined
+      ? `Prints the first ${lines} lines of ${path}`
+      : `Prints the first ${lines} lines from stdin`,
+    effects: ['Reads from the local filesystem'],
+    warnings: [],
+  };
+}
+
+function tailExplain(args: string[]): ExplainResult {
+  const nIdx = args.findIndex(a => a === '-n');
+  const n = nIdx >= 0 ? args[nIdx + 1] : undefined;
+  const numericFlag = args.find(a => /^-\d+$/.test(a));
+  const lines = n ?? (numericFlag !== undefined ? numericFlag.slice(1) : '10');
+  const isFollow = args.includes('-f') || args.includes('--follow') || args.includes('-F');
+  const path = positionalArgs(args).find(a => !/^-?\d+$/.test(a));
+
+  const summary = isFollow
+    ? path !== undefined
+      ? `Streams ${path} as new lines are appended (tail -f)`
+      : 'Streams stdin as new content arrives (tail -f)'
+    : path !== undefined
+      ? `Prints the last ${lines} lines of ${path}`
+      : `Prints the last ${lines} lines from stdin`;
+
+  const warnings = isFollow
+    ? ['Long-running — the command does not return until interrupted']
+    : [];
+
+  return {
+    summary,
+    effects: ['Reads from the local filesystem'],
+    warnings,
+  };
+}
+
+function diffExplain(args: string[]): ExplainResult {
+  const paths = positionalArgs(args);
+  const a = paths[0] ?? '<file-a>';
+  const b = paths[1] ?? '<file-b>';
+  return {
+    summary: `Compares ${a} against ${b}`,
+    effects: ['Reads two files and reports differences'],
+    warnings: [],
+  };
+}
+
+function findExplain(args: string[]): ExplainResult {
+  const path = positionalArgs(args)[0] ?? '.';
+  const warnings: string[] = [];
+  if (args.includes('-delete')) {
+    warnings.push('-delete removes every file matching the predicate');
+  }
+  if (args.includes('-exec')) {
+    warnings.push('-exec runs the supplied command for every match');
+  }
+  return {
+    summary: `Searches the filesystem under ${path}`,
+    effects: ['Walks the filesystem looking for entries matching the predicate'],
+    warnings,
+  };
+}
+
+function locateExplain(args: string[]): ExplainResult {
+  const pattern = positionalArgs(args)[0] ?? '<pattern>';
+  return {
+    summary: `Searches the locate index for '${pattern}'`,
+    effects: ['Reads the pre-built locate database'],
+    warnings: [],
+  };
+}
+
+function treeExplain(args: string[]): ExplainResult {
+  const path = positionalArgs(args)[0] ?? '.';
+  return {
+    summary: `Lists the directory tree starting at ${path}`,
+    effects: ['Walks and prints the directory hierarchy'],
+    warnings: [],
+  };
+}
+
+function lsExplain(args: string[]): ExplainResult {
+  const positional = positionalArgs(args);
+  const target = positional.length > 0 ? positional.join(', ') : '.';
+  const isLong = args.some(a => /^-[a-zA-Z]*l/.test(a)) || args.includes('--long');
+  return {
+    summary: isLong ? `Lists ${target} with file metadata` : `Lists ${target}`,
+    effects: ['Reads directory entries from the local filesystem'],
+    warnings: [],
+  };
+}
+
+// ── Light explainers — write-side utilities (tee / touch) ──────────────────
+
+function teeExplain(args: string[]): ExplainResult {
+  const paths = positionalArgs(args);
+  const target = paths.length > 0 ? paths.join(', ') : '<file>';
+  const isAppend = args.includes('-a') || args.includes('--append');
+  return {
+    summary: isAppend
+      ? `Reads stdin and appends to ${target}`
+      : `Reads stdin and writes to ${target}`,
+    effects: ['Reads stdin and writes the same content to one or more files'],
+    warnings: isAppend ? [] : ['Existing file content at the target path is overwritten'],
+  };
+}
+
+function touchExplain(args: string[]): ExplainResult {
+  const paths = positionalArgs(args);
+  const target = paths.length > 0 ? paths.join(', ') : '<file>';
+  return {
+    summary: `Creates or updates the timestamp of ${target}`,
+    effects: ['Creates an empty file when the target does not exist; updates mtime/atime when it does'],
+    warnings: [],
+  };
+}
+
+function echoExplain(args: string[]): ExplainResult {
+  const text = args.join(' ');
+  const truncated = text.length > 60 ? `${text.slice(0, 57)}…` : text;
+  return {
+    summary: text.length > 0 ? `Prints '${truncated}' to stdout` : 'Prints to stdout',
+    effects: ['Writes to stdout'],
+    warnings: [],
+  };
+}
+
+function printfExplain(args: string[]): ExplainResult {
+  const fmt = args[0] ?? '';
+  const truncated = fmt.length > 60 ? `${fmt.slice(0, 57)}…` : fmt;
+  return {
+    summary: fmt.length > 0 ? `Prints formatted output: '${truncated}'` : 'Prints formatted output',
+    effects: ['Writes to stdout'],
+    warnings: [],
+  };
+}
+
+// ── Light explainers — system info / monitoring ────────────────────────────
+
+function staticReadOnlyExplain(summary: string, effect: string): ExplainResult {
+  return { summary, effects: [effect], warnings: [] };
+}
+
+function unameExplain(args: string[]): ExplainResult {
+  const isAll = args.includes('-a') || args.includes('--all');
+  return {
+    summary: isAll ? 'Reports the full kernel and system identification' : 'Reports the kernel name',
+    effects: ['Reads kernel / system metadata'],
+    warnings: [],
+  };
+}
+
+function psExplain(_args: string[]): ExplainResult {
+  return staticReadOnlyExplain('Lists running processes', 'Reads kernel process state');
+}
+function topExplain(_args: string[]): ExplainResult {
+  return {
+    summary: 'Opens an interactive process monitor',
+    effects: ['Continuously reads kernel process state'],
+    warnings: ['Long-running — does not return until interrupted'],
+  };
+}
+function htopExplain(_args: string[]): ExplainResult {
+  return {
+    summary: 'Opens htop, an interactive process monitor',
+    effects: ['Continuously reads kernel process state'],
+    warnings: ['Long-running — does not return until interrupted'],
+  };
+}
+function dfExplain(_args: string[]): ExplainResult {
+  return staticReadOnlyExplain('Reports disk space usage by mounted filesystem', 'Reads filesystem statistics');
+}
+function duExplain(args: string[]): ExplainResult {
+  const path = positionalArgs(args)[0] ?? '.';
+  return staticReadOnlyExplain(`Reports disk usage for ${path}`, 'Walks the filesystem and totals sizes');
+}
+function freeExplain(_args: string[]): ExplainResult {
+  return staticReadOnlyExplain('Reports memory and swap usage', 'Reads kernel memory statistics');
+}
+function hostnameExplain(_args: string[]): ExplainResult {
+  return staticReadOnlyExplain('Reports the system hostname', 'Reads the kernel hostname');
+}
+function uptimeExplain(_args: string[]): ExplainResult {
+  return staticReadOnlyExplain('Reports system uptime and load averages', 'Reads kernel uptime / load statistics');
+}
+function lsofExplain(_args: string[]): ExplainResult {
+  return staticReadOnlyExplain('Lists open files and sockets', 'Reads kernel file-descriptor state');
+}
+function idExplain(args: string[]): ExplainResult {
+  const user = positionalArgs(args)[0];
+  return staticReadOnlyExplain(
+    user !== undefined ? `Reports the user/group IDs for ${user}` : 'Reports the current user/group IDs',
+    'Reads user / group identity from the system',
+  );
+}
+function whoamiExplain(_args: string[]): ExplainResult {
+  return staticReadOnlyExplain('Reports the effective username', 'Reads the current process user identity');
+}
+
 function mkdirExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const path = pos[0] ?? '<directory>';
@@ -2106,6 +2331,35 @@ const rules: CommandRule[] = [
   // Cluster management + VM lifecycle
   { match: /^kubectl\b/,          explain: kubectlExplain },
   { match: /^virsh\b/,            explain: virshExplain },
+  // Read-only file utilities
+  { match: /^cat\b/,              explain: catExplain },
+  { match: /^head\b/,             explain: headExplain },
+  { match: /^tail\b/,             explain: tailExplain },
+  { match: /^less\b/,             explain: (args) => ({ summary: positionalArgs(args)[0] !== undefined ? `Pages through ${positionalArgs(args)[0]} interactively` : 'Pages through stdin interactively', effects: ['Reads from the local filesystem'], warnings: ['Long-running — interactive pager does not return until quit'] }) },
+  { match: /^more\b/,             explain: (args) => ({ summary: positionalArgs(args)[0] !== undefined ? `Pages through ${positionalArgs(args)[0]}` : 'Pages through stdin', effects: ['Reads from the local filesystem'], warnings: ['Long-running — interactive pager does not return until quit'] }) },
+  { match: /^diff\b/,             explain: diffExplain },
+  { match: /^find\b/,             explain: findExplain },
+  { match: /^locate\b/,           explain: locateExplain },
+  { match: /^tree\b/,             explain: treeExplain },
+  { match: /^ls\b/,               explain: lsExplain },
+  // Write-side file utilities
+  { match: /^tee\b/,              explain: teeExplain },
+  { match: /^touch\b/,            explain: touchExplain },
+  { match: /^echo\b/,             explain: echoExplain },
+  { match: /^printf\b/,           explain: printfExplain },
+  // System info / monitoring
+  { match: /^uname\b/,            explain: unameExplain },
+  { match: /^ps\b/,               explain: psExplain },
+  { match: /^top\b/,              explain: topExplain },
+  { match: /^htop\b/,             explain: htopExplain },
+  { match: /^df\b/,               explain: dfExplain },
+  { match: /^du\b/,               explain: duExplain },
+  { match: /^free\b/,             explain: freeExplain },
+  { match: /^hostname\b/,         explain: hostnameExplain },
+  { match: /^uptime\b/,           explain: uptimeExplain },
+  { match: /^lsof\b/,             explain: lsofExplain },
+  { match: /^id\b/,               explain: idExplain },
+  { match: /^whoami\b/,           explain: whoamiExplain },
 ];
 
 // ── Public API ─────────────────────────────────────────────────────────────────

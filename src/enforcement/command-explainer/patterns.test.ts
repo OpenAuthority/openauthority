@@ -35,6 +35,8 @@
  *                          (apply, delete, get, describe, logs, exec,
  *                          port-forward, rollout, scale)
  *   TC-CE-233 – TC-CE-237: virsh subcommand patterns
+ *   TC-CE-238 – TC-CE-258: light explainers — read utilities, write utilities,
+ *                          system info / monitoring (final v1.3.1 gap-fill)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -2972,5 +2974,329 @@ describe('TC-CE-237: virsh undefine — persistence + storage warnings', () => {
   it('--remove-all-storage adds an irreversible-deletion warning', () => {
     const result = explain('virsh undefine db1 --remove-all-storage');
     expect(hasWarningMatching(result.warnings, /--remove-all-storage|disk image|irreversible/i)).toBe(true);
+  });
+});
+
+// ── TC-CE-238 – TC-CE-258 : final-pass light explainers ──────────────────────
+
+describe('TC-CE-238: cat — names files in summary', () => {
+  it('summarises a single-file cat', () => {
+    const result = explain('cat /etc/hosts');
+    expect(result.summary).toContain('/etc/hosts');
+  });
+
+  it('summarises a multi-file cat as concatenation', () => {
+    const result = explain('cat a.txt b.txt');
+    expect(result.summary).toMatch(/Concatenates|prints/i);
+    expect(result.summary).toContain('a.txt');
+    expect(result.summary).toContain('b.txt');
+  });
+
+  it('summarises bare cat as a stdin reader', () => {
+    const result = explain('cat');
+    expect(result.summary).toMatch(/stdin/i);
+  });
+});
+
+describe('TC-CE-239: head — line count from -n / -N / default', () => {
+  it('default 10 lines', () => {
+    const result = explain('head /etc/hosts');
+    expect(result.summary).toMatch(/first 10/);
+  });
+
+  it('-n N takes precedence', () => {
+    const result = explain('head -n 5 /etc/hosts');
+    expect(result.summary).toMatch(/first 5/);
+  });
+
+  it('-N short form', () => {
+    const result = explain('head -3 /etc/hosts');
+    expect(result.summary).toMatch(/first 3/);
+  });
+});
+
+describe('TC-CE-240: tail -f — long-running warning', () => {
+  it('warns about long-running tail -f', () => {
+    const result = explain('tail -f /var/log/syslog');
+    expect(hasWarningMatching(result.warnings, /long-running|interrupted/i)).toBe(true);
+  });
+
+  it('does not warn for a normal tail', () => {
+    const result = explain('tail -n 50 /var/log/syslog');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-241: less / more — interactive-pager warning', () => {
+  it('less warns about long-running interactive', () => {
+    const result = explain('less /etc/hosts');
+    expect(hasWarningMatching(result.warnings, /long-running|interactive/i)).toBe(true);
+  });
+
+  it('more warns about long-running interactive', () => {
+    const result = explain('more /etc/hosts');
+    expect(hasWarningMatching(result.warnings, /long-running|interactive/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-242: diff — names both files', () => {
+  it('summarises two-file diff', () => {
+    const result = explain('diff a.txt b.txt');
+    expect(result.summary).toContain('a.txt');
+    expect(result.summary).toContain('b.txt');
+  });
+});
+
+describe('TC-CE-243: find — -delete and -exec flag warnings', () => {
+  it('warns when -delete is used', () => {
+    const result = explain('find /tmp -name "*.bak" -delete');
+    expect(hasWarningMatching(result.warnings, /-delete/i)).toBe(true);
+  });
+
+  it('warns when -exec is used', () => {
+    const result = explain('find /tmp -name "*.tmp" -exec rm {} ;');
+    expect(hasWarningMatching(result.warnings, /-exec/i)).toBe(true);
+  });
+
+  it('does not warn for a plain search', () => {
+    const result = explain('find /tmp -name "*.log"');
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('reports the search root in the summary', () => {
+    const result = explain('find /var/log -name "*.gz"');
+    expect(result.summary).toContain('/var/log');
+  });
+});
+
+describe('TC-CE-244: locate / tree — read-only summaries', () => {
+  it('locate names the pattern', () => {
+    const result = explain('locate openssl');
+    expect(result.summary).toContain('openssl');
+  });
+
+  it('tree names the path', () => {
+    const result = explain('tree /etc');
+    expect(result.summary).toContain('/etc');
+  });
+});
+
+describe('TC-CE-245: ls — long-format detection', () => {
+  it('detects -l long format', () => {
+    const result = explain('ls -l /etc');
+    expect(result.summary).toMatch(/file metadata/i);
+  });
+
+  it('detects -la combined flag', () => {
+    const result = explain('ls -la /etc');
+    expect(result.summary).toMatch(/file metadata/i);
+  });
+
+  it('plain ls does not mention metadata', () => {
+    const result = explain('ls /etc');
+    expect(result.summary).not.toMatch(/file metadata/i);
+  });
+
+  it('bare ls defaults to current directory', () => {
+    const result = explain('ls');
+    expect(result.summary).toMatch(/Lists \./);
+  });
+});
+
+describe('TC-CE-246: tee — overwrite vs append', () => {
+  it('warns about overwrite on plain tee', () => {
+    const result = explain('tee /tmp/output.txt');
+    expect(hasWarningMatching(result.warnings, /overwritten/i)).toBe(true);
+  });
+
+  it('does not warn when -a / --append is used', () => {
+    const result = explain('tee -a /tmp/output.txt');
+    expect(hasWarningMatching(result.warnings, /overwritten/i)).toBe(false);
+  });
+
+  it('summary mentions append mode when -a is used', () => {
+    const result = explain('tee --append /tmp/output.txt');
+    expect(result.summary).toMatch(/appends/i);
+  });
+});
+
+describe('TC-CE-247: touch — creates or updates timestamps', () => {
+  it('summarises with the named file', () => {
+    const result = explain('touch /tmp/marker');
+    expect(result.summary).toContain('/tmp/marker');
+  });
+});
+
+describe('TC-CE-248: echo / printf — stdout-only summaries', () => {
+  it('echo includes the text in summary', () => {
+    const result = explain('echo hello world');
+    expect(result.summary).toContain('hello world');
+  });
+
+  it('echo truncates very long text', () => {
+    const long = 'x'.repeat(80);
+    const result = explain(`echo ${long}`);
+    expect(result.summary).toMatch(/…/);
+  });
+
+  it('bare echo summarises as stdout print', () => {
+    const result = explain('echo');
+    expect(result.summary).toMatch(/stdout/i);
+  });
+
+  it('printf includes the format string', () => {
+    const result = explain('printf "%d items\\n" 5');
+    expect(result.summary).toMatch(/items|formatted/i);
+  });
+});
+
+describe('TC-CE-249: ps — basic summary', () => {
+  it('summarises as listing processes', () => {
+    const result = explain('ps aux');
+    expect(result.summary).toMatch(/Lists running processes/i);
+  });
+
+  it('emits no warnings (read-only)', () => {
+    const result = explain('ps aux');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-250: top / htop — long-running interactive warning', () => {
+  it('top warns about long-running', () => {
+    const result = explain('top');
+    expect(hasWarningMatching(result.warnings, /long-running|interrupted/i)).toBe(true);
+  });
+
+  it('htop warns about long-running', () => {
+    const result = explain('htop');
+    expect(hasWarningMatching(result.warnings, /long-running|interrupted/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-251: df / du / free — disk and memory queries', () => {
+  it('df summarises disk usage', () => {
+    const result = explain('df -h');
+    expect(result.summary).toMatch(/disk space/i);
+  });
+
+  it('du summarises with target path', () => {
+    const result = explain('du -sh /var');
+    expect(result.summary).toContain('/var');
+  });
+
+  it('free summarises memory usage', () => {
+    const result = explain('free -m');
+    expect(result.summary).toMatch(/memory/i);
+  });
+});
+
+describe('TC-CE-252: hostname / uptime / lsof / id / whoami — read-only summaries', () => {
+  it('hostname', () => {
+    const result = explain('hostname');
+    expect(result.summary).toMatch(/hostname/i);
+  });
+  it('uptime', () => {
+    const result = explain('uptime');
+    expect(result.summary).toMatch(/uptime|load/i);
+  });
+  it('lsof', () => {
+    const result = explain('lsof');
+    expect(result.summary).toMatch(/open files|sockets/i);
+  });
+  it('id (current user)', () => {
+    const result = explain('id');
+    expect(result.summary).toMatch(/user.*group/i);
+  });
+  it('id <user>', () => {
+    const result = explain('id alice');
+    expect(result.summary).toContain('alice');
+  });
+  it('whoami', () => {
+    const result = explain('whoami');
+    expect(result.summary).toMatch(/username/i);
+  });
+});
+
+describe('TC-CE-253: uname — long-form vs default', () => {
+  it('-a reports full identification', () => {
+    const result = explain('uname -a');
+    expect(result.summary).toMatch(/full kernel|system identification/i);
+  });
+
+  it('default reports just the kernel name', () => {
+    const result = explain('uname');
+    expect(result.summary).toMatch(/kernel name/i);
+  });
+});
+
+describe('TC-CE-254: rule routing — find vs locate vs tree', () => {
+  it('"find /tmp" routes to findExplain', () => {
+    const result = explain('find /tmp');
+    expect(result.summary).toMatch(/Searches the filesystem/i);
+  });
+
+  it('"locate openssl" routes to locateExplain', () => {
+    const result = explain('locate openssl');
+    expect(result.summary).toMatch(/locate index/i);
+  });
+
+  it('"tree /etc" routes to treeExplain', () => {
+    const result = explain('tree /etc');
+    expect(result.summary).toMatch(/directory tree/i);
+  });
+});
+
+describe('TC-CE-255: rule routing — ps does not match psql / pstree', () => {
+  it('"psql -c ..." does not match the ps rule', () => {
+    const result = explain('psql -c "SELECT 1"');
+    // psql isn't in our pattern table — the explainer fallback returns
+    // "Runs psql". The key is that it does NOT match psExplain.
+    expect(result.summary).not.toMatch(/Lists running processes/);
+  });
+
+  it('"pstree" does not match the ps rule', () => {
+    const result = explain('pstree');
+    expect(result.summary).not.toMatch(/Lists running processes/);
+  });
+});
+
+describe('TC-CE-256: rule routing — id alice does not match identify / idea / etc.', () => {
+  it('"id alice" routes to idExplain', () => {
+    const result = explain('id alice');
+    expect(result.summary).toContain('alice');
+  });
+
+  it('"identify image.png" does not match id rule', () => {
+    const result = explain('identify image.png');
+    expect(result.summary).not.toMatch(/user.*group/);
+  });
+});
+
+describe('TC-CE-257: read-only utilities emit no warnings', () => {
+  it.each([
+    ['cat /etc/hosts', /\/etc\/hosts/],
+    ['head /etc/hosts', /first/],
+    ['diff a b', /Compares/],
+    ['ls /etc', /Lists/],
+    ['tree /etc', /tree/i],
+    ['ps aux', /processes/i],
+    ['df -h', /disk/i],
+    ['hostname', /hostname/i],
+    ['whoami', /username/i],
+  ])('"%s" — no warnings', (cmd, _summaryHint) => {
+    const result = explain(cmd);
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-258: bare invocations do not crash', () => {
+  it.each([
+    'cat', 'head', 'tail', 'less', 'more', 'diff', 'find', 'locate', 'tree',
+    'tee', 'touch', 'echo', 'printf',
+    'ps', 'top', 'htop', 'df', 'du', 'free', 'hostname', 'uptime', 'lsof', 'id', 'whoami',
+  ])('"%s" produces a non-empty summary without throwing', (cmd) => {
+    const result = explain(cmd);
+    expect(result.summary.length).toBeGreaterThan(0);
   });
 });

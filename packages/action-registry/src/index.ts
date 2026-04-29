@@ -125,6 +125,18 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'exists',
       'file_exists',
       'path_exists',
+      // Bare-binary aliases for read-only file utilities. All low-risk,
+      // none-HITL by default — the destination is a local file and the
+      // action does not modify it. `find` and `locate` are searches
+      // (filesystem traversal / index query) and share the tier.
+      'cat',
+      'head',
+      'tail',
+      'less',
+      'more',
+      'diff',
+      'find',
+      'locate',
     ],
   },
   {
@@ -156,6 +168,11 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'move',
       'rename_file',
       'rename',
+      // Bare-binary aliases that produce or modify file content.
+      // tee writes stdin to a file; touch creates an empty file or
+      // updates timestamps. Both legitimately filesystem.write.
+      'tee',
+      'touch',
     ],
   },
   {
@@ -195,6 +212,7 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'list_dir',
       'read_directory',
       'ls',
+      'tree',
     ],
   },
   {
@@ -456,6 +474,27 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'get_arch',
       'get_os_info',
       'uname',
+      // Bare-binary aliases for read-only system-info utilities. All
+      // low-risk, none-HITL — they query process / disk / memory state
+      // without modifying anything. Same tier as `uname`.
+      'ps',
+      'top',
+      'htop',
+      'df',
+      'du',
+      'free',
+      'hostname',
+      'uptime',
+      'lsof',
+      'id',
+      'whoami',
+      // echo / printf are output utilities — by themselves they only write
+      // to stdout. Side-effecting redirection (`echo > file`) happens at the
+      // shell level and is invisible to us either way; classifying as
+      // system.read avoids HITL noise on every echo while leaving the
+      // redirection-write case at the unchanged shell-level posture.
+      'echo',
+      'printf',
     ],
   },
   {
