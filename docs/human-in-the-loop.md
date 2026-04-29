@@ -454,50 +454,103 @@ Uses the Telegram Bot API with long polling to receive operator responses.
    export TELEGRAM_CHAT_ID="987654321"
    ```
 
-#### Approval flow
+#### Approval flow (v1.3.0+ — inline buttons)
 
-1. Agent triggers a matched action
-2. Bot sends a message to your chat with action details and the approval token
-3. You reply `/approve <token>` or `/deny <token>`
-4. The plugin resolves the pending action and the agent continues or receives a rejection
-5. A confirmation message is sent to the chat showing the decision
+1. Agent triggers a matched action.
+2. Bot sends a MarkdownV2-formatted message to your chat with action details and an inline keyboard with three buttons: **Approve Once**, **Approve Always** (optional), **Deny**.
+3. You tap a button. The Telegram client sends a `callback_query` to the bot.
+4. The plugin resolves the pending action via `answerCallbackQuery` and the agent continues or receives a rejection.
+5. The original message is updated in place via `editMessageText` to show the decision; the buttons are removed.
+
+The legacy `/approve <token>` and `/deny <token>` text-command path is still supported as a fallback (described below) but the buttons are the primary UX.
 
 #### Message format
 
-Telegram messages use Markdown formatting:
+Each approval message is rendered in MarkdownV2 and contains the following sections, in order. Optional sections are omitted when empty.
+
+| Section | Always present | Source |
+|---|---|---|
+| `UNVERIFIED AGENT` warning | only when `verified === false` | identity resolver |
+| `HITL Approval Request` header | yes | static |
+| Tool / Agent / Policy / (Risk) / Expires-in | yes | approval request fields |
+| Action class / Target | when populated | normaliser |
+| Summary / Explanation | when populated | command explainer (v1.3.0+) |
+| Effects (bullet list) | when non-empty | command explainer |
+| Warnings (bullet list, prefixed `!`) | when non-empty | command explainer |
+| Intent hint ("Why this is happening") | when `ctx.metadata.intent_hint` set | agent-supplied; truncated to 200 chars |
+| Command (preformatted block) | when populated | original command string; truncated to 200 chars |
+| Expiry timestamp / Approval ID | yes | approval request |
+| Inline keyboard buttons | yes | static three-button row |
+
+Example rendered message (formatting simplified):
 
 ```
-*HITL Approval Request* — `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d`
+HITL Approval Request
 
-*Tool:* `email.delete`
-*Agent:* `agent-1`
-*Policy:* destructive-actions
-*Expires in:* 120s
+Tool: bash
+Agent: main
+Policy: shell-exec-gate
+Risk: high
+Expires in: 120s
+Action Class: code.execute
+Target: docker run -it --rm -v /:/host ubuntu bash
 
-Reply with:
-`/approve 01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` or `/deny 01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d`
+Explanation:
+Starts an Ubuntu container with the host filesystem mounted
+
+Effects:
+• Starts a container
+• Mounts the host filesystem at /host
+• Executes a shell script inside the container
+
+Warnings:
+• Full disk access — host filesystem mounted at /host
+• Privileged container
+
+Why this is happening:
+The agent is bootstrapping a development environment.
+
+Command:
+```docker run -it --rm -v /:/host ubuntu bash -c "setup.sh"```
+
+Expires at: 2026-04-29T12:34:56Z
+Approval ID: 01957b3c-...
+
+[ Approve Once ] [ Approve Always ] [ Deny ]
 ```
 
-After a decision, a confirmation is sent:
+After a decision, the original message is replaced via `editMessageText` with a one-line confirmation:
 
 ```
-Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *APPROVED*
-Tool: `email.delete`
+Action `01957b3c-...` — APPROVED
+Tool: `bash`
 ```
 
-Or for denial:
+(or `DENIED` for a denial). The buttons are removed.
+
+#### Approve Always
+
+Tapping **Approve Always** opens a follow-up confirmation message that proposes a permit pattern derived from the command (e.g. `docker run *`) with `Save` / `Cancel` buttons. On Save, the rule is appended to `data/auto-permits.json` and hot-reloaded; the next matching command bypasses HITL entirely. See the dedicated [Approve Always](#approve-always) section below for derivation rules, the auto-permit store format, the CLI helpers, and the `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` / `CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM=1` flags.
+
+#### Legacy text-command fallback
+
+The pre-v1.3.0 text-command flow is still supported. If your operator workflow depends on it (e.g. mobile clients without inline-button support, or pipeline integrations that scrape the chat), you can still resolve approvals by replying:
 
 ```
-Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *DENIED*
-Tool: `email.delete`
+/approve 01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d
+/deny    01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d
 ```
+
+These commands work unchanged from v1.2.x. The plan is to keep them through v1.3.x and revisit removal in v1.4.
+
+To collapse the message body to the v1.2.x minimal style (raw command + buttons, no explainer / effects / warnings / intent-hint sections), set `CLAWTHORITY_HITL_MINIMAL=1`. Buttons (including Approve Always) continue to work — only the rich body is suppressed.
 
 #### Security considerations
 
-- **Secret storage:** Store `TELEGRAM_BOT_TOKEN` in a secrets manager or in an env file outside the repository. Never hardcode it in `hitl-policy.yaml`. Precedence: `TELEGRAM_BOT_TOKEN` env var > `telegram.botToken` config field > (no built-in default — missing token disables the adapter).
-- **Access control:** The bot listens on the configured `TELEGRAM_CHAT_ID` only. Commands from other chats are silently ignored. Use a private chat or a group with restricted membership.
-- **No request verification:** Telegram long polling fetches updates from the Telegram API; there is no incoming webhook to verify. Ensure the bot token is not exposed, as possession of the token gives full control over the bot.
-- **Command parsing:** Only messages matching `/approve TOKEN` or `/deny TOKEN` are processed; all other messages are ignored. Token validation uses `[A-Za-z0-9_-]{6,12}` to filter invalid inputs.
+- **Secret storage:** Store `TELEGRAM_BOT_TOKEN` in a secrets manager or env file outside the repository. Never hardcode it in `hitl-policy.yaml`. Precedence: `TELEGRAM_BOT_TOKEN` env var > `telegram.botToken` config field > (no built-in default — missing token disables the adapter).
+- **Access control:** The bot listens on the configured `TELEGRAM_CHAT_ID` only. Updates from other chats are silently ignored. Use a private chat or a group with restricted membership. Anyone who can see and tap a button in the chat can approve — restrict membership to operators.
+- **No webhook verification needed:** Telegram long-polling fetches updates from the Telegram API; there is no incoming webhook to verify. Ensure the bot token is not exposed — possession of the token gives full control over the bot.
+- **Callback-query parsing:** Only `callback_query` updates with `callback_data` matching `<verb>:<token>` (where verb ∈ `approve_once`, `approve_always`, `deny`, `confirm_approve_always`, `cancel_approve_always`) are processed; all other updates are ignored. Token format: UUID v7. The legacy text command parser uses `[A-Za-z0-9_-]{6,12}` to filter invalid inputs.
 
 ---
 
@@ -522,40 +575,53 @@ Uses the Slack Web API with Block Kit interactive buttons. Requires a webhook en
 
 #### Approval flow
 
-1. Agent triggers a matched action
-2. Bot posts a Block Kit message to the configured channel with action details and two buttons: **Approve** and **Deny**
-3. Operator clicks a button
-4. Slack sends a signed POST request to the interaction webhook endpoint
-5. The webhook verifies the Slack signature and dispatches the decision
-6. The original message is updated to show the decision (buttons removed)
+1. Agent triggers a matched action.
+2. Bot posts a Block Kit message to the configured channel with action details and three buttons: **Approve Once**, **Approve Always** (optional), **Deny**.
+3. Operator clicks a button.
+4. Slack sends a signed POST request to the interaction webhook endpoint.
+5. The webhook verifies the Slack signature and dispatches the decision.
+6. The original message is updated to show the decision (buttons removed).
 
 #### Message format
 
-Slack messages use Block Kit with a section block and an actions block:
+Slack messages use Block Kit. The body mirrors the Telegram MarkdownV2 layout — same fields, same explainer-driven content, same conditional sections — rendered as Block Kit blocks:
 
-**Approval request:**
+| Block | Always present | Source |
+|---|---|---|
+| `UNVERIFIED AGENT` warning context block | only when `verified === false` | identity resolver |
+| `HITL Approval Request` header block | yes | static |
+| Core fields: Tool / Agent / Policy / Expires-in (+ Risk when set) | yes | approval request fields |
+| Action class / Target fields | when populated | normaliser |
+| Summary / Explanation section | when populated | command explainer (v1.3.0+) |
+| Effects bullet list | when non-empty | command explainer |
+| Warnings bullet list (prefixed `!`) | when non-empty | command explainer |
+| Intent hint context block | when `ctx.metadata.intent_hint` set | agent-supplied; truncated to 200 chars |
+| Command preformatted block | when populated | truncated to 200 chars |
+| Approval-ID footer | yes | approval request |
+| Actions block — three buttons | yes | static |
+
+The buttons carry action IDs and values:
+
+| Button label | `action_id` | `value` |
+|---|---|---|
+| Approve Once | `hitl_approve_once` | `approve_once:<token>` |
+| Approve Always (optional) | `hitl_approve_always` | `approve_always:<token>` |
+| Deny | `hitl_deny` | `deny:<token>` |
+
+After a decision, the original message is updated via `chat.update`. The buttons are removed and replaced with a one-line decision summary:
 
 ```
-:rotating_light: *HITL Approval Request* — `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d`
-
-*Tool:* `email.send`
-*Agent:* `agent-1`
-*Policy:* external-communication
-*Expires in:* 180s
-
-[ Approve ]  [ Deny ]
-```
-
-The buttons carry action IDs `hitl_approve` and `hitl_deny` with values `approve:<token>` and `deny:<token>`.
-
-**After decision:**
-
-```
-Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *APPROVED*
+Action `01957b3c-...` — APPROVED
 Tool: `email.send`
 ```
 
-The original message is updated via `chat.update`; the buttons are replaced with the decision text.
+#### Approve Always
+
+The third button opens a Block Kit confirmation message proposing a permit pattern derived from the command, with **Save** / **Cancel** buttons. On Save, the rule is appended to `data/auto-permits.json` and hot-reloaded. See the dedicated [Approve Always](#approve-always) section below.
+
+To hide the Approve Always button on Slack (keeping only Approve Once / Deny), set `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1`.
+
+To collapse the message body to v1.2.x minimal style (raw command + buttons only — no explainer / effects / warnings / intent-hint sections), set `CLAWTHORITY_HITL_MINIMAL=1`.
 
 #### Approval URL structure and webhook endpoint
 
@@ -610,6 +676,149 @@ Only `block_actions` type payloads with values matching `approve:<token>` or `de
 - **Request age validation:** Requests with a timestamp older than 5 minutes are rejected, preventing replay of valid signatures.
 - **Access control:** The bot posts to a single `SLACK_CHANNEL_ID`. Ensure the channel has appropriate membership restrictions. Any Slack workspace member who can see the channel can click Approve or Deny — restrict the channel to operators only.
 - **Port exposure:** The interaction server listens on all interfaces by default. In production, put it behind a reverse proxy and restrict access at the network level.
+
+---
+
+### Console (fallback channel)
+
+Added in v1.3.0. When neither Telegram nor Slack is configured (or both are unreachable and the policy has `fallback: deny` *and* the operator wants a synchronous prompt rather than a hard deny), the plugin can route the approval to the local terminal.
+
+#### When it's used
+
+- Local development and CI testing — no need to set up a Telegram bot just to run E2E suites.
+- Operator-owned shell sessions where the agent and the human share a terminal.
+- Disaster-recovery scenarios when the configured channel is reachable but you want a tighter feedback loop.
+
+The console adapter is **not** intended for production use. There is no audit trail beyond the audit log entry itself, no operator-identity verification, and the prompt blocks the agent process.
+
+#### Configuration
+
+Set the channel to `console` in your HITL policy:
+
+```yaml
+policies:
+  - name: dev-console-approvals
+    actions:
+      - "filesystem.delete"
+    approval:
+      channel: console
+      timeout: 60
+      fallback: deny
+```
+
+No env vars are required.
+
+#### Approval flow
+
+1. Agent triggers a matched action.
+2. The plugin renders the same rich body (header / fields / explainer summary / effects / warnings / intent hint / command) as Telegram and Slack, in plain text with ANSI colour highlighting (red for warnings, yellow for risk, etc.).
+3. The terminal prompts: `[a] Approve Once  [s] Approve Always  [d] Deny  >`.
+4. Operator types `a` / `s` / `d` and Enter. The plugin resolves the pending action.
+5. Result is printed to the same terminal.
+
+`CLAWTHORITY_HITL_MINIMAL=1` collapses the body to a single command line + prompt.
+
+---
+
+## Approve Always
+
+Added in v1.3.0. The third HITL button persists a permit pattern so the next matching command bypasses HITL entirely. This trades operator effort (one tap to save a pattern) against fewer prompts on recurring commands.
+
+### How it works
+
+1. Operator taps **Approve Always** on a Telegram / Slack / console approval.
+2. The plugin derives a permit pattern from the original command using the algorithm in [`src/auto-permits/pattern-derivation.ts`](../src/auto-permits/pattern-derivation.ts) (e.g. `docker run -it --rm ubuntu bash` → `docker run *`).
+3. A confirmation message is sent showing the derived pattern with `Save` / `Cancel` buttons. (When `CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM=1` is set, this step is skipped and the pattern is saved immediately.)
+4. On `Save`, the rule is appended to `data/auto-permits.json` and the file watcher hot-reloads the JSON rules engine.
+5. The original action proceeds with a normal approval.
+6. The next call whose command matches the saved pattern returns `effect: 'permit', stage: 'auto-permit'` from Stage 2 — bypassing HITL entirely.
+
+### Pattern derivation rules
+
+The derivation is intentionally conservative. Only commands that fit one of two methods produce a pattern; everything else is refused (operator must use Approve Once).
+
+- **`tool` method** — applies when the call resolves to a registered tool name (e.g. `npm_install`). Pattern is the tool name itself; matches every invocation regardless of parameters.
+- **`default` method** — applies when the action class is `unknown_sensitive_action` / `shell.exec` and the target is a shell command. Tokenises the command, drops flags (`-it`, `-v ...`, `--rm`), retains binary + first positional argument as `<binary> * <positional> *`. Example: `docker run -it --rm ubuntu bash` → `docker run *`.
+
+Refusal cases (Approve Always is offered but produces no pattern):
+- Shell metacharacters present (`;`, `|`, `&&`, `>`, backticks, `$()`) — derivation is unsafe.
+- Pattern length > 200 chars after derivation.
+- Pattern derives to a bare wildcard (e.g. `*`) or empty string.
+
+### Storage — `data/auto-permits.json`
+
+Permits live in a hot-reloadable JSON file alongside `data/rules.json`. Schema:
+
+```json
+{
+  "version": 5,
+  "checksum": "sha256-...",
+  "generated": "2026-04-29T12:34:56Z",
+  "rules": [
+    {
+      "pattern": "docker run *",
+      "method": "default",
+      "createdAt": 1714390000000,
+      "originalCommand": "docker run -it --rm ubuntu bash",
+      "created_by": "main",
+      "created_at": "2026-04-29T12:34:56Z",
+      "derived_from": "docker run -it --rm ubuntu bash"
+    }
+  ]
+}
+```
+
+| Field | Notes |
+|---|---|
+| `version` | Monotonic counter; bumped on every write. The watcher rejects bundles whose version is not strictly greater. |
+| `checksum` | SHA-256 of the canonicalised `rules` array; verified on load. |
+| `generated` | ISO-8601 write timestamp. Diagnostic only. |
+| `rules[].pattern` | The derived permit pattern. |
+| `rules[].method` | `tool` or `default`. |
+| `rules[].createdAt` | Epoch milliseconds. |
+| `rules[].originalCommand` | The command the pattern was derived from. |
+| `rules[].created_by` | Channel / agent identifier of the operator who approved. |
+| `rules[].created_at` | ISO-8601 form of `createdAt`. |
+| `rules[].derived_from` | Sanitised command snippet for audit display. |
+
+The file is hot-reloaded by the same chokidar watcher that handles `data/rules.json` and `data/bundle.json` — no plugin restart required after a manual edit.
+
+### CLI helpers
+
+The plugin ships six npm scripts for managing the auto-permit store. Run from the plugin directory:
+
+| Command | What it does |
+|---|---|
+| `npm run list-auto-permits` | Pretty-prints every saved pattern with origin metadata. |
+| `npm run show-auto-permit <pattern>` | Full detail for a single rule (by pattern or by index). |
+| `npm run validate-auto-permits` | Validates the file's schema + checksum without modifying anything. |
+| `npm run test-auto-permit -- <command>` | Dry-run match: reports which (if any) saved pattern would match the supplied command, without executing. |
+| `npm run remove-auto-permit -- <index>` | Removes a single rule by index; bumps the version counter. |
+| `npm run revoke-auto-permit -- <pattern>` | Removes by pattern string. |
+
+### Audit
+
+Every Approve Always save emits an `auto_permit_added` audit entry alongside the normal `hitl approved` entry:
+
+| Field | Notes |
+|---|---|
+| `type` | `"auto_permit_added"` |
+| `pattern` | The saved pattern. |
+| `method` | `tool` or `default`. |
+| `originalCommand` | The command the pattern was derived from. |
+| `agentId`, `channel`, `policyName` | Same provenance as the underlying HITL entry. |
+
+When a future command matches a saved pattern, Stage 2 emits an `auto_permit_match` entry recording which pattern fired.
+
+### Feature flags
+
+| Env var | Default | Effect |
+|---|---|---|
+| `CLAWTHORITY_DISABLE_APPROVE_ALWAYS` | unset | Set to `1` to hide the Approve Always button on every channel and refuse new auto-permit creation. Existing rules in `data/auto-permits.json` are still honoured. |
+| `CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM` | unset | Set to `1` to skip the Save / Cancel confirmation step. The pattern is saved immediately on the first button tap. Use only when you trust the derivation algorithm in your environment. |
+| `CLAWTHORITY_HITL_MINIMAL` | unset | Set to `1` to suppress the rich body (explainer summary / effects / warnings / intent hint / command block) — buttons (including Approve Always) still work. |
+
+All three are read once at module load; restart the plugin to change them.
 
 ---
 
