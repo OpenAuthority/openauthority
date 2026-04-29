@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-04-29
+
+Coverage release: closes the classification gap for the 16-category exec command audit. Every common shell command an agent can invoke now has either a registry alias (Layer 1) so policies and HITL gates can target it specifically, or an explainer pattern (Layer 2) so HITL approval messages explain what's about to run in plain English — and almost all have both.
+
+The release is purely additive on top of v1.3.0's HITL UX engine. No new operator-facing UI; no new feature flags; no new env vars. The two-stage pipeline, capability binding, Cedar semantics, and audit log shape are unchanged.
+
+### Added
+
+#### 10 new action classes covering host operations, network operations, and access control
+
+| Action class | Risk / HITL | Aliases |
+|---|---|---|
+| `system.service` | critical / per_request | `systemctl`, `service`, `init`, `reboot`, `shutdown`, `virsh` |
+| `permissions.modify` | high / per_request | `chmod`, `chown`, `chgrp`, `umask` |
+| `permissions.elevate` | critical / per_request | `sudo`, `su`, `doas`, `passwd` |
+| `process.signal` | high / per_request | `kill`, `pkill`, `killall` |
+| `network.diagnose` | low / none | `ping`, `traceroute`, `nslookup`, `dig`, `netstat`, `ss` |
+| `network.scan` | high / per_request | `nmap` |
+| `network.transfer` | high / per_request (`intent_group: data_exfiltration`) | `rsync`, `scp`, `sftp` |
+| `network.shell` | high / per_request | `ssh`, `mosh`, `telnet` |
+| `cluster.manage` | high / per_request | `kubectl` |
+| `scheduling.persist` | high / per_request | `crontab`, `at`, `batch`, `atq`, `atrm` |
+
+`network.transfer` joins `web.fetch` and `web.post` under the `data_exfiltration` intent group so a single rule can target the entire data-leaving-the-host cluster. `permissions.elevate` is documented in [docs/release-plans/v1.3.2.md](docs/release-plans/v1.3.2.md) §2.2 as a target for default-forbid policy in v1.3.2 — v1.3.1 only classifies; the policy default ships next.
+
+#### Bare-binary aliases on existing classes
+
+The original action registry mostly used tool-name forms (`read_file`, `git_log`, `npm_install`). v1.3.1 adds the bare-binary equivalents so commands invoked through a generic `bash`/`exec` tool also classify correctly:
+
+- `filesystem.read`: `cat`, `head`, `tail`, `less`, `more`, `diff`, `find`, `locate`
+- `filesystem.list`: `tree` (`ls` was already aliased)
+- `filesystem.write`: `tee`, `touch`, `install`
+- `system.read`: `ps`, `top`, `htop`, `df`, `du`, `free`, `hostname`, `uptime`, `lsof`, `id`, `whoami`, `echo`, `printf`
+- `archive.create`: `tar`, `zip`, `xz`, `7z`
+- `archive.extract`: `unxz`
+- `package.install`: `apt`, `apt-get`, `yum`, `dnf`, `dpkg`, `snap`, `brew`, `pacman`
+- `code.execute`: `docker` (the bare binary; `docker_run` was already aliased)
+
+#### Command explainer patterns — ~50 new functions
+
+Every alias added in this release has a matching explainer entry that produces a human-readable summary, structured effects, and warnings for the HITL message body. Highlights:
+
+- **Service / power**: `systemctl` dispatches by subcommand (`start`/`stop`/`restart`/`reload`/`enable`/`disable`/`mask`/`unmask`/`daemon-reload`/`status`/`reboot`/`poweroff`/`halt`/`kexec`/`suspend`/`hibernate`); `shutdown -r` vs `-h` vs `-c`; `init 0`/`init 6`/`init 1`/`init S` runlevel awareness.
+- **Permissions**: `chmod` / `chown` recursive + system-path warnings; `sudo -u` / `su -c` / `passwd <user>` target detection.
+- **Process signals**: signal-flag parsing handles bundled forms (`-9`, `-KILL`, `-s KILL`, `--signal=KILL`); PID 1 + broadcast `-1` warnings; SIGHUP recognised as a config reload.
+- **Network**: `dig`/`nslookup` flag internal-name leakage when querying `*.corp`/`*.internal`/RFC1918 against an external resolver; `nmap` always-on IDS / AUP warnings plus per-flag warnings for `-sS` / `-sU` / `-O` / `-A` / `--script`.
+- **Transfers**: `rsync` / `scp` / `sftp` flag remote endpoints (`user@host:path`, `host:path`, `rsync://`, `sftp://`); direction-aware "uploading" vs "pulling" warnings.
+- **Cluster**: `kubectl apply` / `delete` / `get` / `describe` / `logs` / `exec` (incl. `-it` interactive warning) / `port-forward` (long-running tunnel warning) / `rollout` / `scale`. Namespace flag (`-n` / `--namespace=`) propagates into every applicable summary.
+- **Scheduling**: `crontab -r` destructive-removal warning; `crontab <file>` install-replaces-everything warning; `at`/`atrm` job-cancellation persistence warning.
+- **Archives**: `tar` mode-flag dispatch (short bundles `czf`/`xzf`/`tf`, dashed `-czf`, long-form `--create`/`--extract`/`--list`); `unzip` / `tar -x` / `7z x` always-on path-traversal + decompression-bomb warnings.
+- **Read utilities**: `tail -f` / `top` / `htop` / `less` / `more` long-running interactive warnings; `find -delete` / `find -exec` flag warnings; `mv` to `/dev/null` / `/dev/zero` / `/tmp/trash/...` / `~/.Trash/...` flagged as effective deletion.
+- **Sessions**: `mosh` long-running session warning; `telnet` plaintext-credential warning.
+
+#### Docker subcommand coverage
+
+Extended `dockerExplain` dispatch to cover `docker push` (image-upload warning — secrets baked into the image become visible to anyone with registry read access; `--all-tags` warning) and `docker ps` (running vs `-a` all containers, read-only).
+
+### Tests
+
+~1,200 new unit tests across [src/enforcement/normalize.test.ts](src/enforcement/normalize.test.ts) and [src/enforcement/command-explainer/patterns.test.ts](src/enforcement/command-explainer/patterns.test.ts) (TC-CE-100 through TC-CE-291). The test count grew from 4070 in v1.3.0 to **4661**, all passing alongside the existing 470 E2E and 17/17 spec-alignment checks.
+
+### Documentation
+
+- `docs/action-taxonomy.md` — bumped from `frozen v1` to `frozen v2` with the 10 new action classes and the `network.shell` and `data_exfiltration`-bridging intent groups.
+- `docs/release-plans/v1.3.2.md` — typed-tool depth plan for the high-risk classes from this release (filed earlier; v1.3.2 is the next release).
+- 10 retroactive RFCs filed under `docs/rfc/` (RFC-001..RFC-010, all `status: implemented`) covering each new action class per the taxonomy governance process.
+
+### Migration (from v1.3.0)
+
+**Operator policies that targeted `unknown_sensitive_action` to catch unrecognised commands now match fewer commands.** v1.3.1 adds direct classifications for ~80 commands that previously fell through to the catch-all. If you wrote a rule like:
+
+```json
+{ "action_class": "unknown_sensitive_action", "effect": "forbid" }
+```
+
+…to gate `apt` / `ps` / `docker` / `systemctl` / etc., those calls now route to their specific action classes (`package.install` / `system.read` / `code.execute` / `system.service`). Replace the catch-all rule with explicit targets:
+
+```json
+{ "action_class": "system.service", "effect": "forbid" }
+{ "action_class": "permissions.elevate", "effect": "forbid" }
+```
+
+**HITL approval volume may increase for some workflows.** Commands that previously fell through to OPEN-mode implicit-permit now classify into HITL-gated tiers — `apt install` → `package.install` (per_request), `kubectl apply` → `cluster.manage` (per_request), `systemctl restart nginx` → `system.service` (per_request). Operators who rely on these in automation should configure permit policies for the relevant agents/channels.
+
+**No env-var changes; no rule-file format changes; no policy-bundle format changes.** The two-stage pipeline, capability binding semantics, Cedar forbid-wins, priority tiers (90 = HITL-gated, 100 = unconditional), hot-reload, and audit log shape are all identical to v1.3.0.
+
+**Rollback.** Revert the v1.3.1 PR; v1.3.0 keeps every command that was working in v1.3.0 working — the v1.3.1 work is purely additive.
+
+### ⚠️ Known gaps — deferred to v1.3.2 / v1.4
+
+- **Typed-tool wrappers** for the high-risk classes from this release (`system.service`, `permissions.modify`, `process.signal`, `cluster.manage`, `scheduling.persist`) — v1.3.2 (see release plan).
+- **Default-forbid policy** on `permissions.elevate` (sudo / su / passwd) — v1.3.2.
+- **`nohup`, `vagrant`, `aws s3 cp`** — deliberately not classified. nohup is a long-running-process detachment primitive; vagrant is low-volume; aws is a heterogeneous CLI that needs its own classification pass. All three remain `unknown_sensitive_action`.
+- **Long-running / streaming commands** (`kubectl exec -it`, `kubectl port-forward`, `tail -f`, `tee` to a long stream) — explainer warns about long-running semantics but the enforcement model still treats them as one-shot. Proper streaming support is the v1.4 RFC topic.
+
+---
+
 ## [1.3.0] — 2026-04-28
 
 Headline release: **HITL becomes the primary control surface, not the failure mode.** Operators approve or deny tool calls with a single button tap on Telegram (no more `/approve <token>` typing); recurring commands can be saved as auto-permits with one click; approval messages are written for humans, not for compilers.

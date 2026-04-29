@@ -1,19 +1,19 @@
 # OpenClaw Action Taxonomy
 
-> **Status: frozen v1**
+> **Status: frozen v2** (released with v1.3.1)
 >
-> This taxonomy is locked as a stable contract for the implementation phase. The action class names, risk defaults, HITL defaults, and intent groups defined here are **immutable** until a formal RFC is approved.
+> This taxonomy is the stable contract for policy authoring, tool manifests, and HITL routing. Action class names, risk defaults, HITL defaults, and intent groups are **immutable** until a formal RFC is approved per the process below.
 >
-> **Change control:** Any modification to this taxonomy — adding a class, removing a class, renaming a class, changing a risk level, or changing an intent group assignment — requires an approved RFC. Submit an RFC to the governance track before making changes to `packages/action-registry/src/index.ts` or this document.
+> **Change control:** Any modification — adding, removing, or renaming a class; changing a risk level or HITL default; reassigning an intent group — requires an approved RFC. RFC documents live under [`docs/rfc/`](rfc/); submit before editing this document or `packages/action-registry/src/index.ts`.
 
 ---
 
 ## Overview
 
-Every tool call an agent makes is normalized to a canonical **action class** before policy evaluation. The taxonomy defines 26 action classes organized into functional namespaces.
+Every tool call an agent makes is normalised to a canonical **action class** before policy evaluation. The taxonomy defines 41 named action classes plus the fail-closed `unknown_sensitive_action` sentinel, organised into functional namespaces.
 
-The frozen v1 taxonomy is the source of truth for:
-- Policy authoring (`action_class` and `intent_group` values in YAML rules)
+The frozen v2 taxonomy is the source of truth for:
+- Policy authoring (`action_class` and `intent_group` values in YAML and JSON rules)
 - Tool manifest declarations (`action_class` field in `ToolManifest`)
 - HITL enforcement (default `risk_tier` and `default_hitl_mode` alignment requirements)
 
@@ -21,34 +21,52 @@ The frozen v1 taxonomy is the source of truth for:
 
 ## Frozen Action Class Table
 
-| # | Action Class | Namespace | Risk | HITL Mode | Intent Group |
-|---|---|---|---|---|---|
-| 1 | `filesystem.read` | filesystem | low | none | — |
-| 2 | `filesystem.write` | filesystem | medium | per_request | — |
-| 3 | `filesystem.delete` | filesystem | high | per_request | `destructive_fs` |
-| 4 | `filesystem.list` | filesystem | low | none | — |
-| 5 | `web.search` | web | medium | per_request | — |
-| 6 | `web.fetch` | web | medium | per_request | `data_exfiltration` |
-| 7 | `web.post` | web | medium | per_request | `web_access` |
-| 8 | `browser.scrape` | browser | medium | per_request | — |
-| 9 | `shell.exec` | shell | high | per_request | — |
-| 10 | `communication.email` | communication | high | per_request | `external_send` |
-| 11 | `communication.slack` | communication | medium | per_request | `external_send` |
-| 12 | `communication.webhook` | communication | medium | per_request | `external_send` |
-| 13 | `memory.read` | memory | low | none | — |
-| 14 | `memory.write` | memory | medium | none | — |
-| 15 | `credential.read` | credential | high | per_request | `credential_access` |
-| 16 | `credential.write` | credential | critical | per_request | `credential_access` |
-| 17 | `code.execute` | code | high | per_request | — |
-| 18 | `payment.initiate` | payment | critical | per_request | `payment` |
-| 19 | `vcs.read` | vcs | low | none | — |
-| 20 | `vcs.write` | vcs | medium | per_request | — |
-| 21 | `vcs.remote` | vcs | medium | per_request | — |
-| 22 | `package.install` | package | medium | per_request | — |
-| 23 | `build.compile` | build | medium | per_request | — |
-| 24 | `build.test` | build | low | none | — |
-| 25 | `build.lint` | build | low | none | — |
-| 26 | `unknown_sensitive_action` | — | critical | per_request | — |
+| # | Action Class | Namespace | Risk | HITL Mode | Intent Group | Since |
+|---|---|---|---|---|---|---|
+| 1 | `filesystem.read` | filesystem | low | none | — | v1 |
+| 2 | `filesystem.write` | filesystem | medium | per_request | — | v1 |
+| 3 | `filesystem.delete` | filesystem | high | per_request | `destructive_fs` | v1 |
+| 4 | `filesystem.list` | filesystem | low | none | — | v1 |
+| 5 | `web.search` | web | medium | per_request | — | v1 |
+| 6 | `web.fetch` | web | medium | per_request | `data_exfiltration` | v1 |
+| 7 | `web.post` | web | medium | per_request | `web_access` | v1 |
+| 8 | `browser.scrape` | browser | medium | per_request | — | v1 |
+| 9 | `shell.exec` | shell | high | per_request | — | v1 |
+| 10 | `communication.email` | communication | high | per_request | `external_send` | v1 |
+| 11 | `communication.slack` | communication | medium | per_request | `external_send` | v1 |
+| 12 | `communication.webhook` | communication | medium | per_request | `external_send` | v1 |
+| 13 | `memory.read` | memory | low | none | — | v1 |
+| 14 | `memory.write` | memory | medium | none | — | v1 |
+| 15 | `credential.read` | credential | high | per_request | `credential_access` | v1 |
+| 16 | `credential.write` | credential | critical | per_request | `credential_access` | v1 |
+| 17 | `credential.rotate` | credential | critical | per_request | `credential_access` | v1.2.1 |
+| 18 | `credential.list` | credential | high | per_request | `credential_access` | v1.2.4 |
+| 19 | `code.execute` | code | high | per_request | — | v1 |
+| 20 | `payment.initiate` | payment | critical | per_request | `payment` | v1 |
+| 21 | `system.read` | system | low | none | — | v1.1.x |
+| 22 | `system.service` | system | critical | per_request | — | **v1.3.1** |
+| 23 | `permissions.modify` | permissions | high | per_request | — | **v1.3.1** |
+| 24 | `permissions.elevate` | permissions | critical | per_request | — | **v1.3.1** |
+| 25 | `process.signal` | process | high | per_request | — | **v1.3.1** |
+| 26 | `network.diagnose` | network | low | none | — | **v1.3.1** |
+| 27 | `network.scan` | network | high | per_request | — | **v1.3.1** |
+| 28 | `network.transfer` | network | high | per_request | `data_exfiltration` | **v1.3.1** |
+| 29 | `network.shell` | network | high | per_request | — | **v1.3.1** |
+| 30 | `cluster.manage` | cluster | high | per_request | — | **v1.3.1** |
+| 31 | `scheduling.persist` | scheduling | high | per_request | — | **v1.3.1** |
+| 32 | `vcs.read` | vcs | low | none | — | v1 |
+| 33 | `vcs.write` | vcs | medium | per_request | — | v1 |
+| 34 | `vcs.remote` | vcs | medium | per_request | — | v1 |
+| 35 | `package.install` | package | medium | per_request | — | v1 |
+| 36 | `package.run` | package | medium | per_request | — | v1.2.x |
+| 37 | `package.read` | package | low | none | — | v1.2.x |
+| 38 | `build.compile` | build | medium | per_request | — | v1 |
+| 39 | `build.test` | build | low | none | — | v1 |
+| 40 | `build.lint` | build | low | none | — | v1 |
+| 41 | `archive.create` | archive | medium | per_request | — | v1.2.x |
+| 42 | `archive.extract` | archive | medium | per_request | — | v1.2.x |
+| 43 | `archive.read` | archive | low | none | — | v1.2.x |
+| — | `unknown_sensitive_action` | — | critical | per_request | — | v1 (sentinel) |
 
 ---
 
@@ -62,12 +80,19 @@ The frozen v1 taxonomy is the source of truth for:
 | `shell` | exec | OS shell command execution |
 | `communication` | email, slack, webhook | External messaging channels |
 | `memory` | read, write | Agent-internal memory storage |
-| `credential` | read, write | Secrets store access |
+| `credential` | read, write, rotate, list | Secrets store access (read, write, key rotation, key enumeration) |
 | `code` | execute | In-process code execution |
 | `payment` | initiate | Financial transaction initiation |
+| `system` | read, service | Read-only system queries; daemon / host-lifecycle management |
+| `permissions` | modify, elevate | File mode / ownership changes; privilege elevation (sudo / su / passwd) |
+| `process` | signal | Signal delivery to running processes (kill / pkill / killall) |
+| `network` | diagnose, scan, transfer, shell | Network diagnostics, port scanning, file-transfer protocols, interactive remote shells |
+| `cluster` | manage | Kubernetes-style cluster management |
+| `scheduling` | persist | Persistent unattended job scheduling (cron / at / batch) |
 | `vcs` | read, write, remote | Version control system operations |
-| `package` | install | Dependency installation |
+| `package` | install, run, read | Dependency installation, script execution, package metadata |
 | `build` | compile, test, lint | Build pipeline operations |
+| `archive` | create, extract, read | Archive packing, extraction, listing |
 
 ---
 
@@ -78,10 +103,10 @@ Intent groups allow policy rules to target multiple action classes with a single
 | Intent Group | Member Action Classes | Policy use |
 |---|---|---|
 | `destructive_fs` | `filesystem.delete` | Block all deletion tools |
-| `data_exfiltration` | `web.fetch` | Forbid outbound HTTP fetch operations |
+| `data_exfiltration` | `web.fetch`, `network.transfer` | Forbid outbound data movement (HTTP fetches and file-transfer protocols) |
 | `web_access` | `web.post` | Gate state-mutating outbound HTTP calls |
 | `external_send` | `communication.email`, `communication.slack`, `communication.webhook` | Block all external messaging channels |
-| `credential_access` | `credential.read`, `credential.write` | Prevent all secrets store access |
+| `credential_access` | `credential.read`, `credential.write`, `credential.rotate`, `credential.list` | Prevent all secrets store access |
 | `payment` | `payment.initiate` | Block financial transactions |
 
 ---
@@ -135,12 +160,13 @@ Changes that do **not** require an RFC (alias-level changes only):
 
 ### RFC process
 
-1. Open an RFC issue in the governance track describing the proposed change, the motivation, and the impact on existing policy rules and tool manifests.
+1. File an RFC document at `docs/rfc/RFC-NNN-short-title.md` using the template in [`docs/rfc/README.md`](rfc/README.md). Filing starts a 14-day SLA.
 2. Obtain approval from the governance track maintainers.
 3. Update this document and `packages/action-registry/src/index.ts` in the same PR.
-4. Bump the taxonomy version header in this document (e.g., `frozen v2`).
+4. Bump the taxonomy version header in this document (e.g., `frozen v2` → `frozen v3`).
+5. Update the RFC document status to `implemented` after merge.
 
-> **Implementation note:** The RFC process implementation is tracked separately in the governance track. Until that process is in place, changes require explicit approval from the project maintainers via a PR review.
+The RFCs covering the v1.3.1 additions (RFC-001..RFC-010) are filed under [`docs/rfc/`](rfc/).
 
 ---
 
