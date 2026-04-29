@@ -24,38 +24,67 @@ Kubernetes-style cluster management commands (`kubectl`, and to a lesser extent 
 
 A dedicated namespace + class lets operators write coarse-grained cluster policies and gives the v1.3.2 typed tools a stable target.
 
+## Motivation
+
+`cluster.manage` was introduced in v1.3.1 as a single class covering every `kubectl` subcommand. Operator data and the v1.3.2 typed-tool design surfaced a fatigue/precision problem:
+
+- `kubectl get` is the dominant operator volume — research, debugging, status checks. Forcing `high / per_request` HITL on every read produces severe approval fatigue and trains operators to rubber-stamp.
+- `kubectl apply` / `kubectl delete` / `kubectl rollout` are write operations with workload-scale blast radius. Their risk profile materially exceeds reads; conflating them under one class denies policy authors a clean read-vs-write target.
+- The taxonomy elsewhere already establishes the read/write split (`filesystem.read` vs `filesystem.write`, `vcs.read` vs `vcs.write`, `credential.read` vs `credential.write`). Cluster operations should follow the same convention.
+
+The v1.3.2 typed-tool work makes this split low-risk: `kubectl_get` is its own typed tool with a structured manifest, so binding it to `cluster.read` is a one-line manifest change rather than a per-call reclassification rule.
+
 ## Impact
 
 **Affected components:**
 
-- `packages/action-registry/src/index.ts` — entry already registered; no code change required.
-- `docs/action-taxonomy.md` — entry already present in the frozen v2 table; no change required.
-- `docs/action-registry.md` — already references the class.
-- v1.3.2 typed-tool work (W5, W6) — `kubectl_*` and `docker_push` manifests will declare `action_class: 'cluster.manage'`.
+- `packages/action-registry/src/index.ts` — replace the single `cluster.manage` entry with two entries (`cluster.read`, `cluster.write`). Update the `ActionClass` enum (remove `ClusterManage`, add `ClusterRead` and `ClusterWrite`).
+- `docs/action-taxonomy.md` — remove the `cluster.manage` row, add `cluster.read` and `cluster.write` rows; bump the version header `frozen v2` → `frozen v3`; update the namespace table.
+- `docs/action-registry.md` — update references from `cluster.manage` to the two split classes.
+- v1.3.2 typed-tool work (W5, W6) — `kubectl_get` declares `cluster.read`; `kubectl_apply`, `kubectl_delete`, `kubectl_rollout`, `docker_push` declare `cluster.write`.
 
-**Policy authors:** Operators relying on the `unknown_sensitive_action` catch-all to forbid `kubectl` must add an explicit forbid against `cluster.manage`. Migration note will ship in the v1.3.2 CHANGELOG.
+**Policy authors:** Operators with rules targeting `cluster.manage` see them become inert (no matching action_class) after upgrade. They must rewrite as either `cluster.write` (the equivalent for the original "block kubectl writes" intent) or both `cluster.read` and `cluster.write` for parity. Migration note ships in the v1.3.2 CHANGELOG.
 
-## Proposed Action Class / Taxonomy Entry
+**Existing alias mapping:** the bare `kubectl` alias is **kept** but moved from the (now-removed) `cluster.manage` to `cluster.write`. Free-form `bash kubectl ...` calls are therefore classified as `cluster.write` (the destructive class) regardless of subcommand — a conservative-by-default fallback. The typed tools (W5) provide the precision: `kubectl_get` declares `cluster.read` directly. Operators who want to permit `kubectl get` via free-form bash without permitting writes should adopt the typed `kubectl_get` tool; bare-shell `kubectl get` remains gated as `cluster.write`.
+
+## Proposed Action Class / Taxonomy Entries
+
+### `cluster.read`
 
 | Field | Value |
 |---|---|
-| `action_class` | `cluster.manage` |
+| `action_class` | `cluster.read` |
+| `namespace` | `cluster` |
+| `default_risk` | `low` |
+| `default_hitl_mode` | `per_request` |
+| `intent_group` | — (none) |
+| `aliases` | — (none — only the typed `kubectl_get` tool) |
+
+Risk rationale: cluster reads disclose workload state to the calling identity but do not change cluster state. `low` reflects observational impact. HITL is kept at `per_request` because `kubectl get secrets` is a credential exfiltration vector — the parameter-level reclassification path in `cluster.read` tools will route secret-bearing reads through `credential.read` instead, but the default class HITL must remain per-request to gate the unhandled cases.
+
+### `cluster.write`
+
+| Field | Value |
+|---|---|
+| `action_class` | `cluster.write` |
 | `namespace` | `cluster` |
 | `default_risk` | `high` |
 | `default_hitl_mode` | `per_request` |
 | `intent_group` | — (none) |
 | `aliases` | `kubectl` |
 
-Risk rationale: cluster operations carry production-impact potential. `kubectl delete` against the wrong namespace is destructive at workload scale. `high` (not `critical`) reflects that the blast radius is bounded by the cluster context and that read operations dominate operator volume — a `critical` default would create severe operator fatigue.
+Risk rationale: cluster writes are workload-scale destructive on misuse. `kubectl delete` in the wrong namespace destroys production workloads; `kubectl apply` of a malformed manifest can pin a service in a crash loop. `high` (not `critical`) because the blast radius is bounded by the cluster context and the per-resource RBAC of the calling identity.
 
-HITL rationale: per-request because the `resource` / `name` / `namespace` arguments determine the actual blast radius and must be reviewed at each invocation.
+HITL rationale: per-request because the `resource` / `name` / `namespace` arguments determine the actual blast radius.
 
 ## Alternatives Considered
 
-1. **Split into `cluster.read` and `cluster.write` immediately.** Considered (this is §14 open question 2 of the v1.3.2 release plan). Deferred to a follow-up RFC after v1.3.2 ships, for two reasons: (a) the typed-tool work in v1.3.2 W5 already creates per-subcommand tools (`kubectl_get` vs `kubectl_apply`), so per-tool reclassification can already differentiate read from write at the tool level; (b) splitting the action class is a one-way door under the change-control process and we want operator feedback from v1.3.2 before committing. A separate RFC will revisit if operator data shows `kubectl get` HITL fatigue.
-2. **Single `cluster.kubectl` class.** Rejected — the namespace should be vendor-neutral. Future support for `helm`, `nomad`, `docker swarm` should sit alongside `kubectl` under the same `cluster.*` namespace.
-3. **Reuse `code.execute`.** Rejected — `kubectl` is not local code execution; the audit semantics differ materially.
+1. **Keep `cluster.manage` as the single class.** Rejected — operator HITL fatigue on read paths trains rubber-stamping, which materially weakens the gate for write paths. The v1.3.2 typed-tool work makes the split cheap.
+2. **Three-way split (`cluster.read` / `cluster.write` / `cluster.exec`).** Rejected for v1.3.2 — `kubectl exec` / `proxy` / `port-forward` are explicitly out of scope per the v1.3.2 release plan §2.2. A future RFC may add `cluster.exec` if those tools land.
+3. **Single `cluster.kubectl` class.** Rejected — the namespace should be vendor-neutral. Future support for `helm`, `nomad`, `docker swarm` should sit alongside `kubectl` under the same `cluster.*` namespace.
+4. **Reuse `code.execute`.** Rejected — `kubectl` is not local code execution; the audit semantics differ materially.
 
 ## Open Questions
 
-1. Should `docker push` (image distribution to a shared registry) live under `cluster.manage` or under a new `registry.publish` class? Provisional answer: `cluster.manage` is acceptable for v1.3.2 because the operator-relevant risk (pushing an unintended image to a shared registry) overlaps with the cluster-management risk model. A future RFC may split if `registry.*` operations grow beyond a single command.
+1. Should `docker push` (image distribution to a shared registry) live under `cluster.write` or under a new `registry.publish` class? Provisional answer: `cluster.write` is acceptable for v1.3.2 because the operator-relevant risk (pushing an unintended image to a shared registry) overlaps with the cluster-write risk model. A future RFC may split if `registry.*` operations grow beyond a single command.
+2. Should the bare `kubectl` alias map to `cluster.read` or `cluster.write`? Resolved: map to `cluster.write`. Free-form `bash kubectl ...` cannot be parsed for read-vs-write at the alias level (the registry sees only the binary name, not the subcommand), so the safer default is to assume write — over-gating reads is recoverable, under-gating writes is not. The typed tools restore precision: `kubectl_get` declares `cluster.read` at the manifest level.

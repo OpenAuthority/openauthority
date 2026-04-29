@@ -78,7 +78,8 @@ export const ActionClass = {
   SchedulingPersist: 'scheduling.persist',
   NetworkTransfer: 'network.transfer',
   NetworkShell: 'network.shell',
-  ClusterManage: 'cluster.manage',
+  ClusterRead: 'cluster.read',
+  ClusterWrite: 'cluster.write',
   VcsRead: 'vcs.read',
   VcsWrite: 'vcs.write',
   VcsRemote: 'vcs.remote',
@@ -611,10 +612,21 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
     ],
   },
   {
-    action_class: ActionClass.ClusterManage,
+    action_class: ActionClass.ClusterRead,
+    default_risk: 'low',
+    default_hitl_mode: 'per_request',
+    aliases: [],
+  },
+  {
+    action_class: ActionClass.ClusterWrite,
     default_risk: 'high',
     default_hitl_mode: 'per_request',
     aliases: [
+      // Bare-binary fallback: free-form `bash kubectl ...` cannot be parsed
+      // for read-vs-write at alias level, so we route it to the destructive
+      // class as a conservative default. Typed tools (kubectl_get etc.)
+      // declare cluster.read or cluster.write at the manifest level for
+      // precision. See RFC-003.
       'kubectl',
     ],
   },

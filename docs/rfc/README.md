@@ -22,7 +22,7 @@ Numbers are assigned at submission time in filing order. Numbers are never reuse
 |-----|-------|--------|-------|----------|
 | [RFC-001](RFC-001-process-signal.md) | Action class `process.signal` | open | 2026-04-29 | — |
 | [RFC-002](RFC-002-permissions-modify.md) | Action class `permissions.modify` | open | 2026-04-29 | — |
-| [RFC-003](RFC-003-cluster-manage.md) | Action class `cluster.manage` | open | 2026-04-29 | — |
+| [RFC-003](RFC-003-cluster-manage.md) | Cluster namespace — split `cluster.manage` into `cluster.read` / `cluster.write` | open | 2026-04-29 | — |
 | [RFC-004](RFC-004-scheduling-persist.md) | Action class `scheduling.persist` | open | 2026-04-29 | — |
 
 > **Pending RFC:** `browser.navigate` action class (deferred from v1 taxonomy design review, Thread 5). File when a concrete browser navigation tool implementation exists in a shipped skill. See `docs/action-taxonomy.md` §Design Review Record, Thread 5.
