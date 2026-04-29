@@ -314,9 +314,9 @@ Before enabling `unsafe_admin_exec` in any environment:
 | Multi-factor authorization | Partial | HITL approval + env var; hardware-token factor not implemented |
 | Time-bounded window | Partial | Capability TTL limits per-token window; no session-level time bound |
 | Command allowlist | Not implemented | Arbitrary shell allowed; scope via HITL policy and permit rules |
-| Immutable audit trail | ✅ Implemented | All events logged before and after execution |
+| Immutable audit trail | Implemented | All events logged before and after execution |
 | Process isolation | Not implemented | Executes in the plugin process |
-| No agent-accessible path | ✅ Implemented | Requires operator-set environment variable |
+| No agent-accessible path | Implemented | Requires operator-set environment variable |
 | Rate limiting | Not implemented | Must be enforced via HITL policy and ops process |
 
 Use `unsafe_admin_exec` as a break-glass tool only, not for sustained automation.

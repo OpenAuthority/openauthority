@@ -119,7 +119,7 @@ Customise the baseline by dropping hot-reloadable rules into `data/rules.json`:
 Run your agent. A `shell.exec` call now terminates at the boundary:
 
 ```
-[clawthority] │ DECISION: ✕ BLOCKED (cedar/forbid priority=100 rule=action:shell.exec) - Shell execution is unconditionally forbidden
+[clawthority] │ DECISION: BLOCKED (cedar/forbid priority=100 rule=action:shell.exec) - Shell execution is unconditionally forbidden
 ```
 
 Every block - plus every HITL outcome - is appended to `data/audit.jsonl` as structured JSONL with `stage`, `rule`, `priority`, and `mode` fields. See [docs/troubleshooting.md](docs/troubleshooting.md#total-lockout-recovery) for the recovery runbook.
@@ -198,30 +198,30 @@ High-risk action classes route to a human for approval via Telegram, Slack, or a
 Approval messages are rendered in MarkdownV2 (Telegram) / Block Kit (Slack) / a colored console block. The body includes the raw command, an explainer summary, structured effects and warnings, an optional agent intent hint, and three inline buttons:
 
 ```
-🛠️  ACTION REQUIRES APPROVAL
+ACTION REQUIRES APPROVAL
 
-Agent:  main          Tool: exec       Risk: 🔴 HIGH
+Agent:  main          Tool: exec       Risk: HIGH
 Expires in: 120s
 
-📌 What will run:
+What will run:
   docker run -it --rm -v /:/host ubuntu bash -c "setup.sh"
 
-📋 What this does:
+What this does:
   • Starts a container
   • Mounts your full filesystem (/) into the container
   • Executes a shell script inside the container
 
-⚠️ Warnings:
+Warnings:
   • Full disk access (host filesystem mounted at /host)
   • Potential system modification
 
-❓ Why this is happening:
+Why this is happening:
   The agent is trying to install project dependencies.
 
-[ ✅ Approve once ] [ 🔁 Approve always ] [ ❌ Deny ]
+[ Approve once ] [ Approve always ] [ Deny ]
 ```
 
-🔁 **Approve Always** derives a permit pattern from the command, persists it to `data/auto-permits.json`, and the next matching call bypasses HITL entirely. Manage stored permits with `npm run list-auto-permits` / `revoke-auto-permit`.
+**Approve Always** derives a permit pattern from the command, persists it to `data/auto-permits.json`, and the next matching call bypasses HITL entirely. Manage stored permits with `npm run list-auto-permits` / `revoke-auto-permit`.
 
 Channel setup, retry/backoff, fallback behaviour, and the legacy `/approve <token>` text-command path (kept for one release): [docs/human-in-the-loop.md](docs/human-in-the-loop.md).
 
@@ -245,7 +245,7 @@ Full schema and environment-variable overrides: [docs/configuration.md](docs/con
 
 | Variable | Default | Effect |
 |---|---|---|
-| `CLAWTHORITY_DISABLE_APPROVE_ALWAYS` | _(unset)_ | Set to `1` to hide the 🔁 Approve Always button in Slack approval messages and prevent creation of new session auto-permits. Existing in-process auto-permits are still honoured. Requires restart to change. |
+| `CLAWTHORITY_DISABLE_APPROVE_ALWAYS` | _(unset)_ | Set to `1` to hide the Approve Always button in Slack approval messages and prevent creation of new session auto-permits. Existing in-process auto-permits are still honoured. Requires restart to change. |
 
 ---
 

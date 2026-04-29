@@ -1,6 +1,6 @@
 # API Reference
 
-> **⚠️ This API does not exist in v1.3.1. This document is design-target only.**
+> **This API does not exist in v1.3.1. This document is design-target only.**
 >
 > This page describes the target REST + Server-Sent Events surface for a
 > future Clawthority management API. **No HTTP server ships with the plugin

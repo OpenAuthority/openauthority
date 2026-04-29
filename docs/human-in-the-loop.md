@@ -467,7 +467,7 @@ Uses the Telegram Bot API with long polling to receive operator responses.
 Telegram messages use Markdown formatting:
 
 ```
-🚨 *HITL Approval Request* — `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d`
+*HITL Approval Request* — `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d`
 
 *Tool:* `email.delete`
 *Agent:* `agent-1`
@@ -481,14 +481,14 @@ Reply with:
 After a decision, a confirmation is sent:
 
 ```
-✅ Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *APPROVED*
+Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *APPROVED*
 Tool: `email.delete`
 ```
 
 Or for denial:
 
 ```
-❌ Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *DENIED*
+Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *DENIED*
 Tool: `email.delete`
 ```
 
@@ -551,7 +551,7 @@ The buttons carry action IDs `hitl_approve` and `hitl_deny` with values `approve
 **After decision:**
 
 ```
-✅ Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *APPROVED*
+Action `01957b3c-4f2a-7d8e-9b1c-6e5f4a3b2c1d` — *APPROVED*
 Tool: `email.send`
 ```
 

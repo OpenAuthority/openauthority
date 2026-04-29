@@ -11,11 +11,11 @@
 
 | Spec Section | Requirements | Checks | Status |
 |---|---|---|---|
-| Integration Spec §A.8 | 7 | SA-I-01 – SA-I-07 | ✅ All pass |
-| FEP §2 — ExecutionEnvelope | 2 | SA-F-01, SA-F-08 | ✅ All pass |
-| FEP §4.2 — Typed Intent | 6 | SA-F-02 – SA-F-07 | ✅ All pass |
-| FEP Shell Prohibition | 2 | SA-S-01, SA-S-02 | ✅ All pass |
-| **Total** | **17** | **15 automated** | **✅ Compliant** |
+| Integration Spec §A.8 | 7 | SA-I-01 – SA-I-07 | All pass |
+| FEP §2 — ExecutionEnvelope | 2 | SA-F-01, SA-F-08 | All pass |
+| FEP §4.2 — Typed Intent | 6 | SA-F-02 – SA-F-07 | All pass |
+| FEP Shell Prohibition | 2 | SA-S-01, SA-S-02 | All pass |
+| **Total** | **17** | **15 automated** | **Compliant** |
 
 ---
 
@@ -27,13 +27,13 @@ Source: `docs/architecture.md §10` + enforcement pipeline invariants
 
 | Req | Requirement | Check | Implementation | Status |
 |---|---|---|---|---|
-| §A.8.1 | Action normalization layer must translate raw tool names to canonical `action_class` identifiers | SA-I-01 | `src/enforcement/normalize.ts` — `normalize_action()` function; 19 action classes + fail-closed catch-all | ✅ PASS |
-| §A.8.2 | Two-stage pipeline: Stage 1 must perform capability gate before any policy evaluation | SA-I-02 | `src/enforcement/stage1-capability.ts` — 7 capability gate checks including binding hash validation and expiry | ✅ PASS |
-| §A.8.3 | Two-stage pipeline: Stage 2 must perform Cedar-style policy evaluation against normalized `action_class` | SA-I-03 | `src/enforcement/stage2-policy.ts` — `PolicyEngine` evaluation with forbid-wins semantics and rate limiting | ✅ PASS |
-| §A.8.4 | Authority backend must be decoupled via `IAuthorityAdapter` interface to support swapping between file and remote (Firma) adapters | SA-I-04 | `src/adapter/types.ts` — `IAuthorityAdapter` interface with `issueCapability()`, `watchPolicyBundle()`, `watchRevocations()` | ✅ PASS |
-| §A.8.5 | Human-in-the-Loop approval system must be present for high and critical risk actions | SA-I-05 | `src/hitl/approval-manager.ts` — `ApprovalManager` with token lifecycle, channel routing (Telegram, Slack, Webhook, Console), and TTL expiry | ✅ PASS |
-| §A.8.6 | Shared action taxonomy package (`@openclaw/action-registry`) must be declared as a production dependency | SA-I-06 | `package.json` `dependencies` — `@openclaw/action-registry` declared; canonical action class definitions live in `packages/action-registry/` | ✅ PASS |
-| §A.8.7 | Fail-closed guarantee: unknown tool names must resolve to `unknown_sensitive_action` (critical risk, per_request HITL); never silently permit | SA-I-07 | `src/enforcement/normalize.ts` — `unknown_sensitive_action` catch-all; ships as critical forbid in both `open` and `closed` rule sets | ✅ PASS |
+| §A.8.1 | Action normalization layer must translate raw tool names to canonical `action_class` identifiers | SA-I-01 | `src/enforcement/normalize.ts` — `normalize_action()` function; 19 action classes + fail-closed catch-all | PASS |
+| §A.8.2 | Two-stage pipeline: Stage 1 must perform capability gate before any policy evaluation | SA-I-02 | `src/enforcement/stage1-capability.ts` — 7 capability gate checks including binding hash validation and expiry | PASS |
+| §A.8.3 | Two-stage pipeline: Stage 2 must perform Cedar-style policy evaluation against normalized `action_class` | SA-I-03 | `src/enforcement/stage2-policy.ts` — `PolicyEngine` evaluation with forbid-wins semantics and rate limiting | PASS |
+| §A.8.4 | Authority backend must be decoupled via `IAuthorityAdapter` interface to support swapping between file and remote (Firma) adapters | SA-I-04 | `src/adapter/types.ts` — `IAuthorityAdapter` interface with `issueCapability()`, `watchPolicyBundle()`, `watchRevocations()` | PASS |
+| §A.8.5 | Human-in-the-Loop approval system must be present for high and critical risk actions | SA-I-05 | `src/hitl/approval-manager.ts` — `ApprovalManager` with token lifecycle, channel routing (Telegram, Slack, Webhook, Console), and TTL expiry | PASS |
+| §A.8.6 | Shared action taxonomy package (`@openclaw/action-registry`) must be declared as a production dependency | SA-I-06 | `package.json` `dependencies` — `@openclaw/action-registry` declared; canonical action class definitions live in `packages/action-registry/` | PASS |
+| §A.8.7 | Fail-closed guarantee: unknown tool names must resolve to `unknown_sensitive_action` (critical risk, per_request HITL); never silently permit | SA-I-07 | `src/enforcement/normalize.ts` — `unknown_sensitive_action` catch-all; ships as critical forbid in both `open` and `closed` rule sets | PASS |
 
 ### Hook Integration Verification
 
@@ -45,9 +45,9 @@ before_tool_call → normalize_action() → buildEnvelope() → runPipeline() �
 
 | Hook | Can Block | Implementation | Verified |
 |---|---|---|---|
-| `before_tool_call` | Yes | `src/index.ts` — primary enforcement; returns `{ block: true }` on `forbid` | ✅ |
-| `before_prompt_build` | No | `src/index.ts` — 5-pattern prompt injection detection on non-user sources | ✅ |
-| `before_model_resolve` | No | `src/index.ts` — registered for future model routing; currently observes only | ✅ |
+| `before_tool_call` | Yes | `src/index.ts` — primary enforcement; returns `{ block: true }` on `forbid` | |
+| `before_prompt_build` | No | `src/index.ts` — 5-pattern prompt injection detection on non-user sources | |
+| `before_model_resolve` | No | `src/index.ts` — registered for future model routing; currently observes only | |
 
 ---
 
@@ -59,13 +59,13 @@ Source: `docs/architecture.md §2`; authoritative types in `src/types.ts`
 
 | Req | Requirement | Check | Implementation | Status |
 |---|---|---|---|---|
-| §2.1 | A single `src/types.ts` module must export all envelope and intent types | SA-F-01 | `src/types.ts` — 103 lines; exports `Intent`, `Capability`, `Metadata`, `ExecutionEnvelope`, `CeeDecision`, `ExecutionEvent`, `PipelineResult`, `RateLimitInfo` | ✅ PASS |
+| §2.1 | A single `src/types.ts` module must export all envelope and intent types | SA-F-01 | `src/types.ts` — 103 lines; exports `Intent`, `Capability`, `Metadata`, `ExecutionEnvelope`, `CeeDecision`, `ExecutionEvent`, `PipelineResult`, `RateLimitInfo` | PASS |
 
 ### §2.2 ExecutionEnvelope Structure
 
 | Req | Requirement | Check | Implementation | Status |
 |---|---|---|---|---|
-| §2.2 | `ExecutionEnvelope` interface must be exported and must wrap `Intent` via a typed `intent` field | SA-F-08 | `src/types.ts:71` — `export interface ExecutionEnvelope { intent: Intent; capability: Capability \| null; metadata: Metadata; provenance: Record<string, unknown>; }` | ✅ PASS |
+| §2.2 | `ExecutionEnvelope` interface must be exported and must wrap `Intent` via a typed `intent` field | SA-F-08 | `src/types.ts:71` — `export interface ExecutionEnvelope { intent: Intent; capability: Capability \| null; metadata: Metadata; provenance: Record<string, unknown>; }` | PASS |
 
 #### ExecutionEnvelope Field Summary
 
@@ -90,12 +90,12 @@ The FEP prohibits untyped (`any`) `ToolUseParams` and requires the `Intent` inte
 
 | Req | Field | Required Type | Check | Implementation | Status |
 |---|---|---|---|---|---|
-| §4.2.1 | `action_class` | `string` | SA-F-03 | `src/types.ts:28` — `action_class: string` — canonical dot-separated class e.g. `filesystem.delete` | ✅ PASS |
-| §4.2.2 | `target` | `string` | SA-F-04 | `src/types.ts:30` — `target: string` — resource target e.g. file path, email address | ✅ PASS |
-| §4.2.3 | `summary` | `string` | SA-F-05 | `src/types.ts:32` — `summary: string` — human-readable description of the intended action | ✅ PASS |
-| §4.2.4 | `payload_hash` | `string` | SA-F-06 | `src/types.ts:34` — `payload_hash: string` — SHA-256 hex digest of tool call params; computed by `computePayloadHash()` in `src/envelope.ts` | ✅ PASS |
-| §4.2.5 | `parameters` | `Record<string, unknown>` | SA-F-07 | `src/types.ts:36` — `parameters: Record<string, unknown>` — typed container; `any` is prohibited | ✅ PASS |
-| §4.2.6 | `Intent` interface exported | `export interface Intent` | SA-F-02 | `src/types.ts:26` — `export interface Intent` | ✅ PASS |
+| §4.2.1 | `action_class` | `string` | SA-F-03 | `src/types.ts:28` — `action_class: string` — canonical dot-separated class e.g. `filesystem.delete` | PASS |
+| §4.2.2 | `target` | `string` | SA-F-04 | `src/types.ts:30` — `target: string` — resource target e.g. file path, email address | PASS |
+| §4.2.3 | `summary` | `string` | SA-F-05 | `src/types.ts:32` — `summary: string` — human-readable description of the intended action | PASS |
+| §4.2.4 | `payload_hash` | `string` | SA-F-06 | `src/types.ts:34` — `payload_hash: string` — SHA-256 hex digest of tool call params; computed by `computePayloadHash()` in `src/envelope.ts` | PASS |
+| §4.2.5 | `parameters` | `Record<string, unknown>` | SA-F-07 | `src/types.ts:36` — `parameters: Record<string, unknown>` — typed container; `any` is prohibited | PASS |
+| §4.2.6 | `Intent` interface exported | `export interface Intent` | SA-F-02 | `src/types.ts:26` — `export interface Intent` | PASS |
 
 ### Payload Binding Mechanism
 
@@ -120,8 +120,8 @@ Plugins must not execute raw shell commands. All tool invocations must go throug
 
 | Req | Requirement | Check | Scope | Allowlisted Exemptions | Status |
 |---|---|---|---|---|---|
-| E-03.1 | No `import … from 'child_process'` or `require('child_process')` in `src/` source files | SA-S-01 | All `.ts` files under `src/` (excluding `.test.ts`, `.e2e.ts`) | `src/tools/git_*/git-*.ts` (explicit argv, `shell: false`); `src/validation/spec-alignment-validator.ts`; `src/validation/release-validator.ts` (meta-validators reference API names as data) | ✅ PASS |
-| E-03.2 | No `execSync(…)` or `spawnSync(…)` calls in `src/` source files | SA-S-02 | All `.ts` files under `src/` (excluding `.test.ts`, `.e2e.ts`) | Same allowlist as SA-S-01 | ✅ PASS |
+| E-03.1 | No `import … from 'child_process'` or `require('child_process')` in `src/` source files | SA-S-01 | All `.ts` files under `src/` (excluding `.test.ts`, `.e2e.ts`) | `src/tools/git_*/git-*.ts` (explicit argv, `shell: false`); `src/validation/spec-alignment-validator.ts`; `src/validation/release-validator.ts` (meta-validators reference API names as data) | PASS |
+| E-03.2 | No `execSync(…)` or `spawnSync(…)` calls in `src/` source files | SA-S-02 | All `.ts` files under `src/` (excluding `.test.ts`, `.e2e.ts`) | Same allowlist as SA-S-01 | PASS |
 
 ---
 
@@ -144,10 +144,10 @@ The validator is purely file-based — no sub-processes are spawned. It reports 
 
 | | |
 |---|---|
-| **Integration Spec §A.8** | ✅ All 7 requirements satisfied |
-| **FEP §2 — ExecutionEnvelope** | ✅ All 2 requirements satisfied |
-| **FEP §4.2 — Typed Intent** | ✅ All 6 field requirements satisfied |
-| **FEP Shell Prohibition** | ✅ 0 violations detected across all source files |
-| **Automated gate** | ✅ CI blocks merge on any spec regression |
+| **Integration Spec §A.8** | All 7 requirements satisfied |
+| **FEP §2 — ExecutionEnvelope** | All 2 requirements satisfied |
+| **FEP §4.2 — Typed Intent** | All 6 field requirements satisfied |
+| **FEP Shell Prohibition** | 0 violations detected across all source files |
+| **Automated gate** | CI blocks merge on any spec regression |
 
 **The Clawthority plugin implementation is fully compliant with all Integration Spec and FEP requirements.**

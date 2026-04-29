@@ -19,13 +19,13 @@ OpenClaw's tool dispatcher. The following are **out of scope**:
 
 | Execution path | Enforced? |
 |---|---|
-| Agent → tool dispatcher → `read` | ✅ Yes |
-| Agent → tool dispatcher → `exec` | ✅ Yes |
-| Agent → tool dispatcher → `web_fetch` | ✅ Yes |
-| Skill (Node.js module) → `fs.readFileSync()` directly | ❌ No |
-| Skill (Node.js module) → `child_process.exec()` directly | ❌ No |
-| Skill (Node.js module) → `fetch()` directly | ❌ No |
-| External process launched outside OpenClaw | ❌ No |
+| Agent → tool dispatcher → `read` | Yes |
+| Agent → tool dispatcher → `exec` | Yes |
+| Agent → tool dispatcher → `web_fetch` | Yes |
+| Skill (Node.js module) → `fs.readFileSync()` directly | No |
+| Skill (Node.js module) → `child_process.exec()` directly | No |
+| Skill (Node.js module) → `fetch()` directly | No |
+| External process launched outside OpenClaw | No |
 
 **Skills and workspace helpers** that call Node.js APIs directly (`fs`,
 `child_process`, `net`, raw `fetch`) run inside the OpenClaw process but

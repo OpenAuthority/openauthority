@@ -117,7 +117,7 @@ Review the blocked prompt text. If it is legitimate content that accidentally ma
 At load time the parser logs a warning:
 
 ```
-[hitl-policy] ⚠ HITL policy "<name>" matches unknown_sensitive_action. …
+[hitl-policy] HITL policy "<name>" matches unknown_sensitive_action. …
 ```
 
 **Resolution:**

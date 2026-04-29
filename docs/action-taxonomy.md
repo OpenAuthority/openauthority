@@ -188,10 +188,10 @@ This section documents the stakeholder design review conducted before freezing t
 
 | Role | Participant | Approval |
 |---|---|---|
-| Core maintainer | @jvela (Firma-AI) | ✅ Approved |
-| Core maintainer | @rsundaram (Firma-AI) | ✅ Approved |
-| Skill author | @tpavel (filesystem skill suite) | ✅ Approved |
-| Skill author | @nnkwon (vcs skill suite) | ✅ Approved |
+| Core maintainer | @jvela (Firma-AI) | Approved |
+| Core maintainer | @rsundaram (Firma-AI) | Approved |
+| Skill author | @tpavel (filesystem skill suite) | Approved |
+| Skill author | @nnkwon (vcs skill suite) | Approved |
 
 ---
 

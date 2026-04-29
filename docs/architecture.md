@@ -183,13 +183,13 @@ Every agent action passes through a two-stage pipeline before execution is permi
 Tool Call Event (OpenClaw hook)
         │
         ▼
- normalize_action(toolName, params)
+normalize_action(toolName, params)
         │
         ▼  NormalizedAction
         │  { action_class, risk, hitl_mode, target }
         │
         ▼
- HITL Pre-check
+HITL Pre-check
         │── hitl_mode !== 'none' AND no approval_id
         │       → forbid: 'pending_hitl_approval' (stage: 'hitl')
         │
@@ -240,7 +240,7 @@ Tool Call Event (OpenClaw hook)
         │
         ▼ CeeDecision { effect, reason, stage }
         │
- emitter.emit('executionEvent', { decision, timestamp })
+emitter.emit('executionEvent', { decision, timestamp })
         │
         ▼ OrchestratorResult { decision, latency_ms }
 ```
