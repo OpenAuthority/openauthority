@@ -1,5 +1,7 @@
 # Coverage Review Runbook
 
+> **Status as of v1.3.1.** This runbook describes the **target** quarterly review process. Two of the three data sources below — `GET /api/skills/unsafe-legacy` and `GET /api/audit/unclassified` — are part of the dashboard REST API documented in [api.md](api.md), which **does not ship in v1.3.1**. Until the dashboard lands, run the review using the manual fallbacks listed inline (audit log `jq` queries, skill manifest greps, and `docs/rfc/` directory inspection). The process and signals are otherwise unchanged.
+
 > **What this document is for.** Step-by-step instructions for running a quarterly coverage review: checking unsafe-legacy tool deadlines, unclassified-tool drift, and outstanding RFC progress, then publishing the status report.
 >
 > **Cadence:** Once per quarter, targeting the second or third week of the quarter start month (January, April, July, October).
@@ -12,11 +14,11 @@
 
 The quarterly coverage review monitors three signals that indicate taxonomy health:
 
-| Signal | Dashboard / Source | What It Detects |
-|--------|-------------------|-----------------|
-| Unsafe-legacy tool deadlines | `GET /api/skills/unsafe-legacy` | Skills with `unsafe_legacy` exemptions approaching or past their retirement deadline |
-| Unclassified-tool audit drift | `GET /api/audit/unclassified` | Tool calls falling through to `unknown_sensitive_action` — indicates missing registry aliases or new unregistered tools |
-| Outstanding RFC progress | `docs/rfc/README.md` + `RFCProcessor` | RFCs past their 14-day SLA or stuck in `in_review` without a resolution |
+| Signal | Dashboard / Source | v1.3.1 fallback | What It Detects |
+|---|---|---|---|
+| Unsafe-legacy tool deadlines | `GET /api/skills/unsafe-legacy` *(future)* | `grep -r "unsafe_legacy: true" src/tools/ packages/` then check the `until:` field on each match | Skills with `unsafe_legacy` exemptions approaching or past their retirement deadline |
+| Unclassified-tool audit drift | `GET /api/audit/unclassified` *(future)* | `jq 'select(.actionClass == "unknown_sensitive_action")' data/audit.jsonl \| sort \| uniq -c` | Tool calls falling through to `unknown_sensitive_action` — indicates missing registry aliases or new unregistered tools |
+| Outstanding RFC progress | `docs/rfc/README.md` + `RFCProcessor` | Same — list `docs/rfc/RFC-*.md` and inspect each `Status:` / `Filed:` / `SLA deadline:` header | RFCs past their 14-day SLA or stuck in `in_review` without a resolution |
 
 All three signals feed into a single status report that is committed to `docs/coverage-reviews/`.
 

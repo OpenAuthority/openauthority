@@ -216,11 +216,49 @@ Configure the audit log path in `openclaw.plugin.json` or via the `AUDIT_LOG_FIL
 
 ### Reading audit entries
 
-Use `GET /api/audit` to query entries with pagination and filters, or tail the JSONL file directly:
+The dashboard REST API (`GET /api/audit`) is documented in [api.md](api.md) but **does not ship in v1.3.1** — it's a future-work design target. For v1.3.1, query the audit log directly:
 
 ```bash
 tail -f data/audit.jsonl | jq .
 ```
+
+---
+
+## HITL Message Bodies (v1.3.0+)
+
+When an action routes through HITL, the approval message sent to Telegram / Slack / console is **not** just the raw command string. The plugin runs the command through a rule-based explainer that produces a human-readable summary, structured effects, and warnings, then renders all three alongside an optional agent-supplied "Why this is happening" line.
+
+The explainer lives at [`src/enforcement/command-explainer/patterns.ts`](../src/enforcement/command-explainer/patterns.ts). It dispatches by command binary and, where applicable, by subcommand. Operators reading an HITL message see something like:
+
+```
+Tool: bash       Risk: high       Expires in: 120s
+Action Class: code.execute
+
+Explanation:
+  Starts an Ubuntu container with the host filesystem mounted
+
+Effects:
+  • Starts a container
+  • Mounts the host filesystem at /host
+  • Executes a shell script inside the container
+
+Warnings:
+  • Full disk access — host filesystem mounted at /host
+
+Why this is happening:
+  The agent is bootstrapping a development environment.
+
+Command:
+  docker run -it --rm -v /:/host ubuntu bash -c "setup.sh"
+
+[ Approve Once ]  [ Approve Always ]  [ Deny ]
+```
+
+The explainer is **metadata only** — it never participates in enforcement. A pattern that produces the wrong summary is a UX bug, not a security one. Coverage spans ~100 commands across the 16 categories of the exec audit; see [action-registry.md](action-registry.md) for the alias inventory.
+
+To suppress the rich body and fall back to a v1.2.x-style minimal message (raw command + buttons only), set `CLAWTHORITY_HITL_MINIMAL=1`. Buttons (including Approve Always) continue to work.
+
+The agent can populate the "Why this is happening" line by setting `ctx.metadata.intent_hint` on the tool call. The plugin sanitises and truncates the value at 200 characters; absent or empty values omit the section entirely.
 
 ---
 
