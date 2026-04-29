@@ -80,6 +80,48 @@ describe('registry coverage — each action class resolves from at least one ali
     ['run_code',         'code.execute'],
     ['pay',              'payment.initiate'],
     ['get_system_info',  'system.read'],
+    ['systemctl',        'system.service'],
+    ['chmod',            'permissions.modify'],
+    ['sudo',             'permissions.elevate'],
+    ['kill',             'process.signal'],
+    ['ping',             'network.diagnose'],
+    ['nmap',             'network.scan'],
+    ['crontab',          'scheduling.persist'],
+    ['rsync',            'network.transfer'],
+    ['apt',              'package.install'],
+    ['brew',              'package.install'],
+    ['kubectl',          'cluster.manage'],
+    ['virsh',            'system.service'],
+    // Bare-binary aliases for read-only utilities (added v1.3.1 final pass).
+    ['cat',              'filesystem.read'],
+    ['head',             'filesystem.read'],
+    ['tail',             'filesystem.read'],
+    ['diff',             'filesystem.read'],
+    ['find',             'filesystem.read'],
+    ['locate',           'filesystem.read'],
+    ['tree',             'filesystem.list'],
+    ['tee',              'filesystem.write'],
+    ['touch',            'filesystem.write'],
+    ['ps',               'system.read'],
+    ['top',              'system.read'],
+    ['df',               'system.read'],
+    ['du',               'system.read'],
+    ['whoami',           'system.read'],
+    ['echo',             'system.read'],
+    ['printf',           'system.read'],
+    ['tar',              'archive.create'],
+    ['zip',              'archive.create'],
+    ['xz',               'archive.create'],
+    ['7z',               'archive.create'],
+    ['unzip',            'archive.extract'],
+    ['gunzip',           'archive.extract'],
+    ['bunzip2',          'archive.extract'],
+    ['unxz',             'archive.extract'],
+    ['install',          'filesystem.write'],
+    ['ssh',              'network.shell'],
+    ['mosh',             'network.shell'],
+    ['telnet',           'network.shell'],
+    ['docker',           'code.execute'],
     ['git_log',          'vcs.read'],
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
@@ -280,6 +322,448 @@ describe('system.read target extraction', () => {
   it('returns empty target for get_system_info (no params)', () => {
     const result = normalize_action('get_system_info', {});
     expect(result.target).toBe('');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// system.service action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('system.service aliases and defaults', () => {
+  it('systemctl → system.service with critical risk and per_request HITL', () => {
+    const result = normalize_action('systemctl', {});
+    expect(result.action_class).toBe('system.service');
+    expect(result.risk).toBe('critical');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('service → system.service', () => {
+    const result = normalize_action('service', {});
+    expect(result.action_class).toBe('system.service');
+  });
+
+  it('init → system.service', () => {
+    const result = normalize_action('init', {});
+    expect(result.action_class).toBe('system.service');
+  });
+
+  it('reboot → system.service', () => {
+    const result = normalize_action('reboot', {});
+    expect(result.action_class).toBe('system.service');
+  });
+
+  it('shutdown → system.service', () => {
+    const result = normalize_action('shutdown', {});
+    expect(result.action_class).toBe('system.service');
+  });
+
+  it('SYSTEMCTL (uppercase) → system.service via case-insensitive alias lookup', () => {
+    const result = normalize_action('SYSTEMCTL', {});
+    expect(result.action_class).toBe('system.service');
+  });
+
+  it('no intent_group on system.service', () => {
+    const result = normalize_action('systemctl', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// permissions.modify action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('permissions.modify aliases and defaults', () => {
+  it('chmod → permissions.modify with high risk and per_request HITL', () => {
+    const result = normalize_action('chmod', {});
+    expect(result.action_class).toBe('permissions.modify');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('chown → permissions.modify', () => {
+    const result = normalize_action('chown', {});
+    expect(result.action_class).toBe('permissions.modify');
+  });
+
+  it('chgrp → permissions.modify', () => {
+    const result = normalize_action('chgrp', {});
+    expect(result.action_class).toBe('permissions.modify');
+  });
+
+  it('umask → permissions.modify', () => {
+    const result = normalize_action('umask', {});
+    expect(result.action_class).toBe('permissions.modify');
+  });
+
+  it('CHMOD (uppercase) → permissions.modify via case-insensitive alias lookup', () => {
+    const result = normalize_action('CHMOD', {});
+    expect(result.action_class).toBe('permissions.modify');
+  });
+
+  it('no intent_group on permissions.modify', () => {
+    const result = normalize_action('chmod', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// permissions.elevate action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('permissions.elevate aliases and defaults', () => {
+  it('sudo → permissions.elevate with critical risk and per_request HITL', () => {
+    const result = normalize_action('sudo', {});
+    expect(result.action_class).toBe('permissions.elevate');
+    expect(result.risk).toBe('critical');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('su → permissions.elevate', () => {
+    const result = normalize_action('su', {});
+    expect(result.action_class).toBe('permissions.elevate');
+  });
+
+  it('doas → permissions.elevate', () => {
+    const result = normalize_action('doas', {});
+    expect(result.action_class).toBe('permissions.elevate');
+  });
+
+  it('passwd → permissions.elevate', () => {
+    const result = normalize_action('passwd', {});
+    expect(result.action_class).toBe('permissions.elevate');
+  });
+
+  it('SUDO (uppercase) → permissions.elevate via case-insensitive alias lookup', () => {
+    const result = normalize_action('SUDO', {});
+    expect(result.action_class).toBe('permissions.elevate');
+  });
+
+  it('no intent_group on permissions.elevate', () => {
+    const result = normalize_action('sudo', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// process.signal action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('process.signal aliases and defaults', () => {
+  it('kill → process.signal with high risk and per_request HITL', () => {
+    const result = normalize_action('kill', {});
+    expect(result.action_class).toBe('process.signal');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('pkill → process.signal', () => {
+    const result = normalize_action('pkill', {});
+    expect(result.action_class).toBe('process.signal');
+  });
+
+  it('killall → process.signal', () => {
+    const result = normalize_action('killall', {});
+    expect(result.action_class).toBe('process.signal');
+  });
+
+  it('KILL (uppercase) → process.signal via case-insensitive alias lookup', () => {
+    const result = normalize_action('KILL', {});
+    expect(result.action_class).toBe('process.signal');
+  });
+
+  it('no intent_group on process.signal', () => {
+    const result = normalize_action('kill', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network.diagnose action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('network.diagnose aliases and defaults', () => {
+  it('ping → network.diagnose with low risk and no HITL', () => {
+    const result = normalize_action('ping', {});
+    expect(result.action_class).toBe('network.diagnose');
+    expect(result.risk).toBe('low');
+    expect(result.hitl_mode).toBe('none');
+  });
+
+  it('traceroute → network.diagnose', () => {
+    const result = normalize_action('traceroute', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('nslookup → network.diagnose', () => {
+    const result = normalize_action('nslookup', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('dig → network.diagnose', () => {
+    const result = normalize_action('dig', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('netstat → network.diagnose', () => {
+    const result = normalize_action('netstat', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('ss → network.diagnose', () => {
+    const result = normalize_action('ss', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('PING (uppercase) → network.diagnose via case-insensitive alias lookup', () => {
+    const result = normalize_action('PING', {});
+    expect(result.action_class).toBe('network.diagnose');
+  });
+
+  it('no intent_group on network.diagnose', () => {
+    const result = normalize_action('ping', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network.scan action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('network.scan aliases and defaults', () => {
+  it('nmap → network.scan with high risk and per_request HITL', () => {
+    const result = normalize_action('nmap', {});
+    expect(result.action_class).toBe('network.scan');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('NMAP (uppercase) → network.scan via case-insensitive alias lookup', () => {
+    const result = normalize_action('NMAP', {});
+    expect(result.action_class).toBe('network.scan');
+  });
+
+  it('no intent_group on network.scan', () => {
+    const result = normalize_action('nmap', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// scheduling.persist action class — aliases, risk, HITL
+// ---------------------------------------------------------------------------
+
+describe('scheduling.persist aliases and defaults', () => {
+  it('crontab → scheduling.persist with high risk and per_request HITL', () => {
+    const result = normalize_action('crontab', {});
+    expect(result.action_class).toBe('scheduling.persist');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('at → scheduling.persist', () => {
+    const result = normalize_action('at', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('batch → scheduling.persist', () => {
+    const result = normalize_action('batch', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('atq → scheduling.persist', () => {
+    const result = normalize_action('atq', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('atrm → scheduling.persist', () => {
+    const result = normalize_action('atrm', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('CRONTAB (uppercase) → scheduling.persist via case-insensitive alias lookup', () => {
+    const result = normalize_action('CRONTAB', {});
+    expect(result.action_class).toBe('scheduling.persist');
+  });
+
+  it('no intent_group on scheduling.persist', () => {
+    const result = normalize_action('crontab', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network.transfer action class — aliases, risk, HITL, intent_group
+// ---------------------------------------------------------------------------
+
+describe('network.transfer aliases and defaults', () => {
+  it('rsync → network.transfer with high risk and per_request HITL', () => {
+    const result = normalize_action('rsync', {});
+    expect(result.action_class).toBe('network.transfer');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('scp → network.transfer', () => {
+    const result = normalize_action('scp', {});
+    expect(result.action_class).toBe('network.transfer');
+  });
+
+  it('sftp → network.transfer', () => {
+    const result = normalize_action('sftp', {});
+    expect(result.action_class).toBe('network.transfer');
+  });
+
+  it('RSYNC (uppercase) → network.transfer via case-insensitive alias lookup', () => {
+    const result = normalize_action('RSYNC', {});
+    expect(result.action_class).toBe('network.transfer');
+  });
+
+  it('intent_group is data_exfiltration', () => {
+    const result = normalize_action('rsync', {});
+    expect(result.intent_group).toBe('data_exfiltration');
+  });
+
+  it('intent_group propagates from scp', () => {
+    const result = normalize_action('scp', {});
+    expect(result.intent_group).toBe('data_exfiltration');
+  });
+
+  it('intent_group propagates from sftp', () => {
+    const result = normalize_action('sftp', {});
+    expect(result.intent_group).toBe('data_exfiltration');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// package.install — bare-binary aliases (apt/yum/dnf/dpkg/snap/brew/pacman)
+// ---------------------------------------------------------------------------
+
+describe('package.install — distro / system package manager bare aliases', () => {
+  const cases: Array<[string, string]> = [
+    ['apt', 'apt'],
+    ['apt-get', 'apt-get'],
+    ['yum', 'yum'],
+    ['dnf', 'dnf'],
+    ['dpkg', 'dpkg'],
+    ['snap', 'snap'],
+    ['brew', 'brew'],
+    ['pacman', 'pacman'],
+  ];
+
+  for (const [_desc, alias] of cases) {
+    it(`${alias} → package.install with medium risk and per_request HITL`, () => {
+      const result = normalize_action(alias, {});
+      expect(result.action_class).toBe('package.install');
+      expect(result.risk).toBe('medium');
+      expect(result.hitl_mode).toBe('per_request');
+    });
+  }
+
+  it('APT (uppercase) → package.install via case-insensitive alias lookup', () => {
+    const result = normalize_action('APT', {});
+    expect(result.action_class).toBe('package.install');
+  });
+
+  it('apt-get (hyphenated alias) is matched verbatim', () => {
+    const result = normalize_action('apt-get', {});
+    expect(result.action_class).toBe('package.install');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// cluster.manage action class — kubectl alias
+// ---------------------------------------------------------------------------
+
+describe('cluster.manage aliases and defaults', () => {
+  it('kubectl → cluster.manage with high risk and per_request HITL', () => {
+    const result = normalize_action('kubectl', {});
+    expect(result.action_class).toBe('cluster.manage');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('KUBECTL (uppercase) → cluster.manage via case-insensitive alias lookup', () => {
+    const result = normalize_action('KUBECTL', {});
+    expect(result.action_class).toBe('cluster.manage');
+  });
+
+  it('no intent_group on cluster.manage', () => {
+    const result = normalize_action('kubectl', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// system.service — virsh alias (libvirt VM lifecycle)
+// ---------------------------------------------------------------------------
+
+describe('system.service — virsh alias', () => {
+  it('virsh → system.service with critical risk and per_request HITL', () => {
+    const result = normalize_action('virsh', {});
+    expect(result.action_class).toBe('system.service');
+    expect(result.risk).toBe('critical');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('VIRSH (uppercase) → system.service via case-insensitive alias lookup', () => {
+    const result = normalize_action('VIRSH', {});
+    expect(result.action_class).toBe('system.service');
+  });
+});
+
+// ---------------------------------------------------------------------------
+// network.shell action class — ssh / mosh / telnet
+// ---------------------------------------------------------------------------
+
+describe('network.shell aliases and defaults', () => {
+  it('ssh → network.shell with high risk and per_request HITL', () => {
+    const result = normalize_action('ssh', {});
+    expect(result.action_class).toBe('network.shell');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('mosh → network.shell', () => {
+    const result = normalize_action('mosh', {});
+    expect(result.action_class).toBe('network.shell');
+  });
+
+  it('telnet → network.shell', () => {
+    const result = normalize_action('telnet', {});
+    expect(result.action_class).toBe('network.shell');
+  });
+
+  it('SSH (uppercase) → network.shell via case-insensitive alias lookup', () => {
+    const result = normalize_action('SSH', {});
+    expect(result.action_class).toBe('network.shell');
+  });
+
+  it('no intent_group on network.shell', () => {
+    const result = normalize_action('ssh', {});
+    expect(result.intent_group).toBeUndefined();
+  });
+});
+
+// ---------------------------------------------------------------------------
+// code.execute — bare docker alias
+// ---------------------------------------------------------------------------
+
+describe('code.execute — bare docker alias', () => {
+  it('docker → code.execute with high risk and per_request HITL', () => {
+    const result = normalize_action('docker', {});
+    expect(result.action_class).toBe('code.execute');
+    expect(result.risk).toBe('high');
+    expect(result.hitl_mode).toBe('per_request');
+  });
+
+  it('docker_run (typed-tool name) still routes to code.execute', () => {
+    const result = normalize_action('docker_run', {});
+    expect(result.action_class).toBe('code.execute');
+  });
+
+  it('DOCKER (uppercase) → code.execute via case-insensitive alias lookup', () => {
+    const result = normalize_action('DOCKER', {});
+    expect(result.action_class).toBe('code.execute');
   });
 });
 

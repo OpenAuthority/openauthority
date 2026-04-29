@@ -69,6 +69,16 @@ export const ActionClass = {
   CodeExecute: 'code.execute',
   PaymentInitiate: 'payment.initiate',
   SystemRead: 'system.read',
+  SystemService: 'system.service',
+  PermissionsModify: 'permissions.modify',
+  PermissionsElevate: 'permissions.elevate',
+  ProcessSignal: 'process.signal',
+  NetworkDiagnose: 'network.diagnose',
+  NetworkScan: 'network.scan',
+  SchedulingPersist: 'scheduling.persist',
+  NetworkTransfer: 'network.transfer',
+  NetworkShell: 'network.shell',
+  ClusterManage: 'cluster.manage',
   VcsRead: 'vcs.read',
   VcsWrite: 'vcs.write',
   VcsRemote: 'vcs.remote',
@@ -87,7 +97,7 @@ export const ActionClass = {
 export type ActionClassValue = (typeof ActionClass)[keyof typeof ActionClass];
 
 // ---------------------------------------------------------------------------
-// Registry — 32 entries, aliases stored lowercase
+// Registry — 42 entries, aliases stored lowercase
 // ---------------------------------------------------------------------------
 
 export const REGISTRY: readonly ActionRegistryEntry[] = [
@@ -116,6 +126,18 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'exists',
       'file_exists',
       'path_exists',
+      // Bare-binary aliases for read-only file utilities. All low-risk,
+      // none-HITL by default — the destination is a local file and the
+      // action does not modify it. `find` and `locate` are searches
+      // (filesystem traversal / index query) and share the tier.
+      'cat',
+      'head',
+      'tail',
+      'less',
+      'more',
+      'diff',
+      'find',
+      'locate',
     ],
   },
   {
@@ -147,6 +169,15 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'move',
       'rename_file',
       'rename',
+      // Bare-binary aliases that produce or modify file content.
+      // tee writes stdin to a file; touch creates an empty file or
+      // updates timestamps. Both legitimately filesystem.write.
+      'tee',
+      'touch',
+      // `install` (the BSD/GNU file-installer binary, not the package
+      // manager) copies one file to another with explicit permission /
+      // owner setting. Same blast-radius profile as cp.
+      'install',
     ],
   },
   {
@@ -186,6 +217,7 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'list_dir',
       'read_directory',
       'ls',
+      'tree',
     ],
   },
   {
@@ -403,6 +435,13 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'code_runner',
       'docker_run',
       'docker_exec',
+      // Bare docker binary. Multi-subcommand (run / build / push / ps / exec /
+      // ...) — most concerning subcommand is `docker run` which is arbitrary
+      // code execution, so the bare alias inherits code.execute's high /
+      // per_request tier. Explainer dispatches per-subcommand for messaging
+      // detail; read-only `docker ps` inherits the conservative tier as a
+      // trade-off until typed-tool wrappers split the modes.
+      'docker',
     ],
   },
   {
@@ -447,6 +486,136 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'get_arch',
       'get_os_info',
       'uname',
+      // Bare-binary aliases for read-only system-info utilities. All
+      // low-risk, none-HITL — they query process / disk / memory state
+      // without modifying anything. Same tier as `uname`.
+      'ps',
+      'top',
+      'htop',
+      'df',
+      'du',
+      'free',
+      'hostname',
+      'uptime',
+      'lsof',
+      'id',
+      'whoami',
+      // echo / printf are output utilities — by themselves they only write
+      // to stdout. Side-effecting redirection (`echo > file`) happens at the
+      // shell level and is invisible to us either way; classifying as
+      // system.read avoids HITL noise on every echo while leaving the
+      // redirection-write case at the unchanged shell-level posture.
+      'echo',
+      'printf',
+    ],
+  },
+  {
+    action_class: ActionClass.SystemService,
+    default_risk: 'critical',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'systemctl',
+      'service',
+      'init',
+      'reboot',
+      'shutdown',
+      // virsh manages libvirt VM lifecycles — same operational tier as
+      // systemctl: lifecycle ops on resources that other workloads depend on.
+      'virsh',
+    ],
+  },
+  {
+    action_class: ActionClass.PermissionsModify,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'chmod',
+      'chown',
+      'chgrp',
+      'umask',
+    ],
+  },
+  {
+    action_class: ActionClass.PermissionsElevate,
+    default_risk: 'critical',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'sudo',
+      'su',
+      'doas',
+      'passwd',
+    ],
+  },
+  {
+    action_class: ActionClass.ProcessSignal,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'kill',
+      'pkill',
+      'killall',
+    ],
+  },
+  {
+    action_class: ActionClass.NetworkDiagnose,
+    default_risk: 'low',
+    default_hitl_mode: 'none',
+    aliases: [
+      'ping',
+      'traceroute',
+      'nslookup',
+      'dig',
+      'netstat',
+      'ss',
+    ],
+  },
+  {
+    action_class: ActionClass.NetworkScan,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'nmap',
+    ],
+  },
+  {
+    action_class: ActionClass.SchedulingPersist,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'crontab',
+      'at',
+      'batch',
+      'atq',
+      'atrm',
+    ],
+  },
+  {
+    action_class: ActionClass.NetworkTransfer,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'rsync',
+      'scp',
+      'sftp',
+    ],
+    intent_group: 'data_exfiltration',
+  },
+  {
+    action_class: ActionClass.NetworkShell,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'ssh',
+      'mosh',
+      'telnet',
+    ],
+  },
+  {
+    action_class: ActionClass.ClusterManage,
+    default_risk: 'high',
+    default_hitl_mode: 'per_request',
+    aliases: [
+      'kubectl',
     ],
   },
   {
@@ -540,6 +709,17 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'apt_install',
       'brew_install',
       'add_package',
+      // Bare-binary aliases. Multi-subcommand binaries (install/remove/update/
+      // upgrade) all share package.install's medium / per_request tier;
+      // explainer dispatch per subcommand provides operator-readable detail.
+      'apt',
+      'apt-get',
+      'yum',
+      'dnf',
+      'dpkg',
+      'snap',
+      'brew',
+      'pacman',
     ],
   },
   {
@@ -641,6 +821,15 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'gzip',
       'bzip2',
       'zstd_compress',
+      // Bare-binary aliases. tar / zip / xz / 7z are mode-flag driven —
+      // most common invocation creates an archive, so the bare binary
+      // inherits archive.create's medium / per_request tier. Flag-aware
+      // detail is provided by the explainer (e.g. `tar -t` is summarised
+      // as a list, even though it inherits the create-mode tier).
+      'tar',
+      'zip',
+      'xz',
+      '7z',
     ],
   },
   {
@@ -660,6 +849,8 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'decompress',
       'extract_files',
       'zstd_decompress',
+      // Bare-binary aliases for explicit-direction decompressors.
+      'unxz',
     ],
   },
   {

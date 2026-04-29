@@ -216,11 +216,49 @@ Configure the audit log path in `openclaw.plugin.json` or via the `AUDIT_LOG_FIL
 
 ### Reading audit entries
 
-Use `GET /api/audit` to query entries with pagination and filters, or tail the JSONL file directly:
+The dashboard REST API (`GET /api/audit`) is documented in [api.md](api.md) but **does not ship in v1.3.1** — it's a future-work design target. For v1.3.1, query the audit log directly:
 
 ```bash
 tail -f data/audit.jsonl | jq .
 ```
+
+---
+
+## HITL Message Bodies (v1.3.0+)
+
+When an action routes through HITL, the approval message sent to Telegram / Slack / console is **not** just the raw command string. The plugin runs the command through a rule-based explainer that produces a human-readable summary, structured effects, and warnings, then renders all three alongside an optional agent-supplied "Why this is happening" line.
+
+The explainer lives at [`src/enforcement/command-explainer/patterns.ts`](../src/enforcement/command-explainer/patterns.ts). It dispatches by command binary and, where applicable, by subcommand. Operators reading an HITL message see something like:
+
+```
+Tool: bash       Risk: high       Expires in: 120s
+Action Class: code.execute
+
+Explanation:
+  Starts an Ubuntu container with the host filesystem mounted
+
+Effects:
+  • Starts a container
+  • Mounts the host filesystem at /host
+  • Executes a shell script inside the container
+
+Warnings:
+  • Full disk access — host filesystem mounted at /host
+
+Why this is happening:
+  The agent is bootstrapping a development environment.
+
+Command:
+  docker run -it --rm -v /:/host ubuntu bash -c "setup.sh"
+
+[ Approve Once ]  [ Approve Always ]  [ Deny ]
+```
+
+The explainer is **metadata only** — it never participates in enforcement. A pattern that produces the wrong summary is a UX bug, not a security one. Coverage spans ~100 commands across the 16 categories of the exec audit; see [action-registry.md](action-registry.md) for the alias inventory.
+
+To suppress the rich body and fall back to a v1.2.x-style minimal message (raw command + buttons only), set `CLAWTHORITY_HITL_MINIMAL=1`. Buttons (including Approve Always) continue to work.
+
+The agent can populate the "Why this is happening" line by setting `ctx.metadata.intent_hint` on the tool call. The plugin sanitises and truncates the value at 200 characters; absent or empty values omit the section entirely.
 
 ---
 
@@ -265,20 +303,20 @@ Navigate to **Coverage Map** to see a matrix of which resource types have permit
 
 The plugin ships with a baseline rule set in `src/policy/rules/default.ts` covering the most common action classes. These rules are production-ready defaults suitable for most deployments. Override or extend them by editing the file directly or adding JSON rules to `data/rules.json`.
 
-> **Which rules load depends on the install mode.** In the default `open` mode, only the six priority-90/100 critical forbids marked below with 🔒 are loaded; the priority-10 `filesystem.read` permit and the `external_send` intent-group rule are redundant under implicit-permit semantics and are skipped. In `closed` mode the full table below loads. See [configuration.md — Install mode](configuration.md#install-mode).
+> **Which rules load depends on the install mode.** In the default `open` mode, only the six priority-90/100 critical forbids marked below with are loaded; the priority-10 `filesystem.read` permit and the `external_send` intent-group rule are redundant under implicit-permit semantics and are skipped. In `closed` mode the full table below loads. See [configuration.md — Install mode](configuration.md#install-mode).
 
 ### Default rule tiers
 
 | Priority | Action class | Effect | Loaded in `open` | Reason |
 |---|---|---|---|---|
 | 10 | `filesystem.read` | permit |  | Read-only filesystem access is safe |
-| 90 | `payment.initiate` | forbid | 🔒 | Requires HITL approval |
-| 90 | `credential.read` | forbid | 🔒 | Requires HITL approval |
-| 90 | `credential.write` | forbid | 🔒 | Requires HITL approval |
+| 90 | `payment.initiate` | forbid | yes | Requires HITL approval |
+| 90 | `credential.read` | forbid | yes | Requires HITL approval |
+| 90 | `credential.write` | forbid | yes | Requires HITL approval |
 | 90 | *(intent group: `external_send`)* | forbid |  | Card data in payload requires HITL approval |
-| 100 | `shell.exec` | forbid | 🔒 | Direct shell execution is never permitted |
-| 100 | `code.execute` | forbid | 🔒 | Arbitrary code execution is never permitted |
-| 100 | `unknown_sensitive_action` | forbid | 🔒 | Fail-closed on unrecognised sensitive actions |
+| 100 | `shell.exec` | forbid | yes | Direct shell execution is never permitted |
+| 100 | `code.execute` | forbid | yes | Arbitrary code execution is never permitted |
+| 100 | `unknown_sensitive_action` | forbid | yes | Fail-closed on unrecognised sensitive actions |
 
 All `action_class` values map to entries in the normalization registry at [`src/enforcement/normalize.ts`](../src/enforcement/normalize.ts); see [action-registry.md](action-registry.md) for the full list.
 

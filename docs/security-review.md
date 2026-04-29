@@ -166,14 +166,14 @@ The enforcement gate meets the following security properties:
 
 | Property | Status | Evidence |
 |---|---|---|
-| Fail-closed on exception | ✅ | `try/catch` in pipeline, stage1, stage2 all return `forbid` |
-| Forbid-wins semantics | ✅ | Stage 2 returns on first `forbid` from action_class or intent_group |
-| Cryptographic payload binding | ✅ | SHA-256(`action_class\|target\|payload_hash`) verified in Check 4 |
-| One-time token consumption | ✅ | `approvalManager.isConsumed()` in Check 5 |
-| TTL enforcement | ✅ | `Date.now() > capability.expires_at` in Check 3 |
-| Untrusted source isolation | ✅ | Check 0 rejects `untrusted` sources at high/critical risk |
-| Hard forbids for shell/code exec | ✅ | Priority 100 rules for `shell.exec` and `code.execute` |
-| Replay prevention | ✅ | One-time consumption + TTL window |
+| Fail-closed on exception | | `try/catch` in pipeline, stage1, stage2 all return `forbid` |
+| Forbid-wins semantics | | Stage 2 returns on first `forbid` from action_class or intent_group |
+| Cryptographic payload binding | | SHA-256(`action_class\|target\|payload_hash`) verified in Check 4 |
+| One-time token consumption | | `approvalManager.isConsumed()` in Check 5 |
+| TTL enforcement | | `Date.now() > capability.expires_at` in Check 3 |
+| Untrusted source isolation | | Check 0 rejects `untrusted` sources at high/critical risk |
+| Hard forbids for shell/code exec | | Priority 100 rules for `shell.exec` and `code.execute` |
+| Replay prevention | | One-time consumption + TTL window |
 
 ---
 

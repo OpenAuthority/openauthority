@@ -237,7 +237,7 @@ Replace generic shell invocations with purpose-built action classes that carry s
 | Posting data to an endpoint | `web.post` |
 | Searching the web | `web.search` |
 
-Fine-grained tools are registered in `src/enforcement/normalize.ts` with their canonical action class, risk tier, and HITL mode. Use `action_class` rules in `data/rules.json` to gate them:
+Fine-grained tools are registered in `packages/action-registry/src/index.ts` (alias-to-action-class mapping) and gated through `src/enforcement/normalize.ts` (lookup + post-lookup reclassification). Use `action_class` rules in `data/rules.json` to gate them:
 
 ```json
 [
@@ -245,6 +245,24 @@ Fine-grained tools are registered in `src/enforcement/normalize.ts` with their c
   { "effect": "permit", "action_class": "filesystem.read",   "priority": 10, "reason": "Read-only operations permitted" }
 ]
 ```
+
+#### First-party typed tools
+
+The plugin ships first-party typed tools that wrap common shell operations behind a TypeBox-validated parameter schema and a `spawnSync` call with explicit argv (no shell interpretation). Each typed tool maps to a specific action class so policy rules can target it directly.
+
+| Typed tool | Action class | Notes |
+|---|---|---|
+| **Git family (7)** — `git_add`, `git_commit`, `git_diff`, `git_log`, `git_merge`, `git_reset`, `git_status`, `git_branch`, `git_checkout`, `git_clone`, `git_push`, `git_pull` | `vcs.read` / `vcs.write` / `vcs.remote` | Shipped in v1.2.1 |
+| **Filesystem (8)** — `read_file`, `write_file`, `edit_file`, `append_file`, `delete_file`, `create_directory`, `list_dir`, `list_directory` | `filesystem.read` / `filesystem.write` / `filesystem.delete` / `filesystem.list` | Shipped in v1.2.1 |
+| **HTTP (7)** — `http_get`, `http_post`, `http_put`, `http_patch`, `http_delete`, `fetch_url`, `scrape_page` | `web.fetch` / `web.post` / `browser.scrape` | `http_*` write verbs added in v1.2.4 |
+| **Communication (4)** — `send_email`, `send_slack`, `send_webhook`, `send_notification` | `communication.email` / `communication.slack` / `communication.webhook` | `send_notification` added in v1.2.4 |
+| **Secrets (5)** — `read_secret`, `write_secret`, `store_secret`, `list_secrets`, `rotate_secret` | `credential.read` / `credential.write` / `credential.list` / `credential.rotate` | Shipped across v1.2.1–v1.2.4 |
+| **Package + build (6)** — `npm_install`, `npm_run`, `pip_install`, `pytest`, `docker_run`, `make_run` | `package.install` / `package.run` / `build.test` / `code.execute` | Shipped in **v1.3.0** |
+| **Search + webhook + escape hatch (3)** — `search_web`, `webhook` (audited retry variant), `unsafe_admin_exec` | `web.search` / `communication.webhook` / `shell.exec` | `unsafe_admin_exec` is the documented audit-logged escape hatch — inert by default; requires `CLAWTHORITY_ENABLE_UNSAFE_ADMIN_EXEC=1` plus a 20-character `justification` per call |
+
+All typed tools live under `src/tools/<name>/` with `manifest.ts` + `<name>.ts` + tests. They use `spawnSync` with explicit argv arrays to satisfy the FEP shell-prohibition contract — see [docs/spec-alignment-audit.md](spec-alignment-audit.md) for the validator that enforces this.
+
+> **What v1.3.x added.** v1.3.0 shipped six high-volume typed tools (npm_install, npm_run, pip_install, pytest, docker_run, make_run) to reduce `unknown_sensitive_action` HITL volume on common workflows. v1.3.1 layered ~80 bare-binary aliases on top so commands invoked through a generic shell-exec tool (e.g. `bash` calling `apt install nginx`) classify correctly without typed-tool wrappers — see [action-registry.md](action-registry.md) for the alias inventory. Per [release-plans/v1.3.2.md](release-plans/v1.3.2.md), v1.3.2 will add typed-tool wrappers for the highest-risk classes from the v1.3.1 coverage work (`systemctl`, `chmod`, `kill`, `kubectl`, `crontab`).
 
 ### Example rules.json
 
@@ -659,7 +677,9 @@ Controls the plugin's policy posture at activation and the install-phase bypass 
 |---|---|---|
 | `OPENAUTH_FORCE_ACTIVE` | _(unset)_ | Set to `'1'` to suppress the install-phase enforcement bypass. Without this, enforcement is suspended while `npm_lifecycle_event` is one of `install`, `preinstall`, `postinstall`, or `prepare`. **Must be set to `'1'` in all production deployments.** See [Operator Security Guide — F-01](operator-security-guide.md#f-01-openauth_force_active-configuration). |
 | `CLAWTHORITY_MODE` | `open` | `open` — implicit permit with a critical-forbid safety net (six action classes: `shell.exec`, `code.execute`, `payment.initiate`, `credential.read`, `credential.write`, `unknown_sensitive_action`). `closed` — implicit deny, user adds explicit `permit` rules. Any other value logs a warning and falls back to `open`. Case- and whitespace-insensitive. Read once at module load — **restart the plugin to change modes.** |
-| `CLAWTHORITY_DISABLE_APPROVE_ALWAYS` | _(unset)_ | Set to `'1'` to hide the 🔁 "Approve Always" button in Slack HITL approval messages and prevent creation of new session-scoped auto-permits. Existing in-process auto-permits continue to be honoured — only creation of new ones is blocked. Read once at module load — **restart the plugin to change.** |
+| `CLAWTHORITY_DISABLE_APPROVE_ALWAYS` | _(unset)_ | Set to `'1'` to hide the Approve Always button on every HITL channel (Telegram, Slack, console) and prevent creation of new session-scoped auto-permits. Existing entries in `data/auto-permits.json` continue to be honoured — only creation of new ones is blocked. Read once at module load — **restart the plugin to change.** |
+| `CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM` | _(unset)_ | Set to `'1'` to skip the Save / Cancel confirmation step of the Approve Always flow. The derived permit pattern is saved immediately when the operator taps the Approve Always button. Use only when you trust the derivation algorithm in your environment. Read once at module load — **restart the plugin to change.** |
+| `CLAWTHORITY_HITL_MINIMAL` | _(unset)_ | Set to `'1'` to suppress the rich body sections (explainer summary, effects, warnings, intent-hint, command block) from HITL approval messages, falling back to the v1.2.x minimal style. Buttons (including Approve Always) continue to work — only the body collapses. Useful as a §16 rollback escape hatch when the command explainer produces confusing output. Read once at module load — **restart the plugin to change.** |
 
 Mode only affects Stage 2 policy evaluation and which default rule set is loaded. Stage 1 (capability gate, protected paths, HITL binding) fails closed in both modes regardless.
 
@@ -719,7 +739,7 @@ On activation, the budget tracker reads today's entries from `data/budget.jsonl`
 
 Blocked calls are logged to stdout:
 ```
-[clawthority] │ DECISION: ✕ BLOCKED (budget/daily_limit_exceeded) — 100042/100000 tokens, $3.0012/$3.00
+[clawthority] │ DECISION: BLOCKED (budget/daily_limit_exceeded) — 100042/100000 tokens, $3.0012/$3.00
 ```
 
 The budget log is separate from the audit log. It records every tool call (permitted or blocked) with token estimates and cost, and is never rotated automatically.

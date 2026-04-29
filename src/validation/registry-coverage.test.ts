@@ -60,6 +60,52 @@ const COVERAGE_EXEMPT = new Set<string>([
   ActionClass.MemoryRead,
   ActionClass.MemoryWrite,
   ActionClass.PaymentInitiate,
+  // v1.3.2: typed tools for systemctl/service/reboot/shutdown/init.
+  // v1.3.1 ships only the registry alias + explainer pattern (Layers 1+2);
+  // typed tool wrappers land in v1.3.2 once HITL volume is measured.
+  ActionClass.SystemService,
+  // v1.3.2: typed tools for chmod/chown/chgrp/umask. Same v1.3.1 / v1.3.2
+  // split as system.service.
+  ActionClass.PermissionsModify,
+  // v1.3.2: permissions.elevate (sudo / su / doas / passwd) is intentionally
+  // *not* getting a typed-tool wrapper — see docs/release-plans/v1.3.2.md
+  // §2.2. The v1.3.2 plan ships a default-forbid policy rule on this class
+  // instead. Operators who need privilege elevation use unsafe_admin_exec.
+  ActionClass.PermissionsElevate,
+  // v1.3.2: typed tools for kill/pkill/killall (see release-plan §6).
+  // PID resolution to process name+cmdline happens inside the typed tool so
+  // HITL messages can show "TERM pid 1234 (/usr/bin/java -jar app.jar)".
+  ActionClass.ProcessSignal,
+  // v1.3.x: network.diagnose covers ping/traceroute/nslookup/dig/netstat/ss
+  // — read-only diagnostics. Typed tools deferred indefinitely; the registry
+  // alias + explainer pattern is sufficient and these are HITL-mode 'none'
+  // by default (no operator interruption needed).
+  ActionClass.NetworkDiagnose,
+  // v1.4: typed tool wrapper for nmap is genuinely useful (could constrain
+  // scan types, target ranges, opt-in --script). Deferred to v1.4 — for
+  // v1.3.1 the registry alias + explainer + per_request HITL is enough.
+  ActionClass.NetworkScan,
+  // v1.3.2: typed tools for crontab/at/batch (see release-plan §9). The
+  // typed wrapper deliberately omits interactive `crontab -e` mode; install-
+  // from-file is the supported persistence path.
+  ActionClass.SchedulingPersist,
+  // v1.4: typed tools for rsync/scp/sftp would constrain endpoints to a
+  // configured allowlist (similar to web.fetch's `allowed_domains`). v1.3.1
+  // ships only the registry alias + explainer + per_request HITL, with the
+  // data_exfiltration intent_group so a single rule can cover all transports.
+  ActionClass.NetworkTransfer,
+  // v1.3.2: typed tools for kubectl (apply / get / delete / rollout — see
+  // release-plan §7). kubectl exec / port-forward are in the "long-running /
+  // separate process" bucket and need the v1.4 streams design before they
+  // get typed wrappers. v1.3.1 ships only the registry alias + explainer +
+  // per_request HITL.
+  ActionClass.ClusterManage,
+  // v1.4: typed tool wrappers for ssh / mosh / telnet would constrain the
+  // remote-host endpoint to a configured allowlist (analogous to web.fetch's
+  // `allowed_domains`). Interactive remote shells also fall into the
+  // long-running-streams bucket — see the v1.4 RFC. v1.3.1 ships only the
+  // registry alias + explainer + per_request HITL.
+  ActionClass.NetworkShell,
 ]);
 
 // ─── Scanning helpers ──────────────────────────────────────────────────────────

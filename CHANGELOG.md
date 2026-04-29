@@ -7,6 +7,103 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ## [Unreleased]
 
+## [1.3.1] — 2026-04-29
+
+Coverage release: closes the classification gap for the 16-category exec command audit. Every common shell command an agent can invoke now has either a registry alias (Layer 1) so policies and HITL gates can target it specifically, or an explainer pattern (Layer 2) so HITL approval messages explain what's about to run in plain English — and almost all have both.
+
+The release is purely additive on top of v1.3.0's HITL UX engine. No new operator-facing UI; no new feature flags; no new env vars. The two-stage pipeline, capability binding, Cedar semantics, and audit log shape are unchanged.
+
+### Added
+
+#### 10 new action classes covering host operations, network operations, and access control
+
+| Action class | Risk / HITL | Aliases |
+|---|---|---|
+| `system.service` | critical / per_request | `systemctl`, `service`, `init`, `reboot`, `shutdown`, `virsh` |
+| `permissions.modify` | high / per_request | `chmod`, `chown`, `chgrp`, `umask` |
+| `permissions.elevate` | critical / per_request | `sudo`, `su`, `doas`, `passwd` |
+| `process.signal` | high / per_request | `kill`, `pkill`, `killall` |
+| `network.diagnose` | low / none | `ping`, `traceroute`, `nslookup`, `dig`, `netstat`, `ss` |
+| `network.scan` | high / per_request | `nmap` |
+| `network.transfer` | high / per_request (`intent_group: data_exfiltration`) | `rsync`, `scp`, `sftp` |
+| `network.shell` | high / per_request | `ssh`, `mosh`, `telnet` |
+| `cluster.manage` | high / per_request | `kubectl` |
+| `scheduling.persist` | high / per_request | `crontab`, `at`, `batch`, `atq`, `atrm` |
+
+`network.transfer` joins `web.fetch` and `web.post` under the `data_exfiltration` intent group so a single rule can target the entire data-leaving-the-host cluster. `permissions.elevate` is documented in [docs/release-plans/v1.3.2.md](docs/release-plans/v1.3.2.md) §2.2 as a target for default-forbid policy in v1.3.2 — v1.3.1 only classifies; the policy default ships next.
+
+#### Bare-binary aliases on existing classes
+
+The original action registry mostly used tool-name forms (`read_file`, `git_log`, `npm_install`). v1.3.1 adds the bare-binary equivalents so commands invoked through a generic `bash`/`exec` tool also classify correctly:
+
+- `filesystem.read`: `cat`, `head`, `tail`, `less`, `more`, `diff`, `find`, `locate`
+- `filesystem.list`: `tree` (`ls` was already aliased)
+- `filesystem.write`: `tee`, `touch`, `install`
+- `system.read`: `ps`, `top`, `htop`, `df`, `du`, `free`, `hostname`, `uptime`, `lsof`, `id`, `whoami`, `echo`, `printf`
+- `archive.create`: `tar`, `zip`, `xz`, `7z`
+- `archive.extract`: `unxz`
+- `package.install`: `apt`, `apt-get`, `yum`, `dnf`, `dpkg`, `snap`, `brew`, `pacman`
+- `code.execute`: `docker` (the bare binary; `docker_run` was already aliased)
+
+#### Command explainer patterns — ~50 new functions
+
+Every alias added in this release has a matching explainer entry that produces a human-readable summary, structured effects, and warnings for the HITL message body. Highlights:
+
+- **Service / power**: `systemctl` dispatches by subcommand (`start`/`stop`/`restart`/`reload`/`enable`/`disable`/`mask`/`unmask`/`daemon-reload`/`status`/`reboot`/`poweroff`/`halt`/`kexec`/`suspend`/`hibernate`); `shutdown -r` vs `-h` vs `-c`; `init 0`/`init 6`/`init 1`/`init S` runlevel awareness.
+- **Permissions**: `chmod` / `chown` recursive + system-path warnings; `sudo -u` / `su -c` / `passwd <user>` target detection.
+- **Process signals**: signal-flag parsing handles bundled forms (`-9`, `-KILL`, `-s KILL`, `--signal=KILL`); PID 1 + broadcast `-1` warnings; SIGHUP recognised as a config reload.
+- **Network**: `dig`/`nslookup` flag internal-name leakage when querying `*.corp`/`*.internal`/RFC1918 against an external resolver; `nmap` always-on IDS / AUP warnings plus per-flag warnings for `-sS` / `-sU` / `-O` / `-A` / `--script`.
+- **Transfers**: `rsync` / `scp` / `sftp` flag remote endpoints (`user@host:path`, `host:path`, `rsync://`, `sftp://`); direction-aware "uploading" vs "pulling" warnings.
+- **Cluster**: `kubectl apply` / `delete` / `get` / `describe` / `logs` / `exec` (incl. `-it` interactive warning) / `port-forward` (long-running tunnel warning) / `rollout` / `scale`. Namespace flag (`-n` / `--namespace=`) propagates into every applicable summary.
+- **Scheduling**: `crontab -r` destructive-removal warning; `crontab <file>` install-replaces-everything warning; `at`/`atrm` job-cancellation persistence warning.
+- **Archives**: `tar` mode-flag dispatch (short bundles `czf`/`xzf`/`tf`, dashed `-czf`, long-form `--create`/`--extract`/`--list`); `unzip` / `tar -x` / `7z x` always-on path-traversal + decompression-bomb warnings.
+- **Read utilities**: `tail -f` / `top` / `htop` / `less` / `more` long-running interactive warnings; `find -delete` / `find -exec` flag warnings; `mv` to `/dev/null` / `/dev/zero` / `/tmp/trash/...` / `~/.Trash/...` flagged as effective deletion.
+- **Sessions**: `mosh` long-running session warning; `telnet` plaintext-credential warning.
+
+#### Docker subcommand coverage
+
+Extended `dockerExplain` dispatch to cover `docker push` (image-upload warning — secrets baked into the image become visible to anyone with registry read access; `--all-tags` warning) and `docker ps` (running vs `-a` all containers, read-only).
+
+### Tests
+
+~1,200 new unit tests across [src/enforcement/normalize.test.ts](src/enforcement/normalize.test.ts) and [src/enforcement/command-explainer/patterns.test.ts](src/enforcement/command-explainer/patterns.test.ts) (TC-CE-100 through TC-CE-291). The test count grew from 4070 in v1.3.0 to **4661**, all passing alongside the existing 470 E2E and 17/17 spec-alignment checks.
+
+### Documentation
+
+- `docs/action-taxonomy.md` — bumped from `frozen v1` to `frozen v2` with the 10 new action classes and the `network.shell` and `data_exfiltration`-bridging intent groups.
+- `docs/release-plans/v1.3.2.md` — typed-tool depth plan for the high-risk classes from this release (filed earlier; v1.3.2 is the next release).
+- 10 retroactive RFCs filed under `docs/rfc/` (RFC-001..RFC-010, all `status: implemented`) covering each new action class per the taxonomy governance process.
+
+### Migration (from v1.3.0)
+
+**Operator policies that targeted `unknown_sensitive_action` to catch unrecognised commands now match fewer commands.** v1.3.1 adds direct classifications for ~80 commands that previously fell through to the catch-all. If you wrote a rule like:
+
+```json
+{ "action_class": "unknown_sensitive_action", "effect": "forbid" }
+```
+
+…to gate `apt` / `ps` / `docker` / `systemctl` / etc., those calls now route to their specific action classes (`package.install` / `system.read` / `code.execute` / `system.service`). Replace the catch-all rule with explicit targets:
+
+```json
+{ "action_class": "system.service", "effect": "forbid" }
+{ "action_class": "permissions.elevate", "effect": "forbid" }
+```
+
+**HITL approval volume may increase for some workflows.** Commands that previously fell through to OPEN-mode implicit-permit now classify into HITL-gated tiers — `apt install` → `package.install` (per_request), `kubectl apply` → `cluster.manage` (per_request), `systemctl restart nginx` → `system.service` (per_request). Operators who rely on these in automation should configure permit policies for the relevant agents/channels.
+
+**No env-var changes; no rule-file format changes; no policy-bundle format changes.** The two-stage pipeline, capability binding semantics, Cedar forbid-wins, priority tiers (90 = HITL-gated, 100 = unconditional), hot-reload, and audit log shape are all identical to v1.3.0.
+
+**Rollback.** Revert the v1.3.1 PR; v1.3.0 keeps every command that was working in v1.3.0 working — the v1.3.1 work is purely additive.
+
+### Known gaps — deferred to v1.3.2 / v1.4
+
+- **Typed-tool wrappers** for the high-risk classes from this release (`system.service`, `permissions.modify`, `process.signal`, `cluster.manage`, `scheduling.persist`) — v1.3.2 (see release plan).
+- **Default-forbid policy** on `permissions.elevate` (sudo / su / passwd) — v1.3.2.
+- **`nohup`, `vagrant`, `aws s3 cp`** — deliberately not classified. nohup is a long-running-process detachment primitive; vagrant is low-volume; aws is a heterogeneous CLI that needs its own classification pass. All three remain `unknown_sensitive_action`.
+- **Long-running / streaming commands** (`kubectl exec -it`, `kubectl port-forward`, `tail -f`, `tee` to a long stream) — explainer warns about long-running semantics but the enforcement model still treats them as one-shot. Proper streaming support is the v1.4 RFC topic.
+
+---
+
 ## [1.3.0] — 2026-04-28
 
 Headline release: **HITL becomes the primary control surface, not the failure mode.** Operators approve or deny tool calls with a single button tap on Telegram (no more `/approve <token>` typing); recurring commands can be saved as auto-permits with one click; approval messages are written for humans, not for compilers.
@@ -15,13 +112,13 @@ Headline release: **HITL becomes the primary control surface, not the failure mo
 
 #### Telegram inline buttons for HITL approvals (W1)
 
-`sendApprovalRequest` now sends a MarkdownV2-formatted message with an `inline_keyboard` carrying three buttons — `✅ Approve once`, `🔁 Approve always`, `❌ Deny` — instead of asking the operator to type `/approve <token>`. `callback_data` uses a `<verb>:<token>` form (`approve_once:<uuidv7>`, `approve_always:<uuidv7>`, `deny:<uuidv7>`) which fits the 64-byte Telegram limit.
+`sendApprovalRequest` now sends a MarkdownV2-formatted message with an `inline_keyboard` carrying three buttons — `Approve once`, `Approve always`, `Deny` — instead of asking the operator to type `/approve <token>`. `callback_data` uses a `<verb>:<token>` form (`approve_once:<uuidv7>`, `approve_always:<uuidv7>`, `deny:<uuidv7>`) which fits the 64-byte Telegram limit.
 
 `TelegramListener` was extended to dispatch `callback_query` updates alongside the existing long-poll loop. Each click triggers `answerCallbackQuery` (acknowledgement + replay-protected "Already decided" toast on second tap) and `editMessageText` to replace the buttons with a confirmation footer. The legacy `/approve <token>` text command is kept for one release with a deprecation hint per use; remove planned for v1.4.
 
 #### Approve Always — session-scoped auto-permits (W2)
 
-Tapping 🔁 derives a permit pattern from the current command and offers it back to the operator in a confirmation message (`Pattern: docker run * ubuntu *` with `[✅ Save] [❌ Cancel]` buttons; auto-confirm available via `CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM=1`). On Save, the rule is appended to `data/auto-permits.json` (`{ version, rules, checksum, generated, created_by, created_at, derived_from }`), hot-reloaded via chokidar, and merged into the JSON rules engine. Future matching calls bypass HITL entirely with a `stage: 'auto-permit'` permit decision.
+Tapping derives a permit pattern from the current command and offers it back to the operator in a confirmation message (`Pattern: docker run * ubuntu *` with `[Save] [Cancel]` buttons; auto-confirm available via `CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM=1`). On Save, the rule is appended to `data/auto-permits.json` (`{ version, rules, checksum, generated, created_by, created_at, derived_from }`), hot-reloaded via chokidar, and merged into the JSON rules engine. Future matching calls bypass HITL entirely with a `stage: 'auto-permit'` permit decision.
 
 Pattern derivation (`src/auto-permits/pattern-derivation.ts`) uses two methods:
 - **`tool` method:** registered tool name → pattern is the tool name itself.
@@ -60,7 +157,7 @@ Telegram (MarkdownV2), Slack (Block Kit), and console fallback (`src/hitl/consol
 - Agent / Tool / Risk / Expires-in header.
 - "What will run" — raw command, truncated at 500 chars with elision hint pointing at `data/audit.jsonl`.
 - "What this does" — explainer effects (omitted when empty).
-- "Warnings" — explainer warnings prefixed with ⚠️ (omitted when empty).
+- "Warnings" — explainer warnings prefixed with (omitted when empty).
 - "Why this is happening" — agent-supplied intent (omitted when empty).
 - Inline keyboard / Block Kit buttons (Once / Always / Deny).
 
@@ -86,7 +183,7 @@ Reduces HITL volume on the most common cases by 5–10× (per pre-release tester
 
 #### Feature flags — graceful degradation (§16 rollback layer)
 
-- `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` — hides the 🔁 button on all channels and refuses new auto-permit creation. Existing rules still match.
+- `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` — hides the button on all channels and refuses new auto-permit creation. Existing rules still match.
 - `CLAWTHORITY_APPROVE_ALWAYS_AUTO_CONFIRM=1` — skip the Save/Cancel confirmation step.
 - `CLAWTHORITY_HITL_MINIMAL=1` — falls back to the v1.2.x message body (raw command only, no effects/warnings/intent-hint sections). Buttons + Approve Always continue to work.
 
@@ -102,7 +199,7 @@ Reduces HITL volume on the most common cases by 5–10× (per pre-release tester
 
 **Telegram approval is now button-driven.** The legacy `/approve <token>` and `/deny <token>` text commands continue to work for v1.3.x with a deprecation hint logged on each use. Operators should migrate to the inline buttons; text-command support is scheduled for removal in v1.4.0. No action required for the migration itself — buttons are shown automatically.
 
-**`data/auto-permits.json` is a new optional file.** When operators tap 🔁 Approve Always, derived patterns are appended here. The file is human-readable and managed via `npm run list-auto-permits` / `npm run revoke-auto-permit`. Operators who prefer the v1.2.x flow (no auto-permits) can set `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` — the 🔁 button is hidden on all channels.
+**`data/auto-permits.json` is a new optional file.** When operators tap Approve Always, derived patterns are appended here. The file is human-readable and managed via `npm run list-auto-permits` / `npm run revoke-auto-permit`. Operators who prefer the v1.2.x flow (no auto-permits) can set `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1` — the button is hidden on all channels.
 
 **Fresh installs now bootstrap with CLOSED + HITL.** `scripts/post-install.mjs` writes a starter `data/rules.json` and `hitl-policy.yaml` only when those files are absent. Upgraders from v1.2.x are unaffected — existing config is never overwritten. To opt in to the new bootstrap on an existing install, delete the two files and run `npm run plugin:install`.
 
@@ -112,7 +209,7 @@ Reduces HITL volume on the most common cases by 5–10× (per pre-release tester
 
 **Rollback escape hatches.** All v1.3.0 UX changes are individually disablable via env var: `CLAWTHORITY_DISABLE_APPROVE_ALWAYS=1`, `CLAWTHORITY_HITL_MINIMAL=1`, or revert to v1.2.4. The two-stage pipeline, capability gate, and HITL routing semantics are unchanged from v1.2.4.
 
-### ⚠️ Known gaps — deferred to v1.3.1 / v1.4
+### Known gaps — deferred to v1.3.1 / v1.4
 
 - **Auto-permit TTL / auto-expiry.** Persisted permits live until manually removed. Auto-expiry is v1.4.
 - **Multi-operator quorum.** One operator's button click decides. n-of-m voting is out of scope.
@@ -357,7 +454,7 @@ All 23 tools ship with TypeBox-validated manifests (schema, action class, risk t
 - **`src/regression-bundle-hot-reload.e2e.ts`** — five cases (TC-RBH-01..05) asserting chokidar file-watch propagation within a 600 ms deadline (300 ms debounce + 300 ms tolerance): file write detection, active rule reflection, rapid-write coalescing, second-change propagation, and rule content parsing.
 - **`src/regression-rules-json-forbid.e2e.ts`** — five cases (TC-RRF-01..05) covering the 2026-04-23 regression where a `tool:read → forbid` rule at priority 200 defined via `CLAWTHORITY_RULES_FILE` (resource/match form) was not blocking in OPEN mode and not emitting a structured audit entry: OPEN-mode block by priority-200 `tool:read_file` forbid (TC-RRF-01), audit entry with `stage=json-rules` and `priority=200` (TC-RRF-02), priority ordering confirming the json-rules forbid wins over the implicit Cedar permit (TC-RRF-03), unconditional block with no HITL policy configured confirming priority ≥ 100 is not HITL-gatable (TC-RRF-04), and CLOSED-mode block (TC-RRF-05).
 
-### ⚠️ Known gaps — deferred to v1.3
+### Known gaps — deferred to v1.3
 
 - **Normalizer Rules 4–8** — shell-wrapper reclassification for `filesystem.delete` (Rule 4), `credential.read/write` via file path (Rule 5), credential-emitting CLI patterns (Rule 6), file-upload exfiltration (Rule 7), and environment-variable exfiltration (Rule 8) are **not implemented** in v1.2.1 or v1.2.0. See the v1.2.0 Deferred section.
 - **Cloud vault providers** — HashiCorp Vault, AWS Secrets Manager, and 1Password are not yet supported. `FileCredentialVault` is the only vault implementation.
@@ -386,7 +483,7 @@ Delivers the enforcement engine: HITL gating fixes, priority-90 routing to HITL,
 
 ### Fixed
 
-- **Warn when a HITL policy matches `unknown_sensitive_action`.** Putting `unknown_sensitive_action` (or a bare `*`) in `hitl-policy.yaml` routes every unrecognised tool — including read-only operations like `read` and `list` that aren't registered as aliases — through human approval, which locks the agent into an approval loop it cannot recover from. `parseHitlPolicyFile` now logs a `[hitl-policy] ⚠` warning at load time naming the offending policy and pointing operators at the right fix (register the tool alias, or match `filesystem.delete` instead).
+- **Warn when a HITL policy matches `unknown_sensitive_action`.** Putting `unknown_sensitive_action` (or a bare `*`) in `hitl-policy.yaml` routes every unrecognised tool — including read-only operations like `read` and `list` that aren't registered as aliases — through human approval, which locks the agent into an approval loop it cannot recover from. `parseHitlPolicyFile` now logs a `[hitl-policy] ` warning at load time naming the offending policy and pointing operators at the right fix (register the tool alias, or match `filesystem.delete` instead).
 
 - **Priority-90 Cedar forbids now route through HITL instead of blocking silently.** The rule tier documented as "sensitive actions requiring HITL approval" (priority 90 — `filesystem.delete`, `credential.read`, `credential.write`, `payment.initiate`) did not actually route to HITL. `beforeToolCallHandler` returned `{block: true}` on any Cedar forbid before the HITL stage ran, so the forbid was upheld regardless of what `hitl-policy.yaml` said. In OPEN mode this silently appeared to work because the priority-90 rules weren't shipped (CRITICAL_ACTION_CLASSES filter); in CLOSED mode operators hit a hard block with no approval flow. The handler is now async end-to-end and treats priority-90 forbids as "HITL-gated": if a HITL policy matches the action class and the operator approves, the tool call proceeds. If no policy matches — or HITL is not configured — the forbid is upheld with its original reason. Priority-100 (and rules with no explicit priority) are unchanged: unconditional forbid, HITL cannot override. JSON-rules forbids follow the same gating semantics when they carry `priority < 100`.
 
@@ -398,7 +495,7 @@ Delivers the enforcement engine: HITL gating fixes, priority-90 routing to HITL,
 
 - **Structured policy decisions in `data/audit.jsonl`.** The audit log previously only captured HITL approval/denial events. Every other block — Stage 1 trust-gate rejections, Cedar unconditional forbids, JSON-rule forbids, and HITL-gated forbids upheld because no HITL policy matched — went to stdout only, so post-mortems had to reconstruct what happened from ephemeral logs. Each block path now emits a `{type: 'policy'}` entry carrying `stage` (`stage1-trust` / `cedar` / `json-rules` / `hitl-gated`), `rule` (action-class or resource:match identifier), `priority` (when a rule matched), `mode` (OPEN/CLOSED), `toolName`, `actionClass`, `reason`, and the usual agent/channel/verified identity fields. The audit logger is now initialised unconditionally at activation so these entries land even when HITL is not configured.
 
-- **`DECISION: ✕ BLOCKED` console line enriched with priority and rule identifier.** Operators triaging a block in stdout logs can now tell at a glance whether they hit a hard forbid (`priority=100`), a HITL-gated rule that never found a matching policy (`priority=90 rule=action:filesystem.delete; no HITL policy matches`), or a Stage-1 trust-gate rejection — without cross-referencing `data/audit.jsonl`.
+- **`DECISION: BLOCKED` console line enriched with priority and rule identifier.** Operators triaging a block in stdout logs can now tell at a glance whether they hit a hard forbid (`priority=100`), a HITL-gated rule that never found a matching policy (`priority=90 rule=action:filesystem.delete; no HITL policy matches`), or a Stage-1 trust-gate rejection — without cross-referencing `data/audit.jsonl`.
 
 - **Handler evaluates rules by `intent_group` (after action-class evaluation).** Before this change, rules targeting an intent group — e.g. `{"intent_group": "data_exfiltration", "effect": "forbid"}` — were parsed but never consulted by `beforeToolCallHandler`; only rules keyed on `action_class` or `resource`/`match` fired. The handler now runs a second pass across both engines (TS defaults and `data/rules.json`) when the normalised action carries an intent_group, using the existing `evaluateByIntentGroup` engine method. Forbids there participate in the same priority-90 HITL-gated / priority-100 unconditional split as action-class forbids, so operators can gate entire threat-model clusters (all data-exfiltration transports, all credential-access patterns, etc.) with a single rule instead of enumerating every action class.
 
@@ -423,7 +520,7 @@ Delivers the enforcement engine: HITL gating fixes, priority-90 routing to HITL,
 
 - **Dead-code reference to `data/bundles/active/bundle.json` removed from README.** The top-level README previously told operators to drop a policy bundle at that path, but no code in `src/index.ts` ever loaded it — only `data/rules.json` is wired up. The README now describes the actual runtime surfaces (`data/rules.json`, `hitl-policy.yaml`, env vars) with their hot-reload semantics. Architecture-level references to the bundle abstraction in `docs/architecture.md` and `docs/roadmap.md` are intentionally kept — the bundle adapter layer still exists as test infrastructure and a future-facing design.
 
-### ⚠️ v1.2.0 Addendum — What Does Not Ship {#v120-addendum--what-does-not-ship}
+### v1.2.0 Addendum — What Does Not Ship {#v120-addendum--what-does-not-ship}
 
 v1.2.0 shipped the enforcement engine (normalizer registry, Cedar policy routing, HITL gating, audit logging). The following capabilities were **not included** and were completed in v1.2.1:
 
@@ -453,7 +550,7 @@ Fixes user-reported lockout when trying to add a `filesystem.delete` policy rule
 
 - **Split HITL config resolution from network transport code.** `resolveSlackConfig` and `resolveTelegramConfig` (which read from `process.env`) have been moved to a new `src/hitl/config.ts` module that contains no network calls. The `slack.ts` and `telegram.ts` transport modules now import the resolved config but no longer access `process.env` directly — so neither file alone matches the "env var access combined with network send" pattern that ClawHub's static analyser flags. Both functions are re-exported from their original modules for backward compatibility.
 
-### ⚠️ Do not edit `dist/` files directly
+### Do not edit `dist/` files directly
 
 Editing compiled files in `dist/policy/rules/` while the hot-reload watcher is active can cause a complete tool lockout if the edit produces invalid JavaScript. Always use `data/rules.json` for runtime rule changes, or edit source files in `src/` and rebuild.
 
