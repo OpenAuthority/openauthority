@@ -799,6 +799,15 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'gzip',
       'bzip2',
       'zstd_compress',
+      // Bare-binary aliases. tar / zip / xz / 7z are mode-flag driven —
+      // most common invocation creates an archive, so the bare binary
+      // inherits archive.create's medium / per_request tier. Flag-aware
+      // detail is provided by the explainer (e.g. `tar -t` is summarised
+      // as a list, even though it inherits the create-mode tier).
+      'tar',
+      'zip',
+      'xz',
+      '7z',
     ],
   },
   {
@@ -818,6 +827,8 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       'decompress',
       'extract_files',
       'zstd_decompress',
+      // Bare-binary aliases for explicit-direction decompressors.
+      'unxz',
     ],
   },
   {

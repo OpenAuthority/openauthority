@@ -1871,6 +1871,222 @@ function whoamiExplain(_args: string[]): ExplainResult {
   return staticReadOnlyExplain('Reports the effective username', 'Reads the current process user identity');
 }
 
+// ── Compression / archive utilities ────────────────────────────────────────────
+
+/** Mode classification for `tar` based on flag bundle + long-form flags. */
+type TarMode = 'create' | 'extract' | 'list' | 'append' | 'update' | 'unknown';
+
+function tarMode(args: string[]): TarMode {
+  // Long-form flags take precedence.
+  if (args.some(a => a === '--create')) return 'create';
+  if (args.some(a => a === '--extract' || a === '--get')) return 'extract';
+  if (args.some(a => a === '--list')) return 'list';
+  if (args.some(a => a === '--append')) return 'append';
+  if (args.some(a => a === '--update')) return 'update';
+  // Short-form flag bundles. The first non-`--` token may be either a flag
+  // bundle (`czf`) or a dashed bundle (`-czf`). Inspect both.
+  for (const tok of args) {
+    if (tok.startsWith('--')) continue;
+    const body = tok.startsWith('-') ? tok.slice(1) : tok;
+    // The first letter that's a mode flag wins.
+    for (const ch of body) {
+      switch (ch) {
+        case 'c': return 'create';
+        case 'x': return 'extract';
+        case 't': return 'list';
+        case 'r': return 'append';
+        case 'u': return 'update';
+      }
+    }
+    // Stop at the first positional that isn't a recognisable flag bundle —
+    // it's the archive file or content paths.
+    if (!tok.startsWith('-')) break;
+  }
+  return 'unknown';
+}
+
+/** Returns the archive path (`-f <file>` or `--file=<file>` or first positional after the mode bundle). */
+function tarArchive(args: string[]): string | undefined {
+  // -f <archive>
+  const fIdx = args.findIndex(a => a === '-f' || a === '--file');
+  if (fIdx >= 0 && args[fIdx + 1] !== undefined) return args[fIdx + 1];
+  // --file=archive
+  const longFile = args.find(a => a.startsWith('--file='));
+  if (longFile !== undefined) return longFile.slice('--file='.length);
+  // Bundled flag with `f` (e.g. `czf archive.tar.gz dir/`) — the next positional is the archive.
+  const bundleIdx = args.findIndex(a => /^-?[A-Za-z]+$/.test(a) && /f/.test(a));
+  if (bundleIdx >= 0) {
+    const next = positionalArgs(args.slice(bundleIdx + 1))[0];
+    if (next !== undefined) return next;
+  }
+  // Fallback: first positional after the mode bundle.
+  return positionalArgs(args)[0];
+}
+
+function tarExplain(args: string[]): ExplainResult {
+  const mode = tarMode(args);
+  const archive = tarArchive(args) ?? '<archive>';
+
+  switch (mode) {
+    case 'create':
+      return {
+        summary: `Creates archive ${archive}`,
+        effects: ['Reads files from the local filesystem and writes them into a single archive'],
+        warnings: [],
+      };
+    case 'extract':
+      return {
+        summary: `Extracts archive ${archive}`,
+        effects: ['Writes archive contents into the destination directory'],
+        warnings: [
+          'Path-traversal — crafted entries (../) can write outside the destination if --absolute-names is set or the implementation does not sanitise',
+          'Decompression bombs — extremely large extracted output is possible from a small input',
+        ],
+      };
+    case 'list':
+      return {
+        summary: `Lists the contents of ${archive}`,
+        effects: ['Reads archive metadata'],
+        warnings: [],
+      };
+    case 'append':
+    case 'update':
+      return {
+        summary: `${mode === 'append' ? 'Appends to' : 'Updates'} archive ${archive}`,
+        effects: ['Modifies an existing archive in place'],
+        warnings: [],
+      };
+    default:
+      return {
+        summary: 'Runs tar',
+        effects: [],
+        warnings: [],
+      };
+  }
+}
+
+function zipExplain(args: string[]): ExplainResult {
+  // `zip [opts] <archive> <file…>` — first positional is the archive.
+  const positional = positionalArgs(args);
+  const archive = positional[0] ?? '<archive>';
+  const files = positional.slice(1);
+  return {
+    summary: files.length > 0
+      ? `Creates ZIP archive ${archive} containing ${files.join(', ')}`
+      : `Creates ZIP archive ${archive}`,
+    effects: ['Reads files from the local filesystem and writes them into a ZIP archive'],
+    warnings: args.includes('-e') || args.includes('--encrypt')
+      ? ['Encrypted ZIPs use weak ZipCrypto by default — prefer 7z / GPG for sensitive data']
+      : [],
+  };
+}
+
+function unzipExplain(args: string[]): ExplainResult {
+  const positional = positionalArgs(args);
+  const archive = positional[0] ?? '<archive>';
+  const dIdx = args.findIndex(a => a === '-d');
+  const dest = dIdx >= 0 ? args[dIdx + 1] : undefined;
+  return {
+    summary: dest !== undefined
+      ? `Extracts ${archive} into ${dest}`
+      : `Extracts ${archive} into the current directory`,
+    effects: ['Writes archive contents to the local filesystem'],
+    warnings: [
+      'Path-traversal — crafted ZIP entries (../) can write outside the destination',
+      'Decompression bombs — extremely large extracted output is possible from a small input',
+    ],
+  };
+}
+
+function compressExplain(binary: string, args: string[]): ExplainResult {
+  const isDecompress = args.includes('-d') || args.includes('--decompress')
+    || args.includes('--uncompress');
+  const isKeep = args.includes('-k') || args.includes('--keep');
+  const positional = positionalArgs(args);
+  const target = positional[0];
+
+  if (isDecompress) {
+    return {
+      summary: target !== undefined
+        ? `Decompresses ${target}`
+        : `Decompresses ${binary} input`,
+      effects: ['Reads the compressed input and writes the decompressed output'],
+      warnings: ['Decompression bomb — small input can produce arbitrarily large output'],
+    };
+  }
+  return {
+    summary: target !== undefined
+      ? `Compresses ${target}`
+      : `Compresses ${binary} input`,
+    effects: isKeep
+      ? ['Compresses the input — original file retained because of -k / --keep']
+      : ['Compresses the input — original file is replaced by the compressed copy'],
+    warnings: [],
+  };
+}
+
+/** gunzip / bunzip2 / unxz are explicit-decompress entry points. */
+function decompressorExplain(binary: string, args: string[]): ExplainResult {
+  const positional = positionalArgs(args);
+  const target = positional[0];
+  return {
+    summary: target !== undefined
+      ? `Decompresses ${target}`
+      : `Decompresses ${binary} input`,
+    effects: ['Reads the compressed input and writes the decompressed output'],
+    warnings: ['Decompression bomb — small input can produce arbitrarily large output'],
+  };
+}
+
+function sevenZipExplain(args: string[]): ExplainResult {
+  // 7z uses sub-action letters: a (add/create), x (extract preserving paths),
+  // e (extract flat), l/t (list), d (delete from archive), u (update).
+  const sub = args[0];
+  const archive = positionalArgs(args.slice(1))[0] ?? '<archive>';
+  switch (sub) {
+    case 'a':
+    case 'u':
+      return {
+        summary: sub === 'u'
+          ? `Updates 7z archive ${archive}`
+          : `Adds files to 7z archive ${archive}`,
+        effects: ['Reads files from the local filesystem and writes into a 7z archive'],
+        warnings: [],
+      };
+    case 'x':
+    case 'e':
+      return {
+        summary: sub === 'x'
+          ? `Extracts 7z archive ${archive} preserving paths`
+          : `Extracts 7z archive ${archive} (flat — paths discarded)`,
+        effects: ['Writes archive contents to the local filesystem'],
+        warnings: [
+          'Path-traversal — crafted entries (../) can write outside the destination',
+          'Decompression bombs — extremely large extracted output is possible from a small input',
+        ],
+      };
+    case 'l':
+    case 't':
+      return {
+        summary: `Lists the contents of 7z archive ${archive}`,
+        effects: ['Reads archive metadata'],
+        warnings: [],
+      };
+    case 'd':
+      return {
+        summary: `Removes entries from 7z archive ${archive}`,
+        effects: ['Modifies an existing 7z archive in place'],
+        warnings: [],
+      };
+    default:
+      return {
+        summary: sub !== undefined ? `Runs 7z ${sub}` : 'Runs 7z',
+        effects: [],
+        warnings: [],
+      };
+  }
+}
+
 function mkdirExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const path = pos[0] ?? '<directory>';
@@ -2347,6 +2563,17 @@ const rules: CommandRule[] = [
   { match: /^touch\b/,            explain: touchExplain },
   { match: /^echo\b/,             explain: echoExplain },
   { match: /^printf\b/,           explain: printfExplain },
+  // Compression / archives
+  { match: /^tar\b/,              explain: tarExplain },
+  { match: /^unzip\b/,            explain: unzipExplain },
+  { match: /^zip\b/,              explain: zipExplain },
+  { match: /^gunzip\b/,           explain: (args) => decompressorExplain('gunzip', args) },
+  { match: /^bunzip2\b/,          explain: (args) => decompressorExplain('bunzip2', args) },
+  { match: /^unxz\b/,             explain: (args) => decompressorExplain('unxz', args) },
+  { match: /^gzip\b/,             explain: (args) => compressExplain('gzip', args) },
+  { match: /^bzip2\b/,            explain: (args) => compressExplain('bzip2', args) },
+  { match: /^xz\b/,               explain: (args) => compressExplain('xz', args) },
+  { match: /^7z\b/,               explain: sevenZipExplain },
   // System info / monitoring
   { match: /^uname\b/,            explain: unameExplain },
   { match: /^ps\b/,               explain: psExplain },

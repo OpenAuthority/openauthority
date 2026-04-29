@@ -37,6 +37,9 @@
  *   TC-CE-233 – TC-CE-237: virsh subcommand patterns
  *   TC-CE-238 – TC-CE-258: light explainers — read utilities, write utilities,
  *                          system info / monitoring (final v1.3.1 gap-fill)
+ *   TC-CE-259 – TC-CE-275: compression / archive explainers
+ *                          (tar, zip, unzip, gzip, gunzip, bzip2, bunzip2,
+ *                          xz, unxz, 7z)
  */
 
 import { describe, it, expect } from 'vitest';
@@ -3298,5 +3301,305 @@ describe('TC-CE-258: bare invocations do not crash', () => {
   ])('"%s" produces a non-empty summary without throwing', (cmd) => {
     const result = explain(cmd);
     expect(result.summary.length).toBeGreaterThan(0);
+  });
+});
+
+// ── TC-CE-259 – TC-CE-275 : compression / archives ───────────────────────────
+
+describe('TC-CE-259: tar — short-flag mode dispatch', () => {
+  it('"tar czf archive.tar.gz dir/" creates an archive', () => {
+    const result = explain('tar czf archive.tar.gz dir/');
+    expect(result.summary).toMatch(/Creates archive/i);
+    expect(result.summary).toContain('archive.tar.gz');
+  });
+
+  it('"tar xzf archive.tar.gz" extracts and warns', () => {
+    const result = explain('tar xzf archive.tar.gz');
+    expect(result.summary).toMatch(/Extracts archive/i);
+    expect(hasWarningMatching(result.warnings, /Path-traversal|Decompression bomb/i)).toBe(true);
+  });
+
+  it('"tar tf archive.tar" lists contents (read-only, no warnings)', () => {
+    const result = explain('tar tf archive.tar');
+    expect(result.summary).toMatch(/Lists the contents/i);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('"tar rf archive.tar foo" appends', () => {
+    const result = explain('tar rf archive.tar foo');
+    expect(result.summary).toMatch(/Appends/i);
+  });
+
+  it('"tar uf archive.tar foo" updates', () => {
+    const result = explain('tar uf archive.tar foo');
+    expect(result.summary).toMatch(/Updates/i);
+  });
+});
+
+describe('TC-CE-260: tar — dashed and long-form flag forms', () => {
+  it('"tar -czf archive.tar.gz dir/" parses dashed bundle', () => {
+    const result = explain('tar -czf archive.tar.gz dir/');
+    expect(result.summary).toMatch(/Creates archive/i);
+    expect(result.summary).toContain('archive.tar.gz');
+  });
+
+  it('"tar --extract --file=archive.tar" parses long-form', () => {
+    const result = explain('tar --extract --file=archive.tar');
+    expect(result.summary).toMatch(/Extracts archive/i);
+    expect(result.summary).toContain('archive.tar');
+  });
+
+  it('"tar --create --file foo.tar bar/" parses long-form with space', () => {
+    const result = explain('tar --create --file foo.tar bar/');
+    expect(result.summary).toMatch(/Creates archive/i);
+    expect(result.summary).toContain('foo.tar');
+  });
+
+  it('"tar --list --file=archive.tar" lists', () => {
+    const result = explain('tar --list --file=archive.tar');
+    expect(result.summary).toMatch(/Lists the contents/i);
+  });
+});
+
+describe('TC-CE-261: tar — fallback when no mode flag is given', () => {
+  it('summarises generically without warnings', () => {
+    const result = explain('tar --version');
+    expect(result.summary).toMatch(/tar/i);
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-262: zip — names archive and contents in summary', () => {
+  it('"zip out.zip a.txt b.txt" reports archive and files', () => {
+    const result = explain('zip out.zip a.txt b.txt');
+    expect(result.summary).toContain('out.zip');
+    expect(result.summary).toContain('a.txt');
+    expect(result.summary).toContain('b.txt');
+  });
+
+  it('emits no warnings for an unencrypted zip', () => {
+    const result = explain('zip out.zip a.txt');
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('warns about ZipCrypto when -e is used', () => {
+    const result = explain('zip -e out.zip a.txt');
+    expect(hasWarningMatching(result.warnings, /ZipCrypto|weak/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-263: unzip — extract destination + path-traversal warning', () => {
+  it('"unzip archive.zip" extracts into the current directory', () => {
+    const result = explain('unzip archive.zip');
+    expect(result.summary).toMatch(/current directory/i);
+  });
+
+  it('"unzip archive.zip -d /tmp/dest" reports the destination', () => {
+    const result = explain('unzip archive.zip -d /tmp/dest');
+    expect(result.summary).toContain('/tmp/dest');
+  });
+
+  it('always warns about path-traversal and decompression bombs', () => {
+    const result = explain('unzip archive.zip');
+    expect(hasWarningMatching(result.warnings, /Path-traversal/i)).toBe(true);
+    expect(hasWarningMatching(result.warnings, /Decompression bomb/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-264: gzip — compress (default)', () => {
+  it('summarises a compress invocation', () => {
+    const result = explain('gzip foo.txt');
+    expect(result.summary).toMatch(/Compresses/i);
+    expect(result.summary).toContain('foo.txt');
+  });
+
+  it('default behaviour mentions original-file replacement', () => {
+    const result = explain('gzip foo.txt');
+    expect(hasEffectMatching(result.effects, /original file is replaced/i)).toBe(true);
+  });
+
+  it('-k / --keep retains original', () => {
+    const result = explain('gzip -k foo.txt');
+    expect(hasEffectMatching(result.effects, /original file retained/i)).toBe(true);
+  });
+
+  it('emits no warnings for compression', () => {
+    const result = explain('gzip foo.txt');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-265: gzip -d — decompress + decompression-bomb warning', () => {
+  it('summarises decompression', () => {
+    const result = explain('gzip -d foo.gz');
+    expect(result.summary).toMatch(/Decompresses/i);
+  });
+
+  it('warns about decompression bomb', () => {
+    const result = explain('gzip -d foo.gz');
+    expect(hasWarningMatching(result.warnings, /Decompression bomb/i)).toBe(true);
+  });
+
+  it('--decompress long-form is recognised', () => {
+    const result = explain('gzip --decompress foo.gz');
+    expect(result.summary).toMatch(/Decompresses/i);
+  });
+});
+
+describe('TC-CE-266: bzip2 — same shape as gzip', () => {
+  it('compresses by default', () => {
+    const result = explain('bzip2 foo.txt');
+    expect(result.summary).toMatch(/Compresses/i);
+  });
+
+  it('decompresses with -d', () => {
+    const result = explain('bzip2 -d foo.bz2');
+    expect(result.summary).toMatch(/Decompresses/i);
+    expect(hasWarningMatching(result.warnings, /Decompression bomb/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-267: xz — same shape as gzip / bzip2', () => {
+  it('compresses by default', () => {
+    const result = explain('xz foo.txt');
+    expect(result.summary).toMatch(/Compresses/i);
+  });
+
+  it('decompresses with -d', () => {
+    const result = explain('xz -d foo.xz');
+    expect(result.summary).toMatch(/Decompresses/i);
+    expect(hasWarningMatching(result.warnings, /Decompression bomb/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-268: gunzip / bunzip2 / unxz — explicit decompressors', () => {
+  it('gunzip', () => {
+    const result = explain('gunzip foo.gz');
+    expect(result.summary).toMatch(/Decompresses/i);
+    expect(hasWarningMatching(result.warnings, /Decompression bomb/i)).toBe(true);
+  });
+
+  it('bunzip2', () => {
+    const result = explain('bunzip2 foo.bz2');
+    expect(result.summary).toMatch(/Decompresses/i);
+    expect(hasWarningMatching(result.warnings, /Decompression bomb/i)).toBe(true);
+  });
+
+  it('unxz', () => {
+    const result = explain('unxz foo.xz');
+    expect(result.summary).toMatch(/Decompresses/i);
+    expect(hasWarningMatching(result.warnings, /Decompression bomb/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-269: 7z — sub-action dispatch', () => {
+  it('"7z a archive.7z dir/" adds files', () => {
+    const result = explain('7z a archive.7z dir/');
+    expect(result.summary).toMatch(/Adds files/i);
+    expect(result.summary).toContain('archive.7z');
+  });
+
+  it('"7z x archive.7z" extracts preserving paths', () => {
+    const result = explain('7z x archive.7z');
+    expect(result.summary).toMatch(/preserving paths/i);
+    expect(hasWarningMatching(result.warnings, /Path-traversal|Decompression bomb/i)).toBe(true);
+  });
+
+  it('"7z e archive.7z" extracts flat', () => {
+    const result = explain('7z e archive.7z');
+    expect(result.summary).toMatch(/flat|paths discarded/i);
+  });
+
+  it('"7z l archive.7z" lists contents (no warnings)', () => {
+    const result = explain('7z l archive.7z');
+    expect(result.summary).toMatch(/Lists the contents/i);
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('"7z u archive.7z foo" updates', () => {
+    const result = explain('7z u archive.7z foo');
+    expect(result.summary).toMatch(/Updates/i);
+  });
+
+  it('"7z d archive.7z entry" removes entries', () => {
+    const result = explain('7z d archive.7z entry');
+    expect(result.summary).toMatch(/Removes/i);
+  });
+
+  it('falls back gracefully on unknown sub-action', () => {
+    const result = explain('7z h');
+    expect(result.summary).toMatch(/7z/);
+  });
+});
+
+describe('TC-CE-270: rule routing — gunzip vs gzip', () => {
+  it('"gunzip foo.gz" does NOT match the gzip rule', () => {
+    const result = explain('gunzip foo.gz');
+    // gzip's compress path would say "Compresses". Decompressor says "Decompresses".
+    expect(result.summary).toMatch(/Decompresses/i);
+  });
+
+  it('"gzip foo.txt" routes to gzip compress (not gunzip)', () => {
+    const result = explain('gzip foo.txt');
+    expect(result.summary).toMatch(/Compresses/i);
+  });
+});
+
+describe('TC-CE-271: rule routing — bunzip2 vs bzip2', () => {
+  it('"bunzip2 foo.bz2" decompresses', () => {
+    const result = explain('bunzip2 foo.bz2');
+    expect(result.summary).toMatch(/Decompresses/i);
+  });
+
+  it('"bzip2 foo.txt" compresses', () => {
+    const result = explain('bzip2 foo.txt');
+    expect(result.summary).toMatch(/Compresses/i);
+  });
+});
+
+describe('TC-CE-272: rule routing — unxz vs xz', () => {
+  it('"unxz foo.xz" decompresses', () => {
+    const result = explain('unxz foo.xz');
+    expect(result.summary).toMatch(/Decompresses/i);
+  });
+
+  it('"xz foo.txt" compresses', () => {
+    const result = explain('xz foo.txt');
+    expect(result.summary).toMatch(/Compresses/i);
+  });
+});
+
+describe('TC-CE-273: rule routing — unzip vs zip', () => {
+  it('"unzip archive.zip" extracts', () => {
+    const result = explain('unzip archive.zip');
+    expect(result.summary).toMatch(/Extracts/i);
+  });
+
+  it('"zip out.zip a.txt" creates', () => {
+    const result = explain('zip out.zip a.txt');
+    expect(result.summary).toMatch(/Creates ZIP archive/i);
+  });
+});
+
+describe('TC-CE-274: bare invocations do not crash', () => {
+  it.each(['tar', 'zip', 'unzip', 'gzip', 'gunzip', 'bzip2', 'bunzip2', 'xz', 'unxz', '7z'])(
+    '"%s" produces a non-empty summary without throwing',
+    (cmd) => {
+      const result = explain(cmd);
+      expect(result.summary.length).toBeGreaterThan(0);
+    },
+  );
+});
+
+describe('TC-CE-275: tar archive name extraction edge cases', () => {
+  it('"tar -cf archive.tar foo bar" picks archive.tar (not foo) as the archive', () => {
+    const result = explain('tar -cf archive.tar foo bar');
+    expect(result.summary).toContain('archive.tar');
+    expect(result.summary).not.toContain('Creates archive foo');
+  });
+
+  it('"tar c -f archive.tar foo" with separate -f flag still picks archive.tar', () => {
+    const result = explain('tar c -f archive.tar foo');
+    expect(result.summary).toContain('archive.tar');
   });
 });
