@@ -40,6 +40,8 @@
  *   TC-CE-259 – TC-CE-275: compression / archive explainers
  *                          (tar, zip, unzip, gzip, gunzip, bzip2, bunzip2,
  *                          xz, unxz, 7z)
+ *   TC-CE-276 – TC-CE-285: cleanup explainers — grep / rmdir / unlink / shred,
+ *                          mv-as-deletion detection
  */
 
 import { describe, it, expect } from 'vitest';
@@ -3602,4 +3604,167 @@ describe('TC-CE-275: tar archive name extraction edge cases', () => {
     const result = explain('tar c -f archive.tar foo');
     expect(result.summary).toContain('archive.tar');
   });
+});
+
+// ── TC-CE-276 – TC-CE-285 : cleanup explainers ──────────────────────────────
+
+describe('TC-CE-276: grep — names pattern and target', () => {
+  it('"grep TODO src/main.ts" reports pattern + path', () => {
+    const result = explain('grep TODO src/main.ts');
+    expect(result.summary).toContain('TODO');
+    expect(result.summary).toContain('src/main.ts');
+  });
+
+  it('"grep -r foo src/" recursive flag changes summary', () => {
+    const result = explain('grep -r foo src/');
+    expect(result.summary).toMatch(/Recursively searches/i);
+  });
+
+  it('emits no warnings for a normal grep', () => {
+    const result = explain('grep foo bar.txt');
+    expect(result.warnings).toHaveLength(0);
+  });
+
+  it('falls back to stdin when no path is given', () => {
+    const result = explain('grep TODO');
+    expect(result.summary).toMatch(/stdin/i);
+  });
+});
+
+describe('TC-CE-277: rmdir — empty-directory removal', () => {
+  it('reports the directory in the summary', () => {
+    const result = explain('rmdir /tmp/empty');
+    expect(result.summary).toContain('/tmp/empty');
+  });
+
+  it('mentions parent directories when -p is used', () => {
+    const result = explain('rmdir -p /a/b/c');
+    expect(result.summary).toMatch(/empty parent directories/i);
+  });
+
+  it('emits no warnings (rmdir refuses non-empty directories)', () => {
+    const result = explain('rmdir /tmp/empty');
+    expect(result.warnings).toHaveLength(0);
+  });
+});
+
+describe('TC-CE-278: unlink — single-file removal', () => {
+  it('reports the file in the summary', () => {
+    const result = explain('unlink /tmp/foo');
+    expect(result.summary).toContain('/tmp/foo');
+  });
+
+  it('warns about non-recoverable deletion', () => {
+    const result = explain('unlink /tmp/foo');
+    expect(hasWarningMatching(result.warnings, /cannot be recovered/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-279: shred — overwrite-and-remove warnings', () => {
+  it('reports the file in the summary', () => {
+    const result = explain('shred /tmp/secret');
+    expect(result.summary).toContain('/tmp/secret');
+  });
+
+  it('always warns about filesystem-dependence', () => {
+    const result = explain('shred /tmp/secret');
+    expect(hasWarningMatching(result.warnings, /filesystem|recovery|COW|journaled|SSD/i)).toBe(true);
+  });
+
+  it('-u / --remove changes the summary to overwrite-and-remove', () => {
+    const result = explain('shred -u /tmp/secret');
+    expect(result.summary).toMatch(/Overwrites and removes/i);
+  });
+
+  it('-z / --zero adds a final-zero-pass effect', () => {
+    const result = explain('shred -uz /tmp/secret');
+    expect(hasEffectMatching(result.effects, /zeros|hide the shred/i)).toBe(true);
+  });
+
+  it('-n N includes the iteration count in summary', () => {
+    const result = explain('shred -n 7 /tmp/secret');
+    expect(result.summary).toMatch(/7-pass/);
+  });
+});
+
+describe('TC-CE-280: mv to /dev/null — flagged as effective deletion', () => {
+  it('summarises mv-to-/dev/null as removal', () => {
+    const result = explain('mv /tmp/foo /dev/null');
+    expect(result.summary).toMatch(/Removes|mv to/i);
+    expect(result.summary).toContain('/tmp/foo');
+  });
+
+  it('warns that operators should prefer rm', () => {
+    const result = explain('mv /tmp/foo /dev/null');
+    expect(hasWarningMatching(result.warnings, /mv-as-deletion|use `rm`|intent is explicit/i)).toBe(true);
+  });
+
+  it('flags /dev/zero / /dev/random / /dev/urandom too', () => {
+    for (const target of ['/dev/zero', '/dev/random', '/dev/urandom']) {
+      const result = explain(`mv /tmp/foo ${target}`);
+      expect(hasWarningMatching(result.warnings, /mv-as-deletion/i)).toBe(true);
+    }
+  });
+});
+
+describe('TC-CE-281: mv to /tmp/trash — flagged as effective deletion', () => {
+  it('summarises mv-to-/tmp/trash as removal', () => {
+    const result = explain('mv /var/data /tmp/trash/data');
+    expect(result.summary).toMatch(/Removes|mv to/i);
+  });
+
+  it('flags ~/.Trash destinations', () => {
+    const result = explain('mv /home/alice/foo ~/.Trash/foo');
+    expect(hasWarningMatching(result.warnings, /mv-as-deletion/i)).toBe(true);
+  });
+});
+
+describe('TC-CE-282: mv to ordinary path — no deletion warning', () => {
+  it('plain mv summarises as a move, no warnings', () => {
+    const result = explain('mv /tmp/foo /tmp/bar');
+    expect(result.summary).toMatch(/Moves/i);
+    expect(hasWarningMatching(result.warnings, /mv-as-deletion/i)).toBe(false);
+  });
+});
+
+describe('TC-CE-283: rule routing — rmdir vs rm', () => {
+  it('"rmdir /tmp/empty" routes to rmdirExplain', () => {
+    const result = explain('rmdir /tmp/empty');
+    expect(result.summary).toMatch(/empty directory/i);
+  });
+
+  it('"rm /tmp/file" routes to rmExplain (not rmdir)', () => {
+    const result = explain('rm /tmp/file');
+    expect(result.summary).toMatch(/Deletes/i);
+    expect(result.summary).not.toMatch(/empty directory/i);
+  });
+
+  it('"rm -r /tmp/dir" routes to rmExplain with recursive summary', () => {
+    const result = explain('rm -r /tmp/dir');
+    expect(result.summary).toMatch(/Recursively deletes/i);
+  });
+});
+
+describe('TC-CE-284: install (binary) — filesystem.write classification', () => {
+  // Layer 1 alias verified via normalize.test.ts. This test confirms the
+  // explainer dispatch does NOT match `install` against any unrelated
+  // pattern (e.g. apt's `install` subcommand explainer).
+  it('"install -m 755 src dst" does not collide with apt install', () => {
+    const result = explain('install -m 755 ./bin/foo /usr/local/bin/foo');
+    // No explainer for the bare `install` binary — falls through to the
+    // generic "Runs <binary>" path. The key assertion: it must not produce
+    // an apt-style summary.
+    expect(result.summary).not.toMatch(/apt packages/);
+    expect(result.summary.length).toBeGreaterThan(0);
+  });
+});
+
+describe('TC-CE-285: bare invocations do not crash', () => {
+  it.each(['rmdir', 'unlink', 'shred', 'grep'])(
+    '"%s" produces a non-empty summary without throwing',
+    (cmd) => {
+      const result = explain(cmd);
+      expect(result.summary.length).toBeGreaterThan(0);
+    },
+  );
 });

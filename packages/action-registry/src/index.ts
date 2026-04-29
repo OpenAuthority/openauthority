@@ -173,6 +173,10 @@ export const REGISTRY: readonly ActionRegistryEntry[] = [
       // updates timestamps. Both legitimately filesystem.write.
       'tee',
       'touch',
+      // `install` (the BSD/GNU file-installer binary, not the package
+      // manager) copies one file to another with explicit permission /
+      // owner setting. Same blast-radius profile as cp.
+      'install',
     ],
   },
   {

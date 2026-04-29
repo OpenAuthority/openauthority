@@ -529,10 +529,105 @@ function mvExplain(args: string[]): ExplainResult {
   const pos = positionalArgs(args);
   const src = pos[0] ?? '<source>';
   const dst = pos.length > 1 ? pos[pos.length - 1]! : '<destination>';
+
+  // Detect mv-as-deletion patterns: /dev/null, /dev/zero, or any path
+  // under a recognised throwaway directory (/tmp/trash, ~/.Trash).
+  const isDeletionDestination = (path: string): boolean => {
+    if (/^\/dev\/(null|zero|random|urandom)$/.test(path)) return true;
+    if (/^\/tmp\/trash(\/|$)/.test(path)) return true;
+    if (/^~?\/?\.Trash(\/|$)/.test(path)) return true;
+    return false;
+  };
+
+  if (isDeletionDestination(dst)) {
+    return {
+      summary: `Removes ${src} (mv to ${dst})`,
+      effects: ['Effectively deletes the source — destination discards content'],
+      warnings: [
+        'mv-as-deletion — operators may want to use `rm` instead so the intent is explicit in audit logs',
+      ],
+    };
+  }
+
   return {
     summary: `Moves ${src} to ${dst}`,
     effects: ['Relocates or renames files on the filesystem', 'May overwrite destination if it exists'],
     warnings: [],
+  };
+}
+
+// ── Additional file-utility explainers (grep / rmdir / unlink / shred) ────
+
+function grepExplain(args: string[]): ExplainResult {
+  const isRecursive = args.some(a => a === '-r' || a === '-R' || a === '--recursive');
+  // First non-flag positional is the pattern; subsequent ones are paths.
+  const positional = positionalArgs(args);
+  const pattern = positional[0] ?? '<pattern>';
+  const paths = positional.slice(1);
+  const target = paths.length > 0 ? paths.join(', ') : (isRecursive ? '.' : 'stdin');
+
+  return {
+    summary: isRecursive
+      ? `Recursively searches for '${pattern}' in ${target}`
+      : `Searches for '${pattern}' in ${target}`,
+    effects: ['Reads files and matches them against the pattern'],
+    warnings: [],
+  };
+}
+
+function rmdirExplain(args: string[]): ExplainResult {
+  const paths = positionalArgs(args);
+  const target = paths.length > 0 ? paths.join(', ') : '<directory>';
+  const isParents = args.includes('-p') || args.includes('--parents');
+  return {
+    summary: isParents
+      ? `Removes empty directory ${target} and its empty parent directories`
+      : `Removes empty directory ${target}`,
+    effects: ['Removes a directory only if it contains no files'],
+    warnings: [],
+  };
+}
+
+function unlinkExplain(args: string[]): ExplainResult {
+  const paths = positionalArgs(args);
+  const target = paths[0] ?? '<file>';
+  return {
+    summary: `Removes the link ${target}`,
+    effects: ['Removes a single file or symlink (does not recurse)'],
+    warnings: ['Removed files cannot be recovered from the trash'],
+  };
+}
+
+function shredExplain(args: string[]): ExplainResult {
+  const paths = positionalArgs(args);
+  const target = paths.length > 0 ? paths.join(', ') : '<file>';
+  // Flag detection handles both standalone (`-u`) and bundled (`-uz`) forms.
+  const hasFlag = (ch: string, longForm?: string): boolean =>
+    args.some(t =>
+      t === `-${ch}` ||
+      (longForm !== undefined && t === longForm) ||
+      (/^-[a-zA-Z]+$/.test(t) && t.includes(ch)),
+    );
+  const isUnlink = hasFlag('u', '--remove');
+  const isZero = hasFlag('z', '--zero');
+  const nIdx = args.findIndex(a => a === '-n' || a === '--iterations');
+  const iterations = nIdx >= 0 ? args[nIdx + 1] : undefined;
+
+  const passes = iterations !== undefined ? `${iterations}-pass ` : '';
+  const summary = isUnlink
+    ? `Overwrites and removes ${target} (${passes}shred)`.replace(' ()', '')
+    : `Overwrites ${target} in place (${passes}shred)`.replace(' ()', '');
+
+  const effects = ['Repeatedly writes random data over the file contents to defeat recovery'];
+  if (isUnlink) effects.push('Removes the file after overwriting');
+  if (isZero) effects.push('Final pass writes zeros to hide the shred operation');
+
+  return {
+    summary,
+    effects,
+    warnings: [
+      'shred relies on assumptions about the underlying filesystem — overwrite may not defeat recovery on COW / journaled / SSD-wear-levelled storage',
+    ],
   };
 }
 
@@ -2492,12 +2587,16 @@ const rules: CommandRule[] = [
   { match: /^eslint\b/,          explain: eslintExplain },
   { match: /^prettier\b/,        explain: prettierExplain },
   // File system operations
+  { match: /^rmdir\b/,           explain: rmdirExplain },
   { match: /^rm\b/,              explain: rmExplain },
   { match: /^cp\b/,              explain: cpExplain },
   { match: /^mv\b/,              explain: mvExplain },
   { match: /^chmod\b/,           explain: chmodExplain },
   { match: /^mkdir\b/,           explain: mkdirExplain },
   { match: /^rsync\b/,           explain: rsyncExplain },
+  { match: /^unlink\b/,          explain: unlinkExplain },
+  { match: /^shred\b/,           explain: shredExplain },
+  { match: /^grep\b/,            explain: grepExplain },
   // Network commands
   { match: /^curl\b/,            explain: curlExplain },
   { match: /^wget\b/,            explain: wgetExplain },

@@ -117,6 +117,7 @@ describe('registry coverage — each action class resolves from at least one ali
     ['gunzip',           'archive.extract'],
     ['bunzip2',          'archive.extract'],
     ['unxz',             'archive.extract'],
+    ['install',          'filesystem.write'],
     ['git_log',          'vcs.read'],
     ['git_add',          'vcs.write'],
     ['git_clone',        'vcs.remote'],
